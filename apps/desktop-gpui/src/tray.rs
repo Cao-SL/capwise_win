@@ -571,34 +571,21 @@ pub fn build_menu(mode: Mode, previous: &[PreviousItem], version: &str) -> Vec<E
 
     entries.push(Entry::item(tr::tray::open_main_window(), TrayItem::OpenCap));
     entries.push(Entry::Separator);
-    if cfg!(target_os = "macos") {
-        entries.push(Entry::ModePicker { mode });
-        entries.push(Entry::Separator);
-    } else {
-        entries.push(mode_submenu(mode));
-        entries.push(Entry::Separator);
-    }
 
     for target in [TargetType::Display, TargetType::Window, TargetType::Area] {
         entries.push(capture_entry(target, mode));
     }
-    if mode != Mode::Screenshot {
-        entries.push(Entry::icon_item(
-            tr::tray::take_screenshot(),
-            TrayItem::TakeScreenshot,
-            "screenshot",
-        ));
-    }
 
     entries.push(Entry::Separator);
-    entries.push(previous_submenu(previous));
+    let recordings: Vec<PreviousItem> = previous
+        .iter()
+        .filter(|item| item.kind == MediaKind::Studio)
+        .cloned()
+        .collect();
+    entries.push(previous_submenu(&recordings));
     entries.push(Entry::item(
         tr::tray::view_all_recordings(),
         TrayItem::ViewAllRecordings,
-    ));
-    entries.push(Entry::item(
-        tr::tray::view_all_screenshots(),
-        TrayItem::ViewAllScreenshots,
     ));
 
     entries.push(Entry::Separator);
@@ -612,9 +599,6 @@ pub fn build_menu(mode: Mode, previous: &[PreviousItem], version: &str) -> Vec<E
         TrayItem::OpenSettings,
         "settings",
     ));
-    // `logging::upload_log_file` needs the auth token and the HTTP client,
-    // neither of which this app has.
-    entries.push(Entry::disabled(tr::tray::upload_logs()));
     entries.push(Entry::Separator);
 
     if cfg!(target_os = "macos") {

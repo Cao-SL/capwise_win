@@ -90,6 +90,7 @@ mod screenshot_editor;
 mod screenshot_export;
 mod script_text;
 mod session;
+mod settings_about;
 mod settings_pages;
 mod settings_window;
 mod sign_in;
@@ -115,7 +116,7 @@ use gpui::{App, AppContext as _, Bounds, WindowBounds, WindowOptions, px, size};
 use crate::{assets::Assets, main_window::MainWindow, session::RecordingSession};
 
 const MAIN_WINDOW_WIDTH: f32 = 330.;
-const MAIN_WINDOW_HEIGHT: f32 = 435.;
+const MAIN_WINDOW_HEIGHT: f32 = 368.;
 
 /// The corner radius the native material is clipped to. `radius = 16` for
 /// material `"panel"` on both visual systems in

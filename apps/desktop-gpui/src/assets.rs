@@ -187,6 +187,10 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "zap.svg",
     "zoom-in.svg",
     "zoom-out.svg",
+    "book-open.svg",
+    "code.svg",
+    "message-circle.svg",
+    "circle-info.svg",
     // The settings Recordings page. `link` is Cap's own
     // (`packages/ui-solid/icons/link.svg`, which is Lucide's glyph); `import`
     // and `edit` are the Lucide 24x24 originals `~icons/lucide/*` resolves to;
@@ -237,6 +241,9 @@ const IMAGES: &[(&str, &[u8])] = assets!("images":
     "auto.jpg",
     "light.jpg",
     "dark.jpg",
+    "about-wechat-qr.jpg",
+    "about-reward-qr.png",
+    "app-icon.png",
 );
 
 const ONBOARDING: &[(&str, &[u8])] = &[

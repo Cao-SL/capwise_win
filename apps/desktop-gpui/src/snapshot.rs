@@ -25,6 +25,12 @@ pub fn arm_from_env(cx: &mut App) {
         .next()
         .and_then(|value| value.parse().ok())
         .unwrap_or(2500);
+    let target = std::env::var("CAP_GPUI_SNAPSHOT_WINDOW").unwrap_or_default();
+    if let Some(slug) = target.strip_prefix("settings") {
+        let page = crate::settings_window::Page::from_slug(slug.trim_start_matches(':'))
+            .unwrap_or(crate::settings_window::Page::General);
+        cx.defer(move |cx| crate::app_windows::open_settings(page, cx));
+    }
     cx.spawn(async move |cx| {
         cx.background_executor()
             .timer(Duration::from_millis(delay))
@@ -37,6 +43,10 @@ pub fn arm_from_env(cx: &mut App) {
                     crate::permission_guide::window_handle(cx)
                 } else if target == "main" {
                     Some(cx.global::<crate::app_windows::AppWindows>().main.into())
+                } else if target.starts_with("settings") {
+                    cx.global::<crate::app_windows::AppWindows>()
+                        .settings
+                        .map(Into::into)
                 } else {
                     cx.global::<crate::app_windows::AppWindows>()
                         .onboarding

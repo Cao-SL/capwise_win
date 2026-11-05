@@ -138,10 +138,7 @@ impl Mode {
     /// `get_current_mode` (`src-tauri/src/tray.rs:355-361`): the stored mode,
     /// falling back to `RecordingMode::default()`, which is Instant.
     pub fn from_store() -> Self {
-        crate::store::recording_mode_slug()
-            .as_deref()
-            .and_then(Self::from_slug)
-            .unwrap_or(Self::Instant)
+        Self::Studio
     }
 
     pub fn icon(self) -> &'static str {
@@ -2038,6 +2035,7 @@ impl MainWindow {
         self.clear_mode_hover();
         cx.notify();
         if self.mode == mode
+            || mode != Mode::Studio
             || self.is_preparing_recording()
             || self.session.read(cx).editor_recording_target().is_some()
         {
@@ -3808,11 +3806,12 @@ impl MainWindow {
             .mx(px(8.))
             .min_w_0()
             .child(
-                icon_button("help", "icons/circle-help.svg", 16.).on_click(cx.listener(
-                    |_, _, _window, cx| {
-                        cx.defer(app_windows::open_onboarding);
-                    },
-                )),
+                div()
+                    .flex_shrink_0()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.gray_12)
+                    .child(tr::brand::name()),
             )
             // Keep drag handlers off the header root: starting native dragging
             // on a button's mouse-down consumes its later click.
@@ -3831,27 +3830,6 @@ impl MainWindow {
                     .items_center()
                     .gap(px(4.))
                     .flex_shrink_0()
-                    .child(icon_button("settings", "icons/settings.svg", 16.).on_click(
-                        cx.listener(|_, _, _window, cx| {
-                            // `await commands.showWindow({ Settings: {
-                            //  page: "general" } }); getCurrentWindow()
-                            //  .hide()` -- both halves live in
-                            // `open_settings`. Deferred because opening a
-                            // window inside this update would double-lease
-                            // the view (the `sync_overlays` rule).
-                            cx.defer(|cx: &mut gpui::App| {
-                                app_windows::open_settings(
-                                    crate::settings_window::Page::General,
-                                    cx,
-                                )
-                            });
-                        }),
-                    ))
-                    .child(icon_button("screenshots", "icons/image.svg", 16.).on_click(
-                        cx.listener(|this, _, window, cx| {
-                            this.open_panel(Panel::Library(LibraryKind::Screenshots), window, cx);
-                        }),
-                    ))
                     .child(
                         icon_button("recordings", "icons/play-circle.svg", 16.).on_click(
                             cx.listener(|this, _, window, cx| {
@@ -3873,15 +3851,22 @@ impl MainWindow {
                             }),
                         ),
                     )
-                    .child(
-                        icon_button("changelog", "icons/bell.svg", 16.).on_click(cx.listener(
-                            |_, _, _window, cx| {
-                                cx.defer(|cx: &mut gpui::App| {
-                                    app_windows::open_settings(Page::Changelog, cx)
-                                });
-                            },
-                        )),
-                    ),
+                    .child(icon_button("settings", "icons/settings.svg", 16.).on_click(
+                        cx.listener(|_, _, _window, cx| {
+                            // `await commands.showWindow({ Settings: {
+                            //  page: "general" } }); getCurrentWindow()
+                            //  .hide()` -- both halves live in
+                            // `open_settings`. Deferred because opening a
+                            // window inside this update would double-lease
+                            // the view (the `sync_overlays` rule).
+                            cx.defer(|cx: &mut gpui::App| {
+                                app_windows::open_settings(
+                                    crate::settings_window::Page::General,
+                                    cx,
+                                )
+                            });
+                        }),
+                    ))
             );
 
         #[cfg(target_os = "windows")]
@@ -4008,7 +3993,11 @@ impl MainWindow {
         // the full body, exactly as `!activeMenu() && ...` does in index.tsx.
         match self.panel {
             Some(panel) => root.child(self.render_panel(panel, cx)),
-            None => root.child(self.render_logo_row(cx)).child(
+            None => root
+                .when(self.session.read(cx).editor_recording_target().is_some(), |root| {
+                    root.child(self.render_logo_row(cx))
+                })
+                .child(
                 div()
                     .id("home-scroll")
                     .flex()
@@ -6501,21 +6490,6 @@ impl MainWindow {
                                 ),
                         )
                     }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap(px(4.))
-                    .child(self.render_mode_pill(cx))
-                    .child(
-                        div()
-                            .text_size(px(9.))
-                            .line_height(px(11.))
-                            .text_color(self.theme.gray_11)
-                            .child(self.effective_mode(cx).header_title()),
-                    ),
             )
     }
 

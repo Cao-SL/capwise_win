@@ -17,10 +17,10 @@ search = "Search"
 yes = "Yes"
 
 [menu.app]
-about = "About Cap"
-hide = "Hide Cap"
+about = "About Capwise"
+hide = "Hide Capwise"
 hide_others = "Hide Others"
-quit = "Quit Cap"
+quit = "Quit Capwise"
 services = "Services"
 settings = "Settings…"
 
@@ -74,7 +74,7 @@ no_recent_items = "No recent items"
 open_main_window = "Open Main Window"
 previous = { text = "Previous", context = "Submenu listing the most recent recordings and screenshots." }
 recording_mode = "Recording Mode"
-quit = "Quit Cap"
+quit = "Quit Capwise"
 record_area = "Record Area"
 record_display = "Record Display"
 record_window = "Record Window"
@@ -85,9 +85,9 @@ screenshot_window = "Screenshot Window"
 select_mode = "Select Mode"
 settings = "Settings"
 take_screenshot = "Take a Screenshot"
-tooltip_recording = { text = "Cap - Stop Recording", context = "Windows tray tooltip while a recording runs; clicking the icon stops it." }
+tooltip_recording = { text = "Capwise - Stop Recording", context = "Windows tray tooltip while a recording runs; clicking the icon stops it." }
 upload_logs = "Upload Logs"
-version = { text = "Cap v{version}", context = "Disabled row showing the app version, for example Cap v0.6.1." }
+version = { text = "Capwise v{version}", context = "Disabled row showing the app version, for example Capwise v0.6.1." }
 view_all_recordings = "View all recordings"
 view_all_screenshots = "View all screenshots"
 
@@ -99,6 +99,7 @@ studio = { text = "Studio", context = "Recording mode name." }
 [settings.nav]
 # The sidebar is 227px; the label gets what the 10px padding, 6px item padding,
 # 16px icon and 8px gap leave.
+about = { text = "About", max_px = 171, size = 13 }
 automations = { text = "Automations", max_px = 171, size = 13 }
 changelog = { text = "Changelog", max_px = 171, size = 13 }
 cli = { text = "CLI", max_px = 171, size = 13 }
@@ -114,28 +115,28 @@ shortcuts = { text = "Shortcuts", max_px = 171, size = 13 }
 transcription = { text = "Transcription", max_px = 171, size = 13 }
 
 [settings.general.language]
-description = "Choose the language Cap is shown in."
+description = "Choose the language Capwise is shown in."
 label = "App language"
 system_default = { text = "System default ({language})", context = "{language} is the system language, written in that language, for example Deutsch." }
 title = "Language"
 
 [settings.general.appearance]
 dark = "Dark"
-description = "Match Cap to your system theme or pick a fixed look."
+description = "Match Capwise to your system theme or pick a fixed look."
 light = "Light"
 system = "System"
 title = "Appearance"
 
 [settings.general.app]
-description = "Choose how Cap shows up on your system."
+description = "Choose how Capwise shows up on your system."
 title = "App"
 
 [settings.general.app.dock_icon]
-description = "Keep Cap in the dock even when no windows are open."
+description = "Keep Capwise in the dock even when no windows are open."
 label = "Always show dock icon"
 
 [settings.general.app.notifications]
-description = "Show notifications for clipboard copies, saved files, and more. You may need to allow Cap in your system's notification settings."
+description = "Show notifications for clipboard copies, saved files, and more. You may need to allow Capwise in your system's notification settings."
 label = "System notifications"
 
 [settings.general.recording]
@@ -156,7 +157,7 @@ label = "Confirm before recording without a microphone"
 
 [settings.general.recording.studio_sound]
 description = "Clean up microphone audio automatically. You can still turn it off for any recording in the editor."
-label = { text = "Studio Sound on new recordings", context = "Studio Sound is the name of Cap's microphone clean-up feature." }
+label = { text = "Studio Sound on new recordings", context = "Studio Sound is the name of Capwise's microphone clean-up feature." }
 
 [settings.general.recording.main_window_start]
 description = "What happens to the main window once a recording begins."
@@ -171,7 +172,7 @@ description = "Whether the recording window should reopen."
 label = "After deleting a recording"
 
 [settings.general.recording.delete_after_upload]
-description = "Cap removes the local file once it has uploaded successfully."
+description = "Capwise removes the local file once it has uploaded successfully."
 label = "Delete Instant recordings after upload"
 
 [settings.general.recording.crash_recovery]
@@ -215,7 +216,7 @@ label = "Play a sound for markers"
 [settings.general.storage]
 choose_folder = "Choose Folder"
 default_location = { text = "Default (Application Support)", context = "Shown in place of a folder path when recordings use the default location." }
-description = "Where Cap saves your recordings."
+description = "Where Capwise saves your recordings."
 title = "Storage"
 
 [settings.general.project_name]
@@ -239,26 +240,26 @@ time_values = "the recording's time"
 [settings.general.excluded_windows]
 description = "Hide windows from recordings."
 empty = "No windows are currently excluded."
-missing_body = { text = "Camera, settings, or recording windows can appear as black boxes in screen recordings. Missing: {names}.", context = "{names} is a comma-separated list of Cap window titles." }
-missing_title = "Recommended Cap windows are not excluded"
+missing_body = { text = "Camera, settings, or recording windows can appear as black boxes in screen recordings. Missing: {names}.", context = "{names} is a comma-separated list of Capwise window titles." }
+missing_title = "Recommended Capwise windows are not excluded"
 restore = "Restore"
 title = "Excluded windows"
 
 [settings.general.updates]
-description = "Choose which Cap builds you receive."
+description = "Choose which Capwise builds you receive."
 nightly_description = "The newest builds, updated automatically in the background when you're not recording or exporting. May be unstable."
 nightly_switch_back = "Switching back to Stable will return you to the latest stable version, which may be older than your current build."
 stable_description = "Versioned releases (recommended)"
 title = "Updates"
 
 [settings.general.updates.channel]
-description = "Which release channel Cap updates from."
+description = "Which release channel Capwise updates from."
 label = "Update channel"
 
 [settings.general.self_host]
 confirm_change = { text = "Are you sure you want to change the server URL to '{origin}'? You will need to sign in again.", context = "{origin} is a URL such as https://cap.example.com." }
-description = "Only change this if you are running your own instance of Cap Web."
-server_url = "Cap Server URL"
+description = "Only change this if you are running your own instance of Capwise Web."
+server_url = "Capwise Server URL"
 title = "Self-host"
 update = "Update"
 
@@ -266,7 +267,7 @@ update = "Update"
 title = "Privacy"
 
 [settings.general.privacy.telemetry]
-description = "Cap uses anonymous telemetry to improve reliability and fix bugs. We never collect recording contents, window titles, file paths, or personal information."
+description = "Capwise uses anonymous telemetry to improve reliability and fix bugs. We never collect recording contents, window titles, file paths, or personal information."
 label = "Share anonymous telemetry"
 [settings.prompt]
 ok = { text = "Ok", context = "The only button of an informational dialog." }
@@ -334,13 +335,13 @@ compatibility = "Smaller files"
 compatibility_description = "Saves disk space. Fine detail can soften, most of all on camera."
 description = "Saved to your computer for editing. You choose the export size later, in the editor."
 recommended = "Recommended"
-title = "Studio recordings"
+title = "Quality"
 ultra = "Maximum detail"
 ultra_description = "Keeps the most detail for heavy editing. Uses the most disk space."
 
 [settings.quality.instant]
 description = "Uploaded while you record, so the link is ready the moment you stop. For the best quality, use Studio mode: it records at the highest quality your screen allows, and you can export up to 4K."
-free_plan = "720p on the free plan. Cap Pro records up to 4K."
+free_plan = "720p on the free plan. Capwise Pro records up to 4K."
 max_resolution = "Maximum resolution"
 res_1080p = "Sharp text at a practical upload size."
 res_1440p = "Extra detail for large, high-resolution screens."
@@ -369,7 +370,7 @@ screen_region = { text = "Screen region", max_px = 180, size = 12 }
 [settings.options.post_studio]
 do_nothing = "Do nothing"
 open_editor = "Open editor"
-show_cap = "Show Cap"
+show_cap = "Show Capwise"
 
 [settings.options.post_screenshot]
 copy = "Copy to clipboard"
@@ -393,7 +394,7 @@ cancelling_title = "Cancelling"
 needs_modifier_macos = "Include ⌘, ⌃ or ⌥ so the shortcut doesn't get in the way of typing."
 needs_modifier_other = "Include Ctrl, Alt or Win so the shortcut doesn't get in the way of typing."
 record_shortcut = "Record shortcut"
-recording_description = "Start a recording without opening Cap first."
+recording_description = "Start a recording without opening Capwise first."
 recording_hint = "Press the keys you want to use. Esc cancels, Delete removes it."
 recording_title = "Recording"
 saved = { text = "Saved. Press {keys} in any app to {effect}.", context = "{keys} is the shortcut, such as ⌘⇧4. {effect} is one of the settings.shortcuts.effect messages and completes the sentence." }
@@ -406,7 +407,7 @@ unsupported_key = "That key can't be used in a shortcut. Try a letter, number or
 while_recording_title = "While recording"
 
 [settings.shortcuts.after_screenshot]
-hint = "For every screenshot, from a shortcut or from Cap"
+hint = "For every screenshot, from a shortcut or from Capwise"
 title = "After a screenshot"
 
 [settings.shortcuts.after_studio]
@@ -422,15 +423,15 @@ hint = "Esc or closing the picker"
 title = "When you cancel"
 
 [settings.shortcuts.outcome]
-cancel_show_cap = "Show Cap"
+cancel_show_cap = "Show Capwise"
 cancel_show_cap_hint = "Back to the recorder"
 cancel_stay_hidden = "Stay hidden"
-cancel_stay_hidden_hint = "Unless Cap was open"
+cancel_stay_hidden_hint = "Unless Capwise was open"
 instant_copy_link = "Copy link only"
 instant_copy_link_hint = "Nothing opens"
 instant_open_link = "Open link"
 instant_open_link_hint = "In your browser"
-instant_show_cap = "Show Cap"
+instant_show_cap = "Show Capwise"
 instant_show_cap_hint = "Back to the recorder"
 saved_to_library = "Saved to library"
 screenshot_copy = "Copy"
@@ -443,7 +444,7 @@ screenshot_open_editor_hint = "Annotate first"
 studio_do_nothing = "Do nothing"
 studio_open_editor = "Open editor"
 studio_open_editor_hint = "Edit right away"
-studio_show_cap = "Show Cap"
+studio_show_cap = "Show Capwise"
 studio_show_cap_hint = "Back to the recorder"
 
 [settings.shortcuts.label]
@@ -468,7 +469,7 @@ add_marker = "mark this moment in a Studio recording"
 cycle_mode = "switch between Studio, Instant and Screenshot mode"
 instant_copy = "record your selected screen or window in Instant mode, then copy its share link when you stop"
 instant_copy_and_open = "record your selected screen or window in Instant mode, then copy and open its share link when you stop"
-open_picker = "open Cap so you can choose what to record"
+open_picker = "open Capwise so you can choose what to record"
 pause = "pause the current recording, or resume it"
 picker_area_instant = "select an area, then record it in Instant mode"
 picker_area_screenshot = "select an area, then take a screenshot of it"
@@ -501,7 +502,7 @@ add_marker = "Mark this moment in a Studio recording."
 cycle_mode = "Switch between Studio, Instant and Screenshot mode."
 instant_copy = "Record your selected screen or window in Instant mode, then copy its share link when you stop."
 instant_copy_and_open = "Record your selected screen or window in Instant mode, then copy and open its share link when you stop."
-open_picker = "Open Cap so you can choose what to record."
+open_picker = "Open Capwise so you can choose what to record."
 pause = "Pause the current recording, or resume it."
 picker_area_instant = "Select an area, then record it in Instant mode."
 picker_area_screenshot = "Select an area, then take a screenshot of it."
@@ -532,7 +533,7 @@ studio_open_editor = "Record your selected screen or window in Studio mode, then
 [settings.cli]
 command = "Command"
 copy = "Copy"
-description = "Install the Cap command for terminals, agents, scripts, and local automation."
+description = "Install the Capwise command for terminals, agents, scripts, and local automation."
 install = "Install CLI"
 installed = "Installed"
 installing = "Installing..."
@@ -572,14 +573,14 @@ app_version = "App Version"
 capture_support = "Capture Support"
 capture_supported = "Screen Capture: Supported"
 capture_unsupported = "Screen Capture: Not Supported"
-community_description = "Have questions, want to share ideas, or just hang out? Join the Cap Discord community."
+community_description = "Have questions, want to share ideas, or just hang out? Join the Capwise Discord community."
 community_title = "Join the Community"
-debug_description = "Upload your logs to help us diagnose issues with Cap. No personal information is included."
+debug_description = "Upload your logs to help us diagnose issues with Capwise. No personal information is included."
 debug_title = "Debug Information"
-description = "Help us improve Cap by submitting feedback or reporting bugs. We'll get right on it."
+description = "Help us improve Capwise by submitting feedback or reporting bugs. We'll get right on it."
 join_discord = "Join Discord"
 operating_system = "Operating System"
-placeholder = "Tell us what you think about Cap..."
+placeholder = "Tell us what you think about Capwise..."
 submit = "Submit Feedback"
 submit_failed = "Failed to submit feedback"
 submitting = "Submitting..."
@@ -593,24 +594,24 @@ upload_sent = "Sent. Thank you -- this helps us find the problem."
 uploading = "Uploading..."
 
 [settings.feedback.diagnostic]
-confirm_body = { text = "Cap will take over your screen with a flashing pattern and play loud beeps for about {seconds} seconds per pipeline. Take your headphones off, leave the volume audible, and leave the machine alone until it finishes.", context = "{seconds} is a whole number of seconds." }
+confirm_body = { text = "Capwise will take over your screen with a flashing pattern and play loud beeps for about {seconds} seconds per pipeline. Take your headphones off, leave the volume audible, and leave the machine alone until it finishes.", context = "{seconds} is a whole number of seconds." }
 confirm_title = "Run diagnostic?"
 description = "Records a short flashing/beeping test pattern, measures how far the picture and sound drift apart, and snapshots your displays, cameras, microphones, disk space and recording settings. Nothing is sent anywhere until you choose to send it."
 mic_description = "Also record your microphone and check that it hears the beeps in time. Needs speakers the mic can actually hear."
 mic_label = "Test microphone"
 mode_description = "Which pipeline to test. Both runs the studio leg and then the instant one."
 mode_label = "Recording mode"
-no_cli = "The Cap command-line tool was not found next to this build, so the report will cover your environment only."
-no_cli_sync = "The Cap command-line tool was not found next to this build, so the sync test could not run."
+no_cli = "The Capwise command-line tool was not found next to this build, so the report will cover your environment only."
+no_cli_sync = "The Capwise command-line tool was not found next to this build, so the sync test could not run."
 run = "Run Diagnostic"
 run_again = "Run Again"
-send = "Send to Cap"
+send = "Send to Capwise"
 sending = "Sending..."
 show_file = "Show File"
 stop_recording_first = "Stop the current recording before running a diagnostic."
 title = "Diagnostic Report"
 try_again = "Try Again"
-warning_body = "A fullscreen window flashes black and white while 1kHz beeps play through your speakers, and Cap records it and measures how far the picture and the sound have drifted apart. Leave the machine alone while it runs. Both modes together take a couple of minutes."
+warning_body = "A fullscreen window flashes black and white while 1kHz beeps play through your speakers, and Capwise records it and measures how far the picture and the sound have drifted apart. Leave the machine alone while it runs. Both modes together take a couple of minutes."
 warning_title = "The test takes over your screen and makes noise."
 
 [settings.feedback.diagnostic.verdict]
@@ -636,13 +637,13 @@ activating = "Activating..."
 active_title = "Desktop license"
 checking = "Checking…"
 deactivate = "Deactivate License"
-description = "Your Cap plan and desktop license, in one place."
-desktop_description = "Your desktop license covers commercial recording and editing. Cap Pro adds cloud sharing and collaboration features."
+description = "Your Capwise plan and desktop license, in one place."
+desktop_description = "Your desktop license covers commercial recording and editing. Capwise Pro adds cloud sharing and collaboration features."
 desktop_name = "Desktop License"
 expires = "Expires"
 explore_description = "Compare current pricing and everything included on our website."
 explore_desktop = "Desktop License · Commercial use of the desktop recorder and editor."
-explore_pro = "Cap Pro · A desktop license, plus cloud sharing, AI features and collaboration."
+explore_pro = "Capwise Pro · A desktop license, plus cloud sharing, AI features and collaboration."
 explore_title = "Explore plans"
 free_description = "Record and edit locally for personal use. Choose a paid plan for commercial use or more cloud features."
 have_key = "Have a license key?"
@@ -655,14 +656,14 @@ pro_description = "Your account includes cloud sharing, Pro features and a deskt
 refresh = "Refresh plan"
 refresh_failed = "Couldn't refresh your plan. Please try again."
 save_failed = "Failed to save the license"
-sign_in_hint = "Already have Cap Pro? Sign in with your account from the sidebar."
+sign_in_hint = "Already have Capwise Pro? Sign in with your account from the sidebar."
 title = "Plan & license"
 view_pricing = "View plans & pricing ↗"
 
 [settings.integrations]
 configure = "Configure"
-description = "Configure integrations to extend Cap's functionality and connect with third-party services."
-google_drive_description = "Connect Google Drive for new shareable link uploads. Cap stores new videos in a private Cap folder in your Drive and continues serving them through Cap after normal access checks."
+description = "Configure integrations to extend Capwise's functionality and connect with third-party services."
+google_drive_description = "Connect Google Drive for new shareable link uploads. Capwise stores new videos in a private Capwise folder in your Drive and continues serving them through Capwise after normal access checks."
 managed = "Managed by your organization"
 managed_by = { text = "Managed by your organization: {organization}", context = "{organization} is the name of the user's organization." }
 request_timed_out = "The request timed out"
@@ -680,7 +681,7 @@ deleted = "S3 configuration deleted successfully"
 endpoint = "Endpoint"
 fetch_failed = "Failed to fetch S3 config"
 guide = "Storage Config Guide"
-guide_intro = { text = "It should take under 10 minutes to set up and connect your storage bucket to Cap. View the\u00A0{guide}\u00A0to get started.", context = "{guide} is the link text settings.integrations.s3.guide. Keep the non-breaking spaces around it." }
+guide_intro = { text = "It should take under 10 minutes to set up and connect your storage bucket to Capwise. View the\u00A0{guide}\u00A0to get started.", context = "{guide} is the link text settings.integrations.s3.guide. Keep the non-breaking spaces around it." }
 other_provider = "Other S3-Compatible"
 provider = "Storage Provider"
 region = "Region"
@@ -703,7 +704,7 @@ cached = { text = "Cached {time}", context = "{time} is a date and time such as 
 connect = "Connect Google Drive"
 connect_failed = "Failed to start Google Drive connection"
 connected_inactive = "Connected but not active"
-connection_description = "Google Drive stores new uploads in a private Cap folder in your Drive. Existing Cap-hosted and S3 videos keep using their current storage."
+connection_description = "Google Drive stores new uploads in a private Capwise folder in your Drive. Existing Capwise-hosted and S3 videos keep using their current storage."
 connection_title = "Connection"
 disconnect = "Disconnect"
 disconnect_failed = "Failed to disconnect Google Drive"
@@ -737,12 +738,12 @@ add_condition = "Add condition"
 auto_name_empty = { text = "{trigger} automation", context = "{trigger} is a settings.automations.trigger.*.noun." }
 browse = "Browse"
 check_compatibility = "Check compatibility"
-compatibility_checked = "Compatibility checked: this automation doesn't run in Cap yet. Saved rules remain available to the Cap CLI. No actions were run."
+compatibility_checked = "Compatibility checked: this automation doesn't run in Capwise yet. Saved rules remain available to the Capwise CLI. No actions were run."
 condition_never_matches = "This condition never matches for the selected trigger."
 copy_link = "Copy link to clipboard"
-dangerous = "In the Cap CLI, this automation runs commands or sends network requests with your permissions. Only use values you trust."
+dangerous = "In the Capwise CLI, this automation runs commands or sends network requests with your permissions. Only use values you trust."
 delete = "Delete"
-description = "Rules are shared with the Cap CLI. Cap saves these rules but does not run automations yet."
+description = "Rules are shared with the Capwise CLI. Capwise saves these rules but does not run automations yet."
 empty_description = "Pick a template below to get started in one click, or build your own from scratch."
 empty_title = "No automations yet"
 enabled = "Enabled"
@@ -934,7 +935,7 @@ description = "Snap a screenshot and it's right there, ready to paste."
 name = "Auto-copy new screenshots to clipboard"
 
 [settings.automations.template.ocr_screenshot]
-description = "Cap reads the text in your screenshot and copies it for you."
+description = "Capwise reads the text in your screenshot and copies it for you."
 name = "Pull the text out of screenshots"
 
 [settings.automations.template.save_screenshot]
@@ -989,10 +990,10 @@ system_audio_on = { text = "Record System Audio", max_px = 180, size = 14 }
 
 [main.device.access]
 allow_access = { text = "Allow access", max_px = 130, size = 11 }
-camera_denied = "Cap can't use your camera. Turn it on in System Settings."
-camera_needed = "Cap needs your OK to use your camera."
-microphone_denied = "Cap can't use your microphone. Turn it on in System Settings."
-microphone_needed = "Cap needs your OK to use your microphone."
+camera_denied = "Capwise can't use your camera. Turn it on in System Settings."
+camera_needed = "Capwise needs your OK to use your camera."
+microphone_denied = "Capwise can't use your microphone. Turn it on in System Settings."
+microphone_needed = "Capwise needs your OK to use your microphone."
 open_system_settings = "Open System Settings"
 turn_on_in_settings = { text = "Turn on in Settings", max_px = 130, size = 11 }
 
@@ -1086,7 +1087,7 @@ personal = "Personal"
 
 [main.recording]
 cancel = "Cancel Recording"
-paused_notice = "Recording paused. Cap will hide before resuming."
+paused_notice = "Recording paused. Capwise will hide before resuming."
 resume = "Resume"
 starting = "Starting..."
 starts_in = { text = "Recording starts in {remaining}", context = "{remaining} is a number of seconds." }
@@ -1105,14 +1106,14 @@ title = "Incomplete Recording"
 
 [main.recovery.error]
 nothing_saved = { text = "No video was saved before this recording stopped, so there is nothing to recover. Its files are still in {path}.", context = "{path} is a folder path." }
-rebuild_failed = { text = "Cap could not rebuild this recording ({error}). Nothing was deleted, and the original files are in {path}.", context = "{error} is a technical error message, usually in English. {path} is a folder path." }
+rebuild_failed = { text = "Capwise could not rebuild this recording ({error}). Nothing was deleted, and the original files are in {path}.", context = "{error} is a technical error message, usually in English. {path} is a folder path." }
 storage = { text = "There is not enough free space to recover this recording ({error}). Free up some space and press Recover again. Nothing was deleted, and the files are in {path}.", context = "{error} is a technical error message, usually in English. {path} is a folder path." }
 
 [main.sign_in]
 message = "Instant Mode uploads while you record, so your shareable link is ready the moment you stop."
 not_now = "Not now"
 open_browser_again = "Open browser again"
-pending_message = "Finish signing in to Cap in your browser. Cap comes back here and opens the recorder when you're done."
+pending_message = "Finish signing in to Capwise in your browser. Capwise comes back here and opens the recorder when you're done."
 sign_in = "Sign In"
 timed_out = "Sign in timed out. Try again."
 title = "Sign in to use Instant Mode"
@@ -1121,7 +1122,7 @@ waiting = "Waiting for your browser"
 
 [main.storage]
 blocked = { text = "Only {available} GB is available on your recording drive. Free up space so at least 512 MB is available before recording.", context = "{available} is a number with two decimals, such as 0.40." }
-can_start = { text = "Only {available} GB is available on your recording drive. Cap will stop automatically if storage gets too low, preserving your recording.", context = "{available} is a number with two decimals, such as 3.25." }
+can_start = { text = "Only {available} GB is available on your recording drive. Capwise will stop automatically if storage gets too low, preserving your recording.", context = "{available} is a number with two decimals, such as 3.25." }
 check_failed = { text = "Could not check recording storage: {error}", context = "{error} is a technical error message, usually in English." }
 record_anyway = "Record anyway"
 title = "Low storage"
@@ -1141,7 +1142,7 @@ window = { text = "Window", max_px = 100, size = 12 }
 
 [controls]
 disk_full_resume = "Not enough disk space to resume. Free up space and try again, or press Stop to save."
-low_storage = "Low storage. Cap will stop soon to save your recording."
+low_storage = "Low storage. Capwise will stop soon to save your recording."
 paused_for_sleep = "Recording paused because your Mac went to sleep. Resume when you're ready, or press Stop to save it."
 
 [controls.confirm]
@@ -1182,7 +1183,7 @@ mirror_message = "Your camera preview is not mirrored."
 mirror_title = "Mirror unavailable"
 
 [camera.issue]
-access_message = "Click to allow Cap to use your camera in System Settings."
+access_message = "Click to allow Capwise to use your camera in System Settings."
 access_title = "Camera access needed"
 generic = "The selected camera could not be started. Choose another camera or reconnect this one."
 invalid_format = "This camera did not report a usable capture format."
@@ -1198,8 +1199,8 @@ cutout = { text = "Cutout", context = "Tiny 7px label under the background blur 
 
 [onboarding.customize]
 footer = "Change any of these at any time in Settings"
-subtitle = "Customize everything from keyboard shortcuts to storage. Cap adapts to your workflow."
-title = "Make Cap yours"
+subtitle = "Customize everything from keyboard shortcuts to storage. Capwise adapts to your workflow."
+title = "Make Capwise yours"
 
 [onboarding.customize.domain]
 description = "Use your own domain for shareable links instead of cap.so"
@@ -1222,7 +1223,7 @@ background = "BACKGROUND"
 copied = "Copied!"
 copied_to_clipboard = "Copied to clipboard"
 copy = "Copy"
-editor = "Cap Editor"
+editor = "Capwise Editor"
 export = "Export"
 export_complete = "Export complete!"
 exporting = "Exporting..."
@@ -1251,15 +1252,15 @@ subtitle = "Everything you need to know to get started."
 title = "Frequently Asked Questions"
 
 [onboarding.faq.free]
-answer = "Cap is free for personal use. For teams and commercial use, check out our pricing plans."
-question = "Is Cap free to use?"
+answer = "Capwise is free for personal use. For teams and commercial use, check out our pricing plans."
+question = "Is Capwise free to use?"
 
 [onboarding.faq.instant_vs_studio]
 answer = "Instant mode uploads as you record — stop recording and you'll have a shareable link immediately. Studio mode records locally in full quality, letting you edit with backgrounds, effects, and more before sharing."
 question = "What's the difference between Instant and Studio?"
 
 [onboarding.faq.sharing]
-answer = "In Instant mode, you get a shareable link automatically when you stop recording. In Studio mode, export your edited video and share via Cap's cloud or save locally."
+answer = "In Instant mode, you get a shareable link automatically when you stop recording. In Studio mode, export your edited video and share via Capwise's cloud or save locally."
 question = "How does sharing work?"
 
 [onboarding.faq.shortcuts]
@@ -1267,7 +1268,7 @@ answer = "Head to Settings → Shortcuts at any time to customize all your keybo
 question = "Can I change my shortcuts later?"
 
 [onboarding.faq.storage]
-answer = "All recordings are stored locally on your computer. In Instant mode, they're also uploaded to Cap's cloud for easy sharing. You can manage storage in Settings."
+answer = "All recordings are stored locally on your computer. In Instant mode, they're also uploaded to Capwise's cloud for easy sharing. You can manage storage in Settings."
 question = "Where are my recordings stored?"
 
 [onboarding.modes.instant]
@@ -1299,20 +1300,20 @@ title = "Studio Mode"
 
 [onboarding.nav]
 back = "←  Back"
-continue_to_cap = "Continue to Cap"
+continue_to_cap = "Continue to Capwise"
 keyboard_hint = "Press Enter ↵ or use ← → arrow keys"
 next = "Continue"
 permissions_needed = "Allow the required permissions to continue"
-relaunch = "Relaunch Cap"
+relaunch = "Relaunch Capwise"
 skip = "Skip the tour"
-start = "Start Using Cap"
+start = "Start Using Capwise"
 
 [onboarding.overview]
-subtitle = "Whether you need speed, studio quality, or a quick screenshot — Cap has a mode for it."
+subtitle = "Whether you need speed, studio quality, or a quick screenshot — Capwise has a mode for it."
 title = "One app, every workflow"
 
 [onboarding.toggle]
-subtitle = "Toggle between modes with a single click from the main Cap window."
+subtitle = "Toggle between modes with a single click from the main Capwise window."
 title = "Switch modes anytime"
 
 [onboarding.welcome]
@@ -1332,7 +1333,7 @@ restart = "Restart to update…"
 
 [settings.general.updates.download_policy]
 auto = "Auto"
-description = "Choose whether Cap downloads updates automatically."
+description = "Choose whether Capwise downloads updates automatically."
 label = "Update downloads"
 manual = "Ask first"
 never = "Never"
@@ -1384,20 +1385,20 @@ no_microphone_body = "This recording will not include your voice."
 open_recording_failed = { text = "Opening this recording failed: {error}", context = "{error} is a technical error message, usually in English." }
 
 [dialog.capture]
-approve_shortcut = "Approve a recording shortcut, or activate the Cap Stop tray icon when it appears. Recording has not started."
+approve_shortcut = "Approve a recording shortcut, or activate the Capwise Stop tray icon when it appears. Recording has not started."
 area_unavailable = "The selected area changed or is no longer available. Select it again."
 camera_needs_x11 = "Instant camera overlays require an X11 desktop on Linux"
-camera_notice = "Cap will hide its camera preview and recording controls. Any selected camera will keep recording as a separate editable track."
-camera_notice_instant = "Cap will hide its preview and controls. Any selected camera will appear at its preview position with the selected shape and effects. Keep the whole preview inside the capture area. Opening Cap will stop this Instant recording before showing its controls."
+camera_notice = "Capwise will hide its camera preview and recording controls. Any selected camera will keep recording as a separate editable track."
+camera_notice_instant = "Capwise will hide its preview and controls. Any selected camera will appear at its preview position with the selected shape and effects. Keep the whole preview inside the capture area. Opening Capwise will stop this Instant recording before showing its controls."
 camera_outside_area = "Move the whole camera preview inside the capture area before starting Instant recording"
 camera_preview_closed = "Open the selected camera preview before Instant recording"
 cleanup_incomplete = { text = "Recording cleanup is incomplete: {error}. A new recording is blocked.", context = "{error} is a technical error message, usually in English." }
 devices_changed = "Selected devices changed. Start again to confirm the new recording inputs."
 devices_changed_before_start = "Selected devices changed before recording started. Start again to confirm the inputs."
-shortcut_conflict = "Ctrl+Shift+F9 is assigned to another Cap action. Change that shortcut before recording."
-shortcut_description = { text = "Start or stop this Cap recording", context = "Shown by the Linux desktop when it asks the user to approve a global shortcut." }
+shortcut_conflict = "Ctrl+Shift+F9 is assigned to another Capwise action. Change that shortcut before recording."
+shortcut_description = { text = "Start or stop this Capwise recording", context = "Shown by the Linux desktop when it asks the user to approve a global shortcut." }
 shortcut_hint = { text = "Press and release {shortcut} to start. Use the same shortcut to stop. This temporary shortcut does not change your settings.", context = "{shortcut} is a key combination such as Ctrl+Shift+F9." }
-tray_stop_hint = "Activate the Cap Stop tray icon to start. Activate the same icon again to stop. Recording will not start until you use that control."
+tray_stop_hint = "Activate the Capwise Stop tray icon to start. Activate the same icon again to stop. Recording will not start until you use that control."
 window_unavailable = "The selected window is no longer available. Select it again."
 
 [dialog.clipboard]
@@ -1416,7 +1417,7 @@ editor_changed = "The editor changed while deletion was being confirmed. The rec
 editor_closed = "The editor has already closed. The recording was not deleted."
 failed = { text = "Recording deletion failed: {error}", context = "{error} is a technical error message, usually in English." }
 failed_title = "Could not delete recording"
-finishing_body = "Cap is waiting for recording cleanup to finish before completing this deletion."
+finishing_body = "Capwise is waiting for recording cleanup to finish before completing this deletion."
 finishing_title = "Deletion is still finishing"
 in_use = { text = "This recording is still in use. Finish or cancel its upload and try again: {error}", context = "{error} is a technical error message, usually in English." }
 outside_library = "This recording is outside the recordings library. Its files were not changed."
@@ -1430,7 +1431,7 @@ export_filter = { text = "Export", context = "File type name in the save dialog'
 failed = { text = "The file dialog could not complete: {error}", context = "{error} is a technical error message, usually in English." }
 images_filter = { text = "Images", context = "File type name in the file picker's filter list." }
 unavailable_title = "File dialog unavailable"
-unconfirmed = "Cap could not confirm that the file dialog closed. Close any remaining file dialog and restart Cap before trying again."
+unconfirmed = "Capwise could not confirm that the file dialog closed. Close any remaining file dialog and restart Capwise before trying again."
 
 [dialog.mode_select]
 instant = "Share instantly with a link. Uploads as you record."
@@ -1446,7 +1447,7 @@ stopping = "Low storage. Stopping and saving your recording…"
 
 [dialog.teleprompter]
 cue_markers = { text = "Cue markers", context = "Toggle in a 192px popover." }
-hidden = "This window is hidden from Cap recordings"
+hidden = "This window is hidden from Capwise recordings"
 mirror = { text = "Mirror text", context = "Toggle in a 192px popover." }
 paused = "Scrolling paused with recording"
 placeholder = "Paste or type your script…"
@@ -1523,7 +1524,7 @@ take_screenshot = "Take Screenshot"
 size_title = "Change window size"
 size_body = "Resize the window to a ratio or an exact size before you record."
 size_needs_accessibility_title = { text = "Resizing needs Accessibility", context = "Accessibility is the macOS System Settings pane; use the name macOS shows in this language." }
-size_needs_accessibility_body = { text = "Turn on Accessibility for Cap in System Settings to resize other apps' windows.", context = "Accessibility is the macOS System Settings pane; use the name macOS shows in this language." }
+size_needs_accessibility_body = { text = "Turn on Accessibility for Capwise in System Settings to resize other apps' windows.", context = "Accessibility is the macOS System Settings pane; use the name macOS shows in this language." }
 size_unavailable_title = "Resizing isn't available"
 size_unavailable_body = "Wayland doesn't let apps resize other apps' windows."
 focus_title = { text = "Focus mode", context = "Card title above a switch in the window picker. Focus mode centres the picked window and records only it." }
@@ -1539,7 +1540,7 @@ center_description = { text = "Move the window to the middle when you pick it", 
 [permission.guide]
 accessibility_body = { text = "Drop it on the Accessibility list above, then make sure its switch is on.", context = "Accessibility is the name of the macOS System Settings pane; use the name macOS shows in this language." }
 screen_body = { text = "Drop it on the Screen & System Audio Recording list above, then make sure its switch is on.", context = "Screen & System Audio Recording is the name of the macOS System Settings pane; use the name macOS shows in this language." }
-title = "Drag Cap into the list"
+title = "Drag Capwise into the list"
 
 [permission.name]
 accessibility = "Accessibility"
@@ -1550,18 +1551,18 @@ screen_recording = "Screen Recording"
 [permission.onboarding]
 open_settings_again = "Open System Settings again"
 skip = "Skip for now"
-switch_on_title = "Switch Cap on in System Settings"
+switch_on_title = "Switch Capwise on in System Settings"
 
 [permission.onboarding.accessibility]
 allow = "Allow accessibility"
-body = "Accessibility lets Cap see your clicks and cursor, on this Mac only, so auto zoom knows where to look."
+body = "Accessibility lets Capwise see your clicks and cursor, on this Mac only, so auto zoom knows where to look."
 done_body = "Auto zoom can follow your clicks."
 done_title = "Accessibility is on"
-title = "Let Cap follow your cursor"
+title = "Let Capwise follow your cursor"
 
 [permission.onboarding.all_set]
-body = "Cap has everything it needs. Next, a quick look at what it can do."
-regained = "Thanks. Cap can record again."
+body = "Capwise has everything it needs. Next, a quick look at what it can do."
+regained = "Thanks. Capwise can record again."
 title = "You're all set"
 
 [permission.onboarding.camera]
@@ -1569,41 +1570,41 @@ allow = "Allow camera"
 body = "Show yourself in a corner of your recordings. Skip it if you don't need it."
 done_body = "You can add your camera to any recording."
 done_title = "Camera is on"
-title = "Let Cap see you"
+title = "Let Capwise see you"
 
 [permission.onboarding.checklist]
 lede = "macOS asks you to OK a few things first. It only takes a minute."
 regained_lede = "Something was switched off in System Settings. Turn it back on to keep recording."
-regained_title = "Cap needs a permission back"
-title = "Let's get Cap ready"
+regained_title = "Capwise needs a permission back"
+title = "Let's get Capwise ready"
 
 [permission.onboarding.hint]
-drag_into_list = "Drag Cap from the panel under System Settings into the list. Already listed? Just switch it on."
-find_in_list = "Find Cap in the list and switch it on. If macOS asked first, choose Open System Settings."
-no_prompt = "No prompt showed up? Switch Cap on in System Settings."
-open_settings = "Open System Settings, find Cap in the list and switch it on."
-turned_off = "It was turned off earlier, so switch Cap on in System Settings. Or skip it for now."
+drag_into_list = "Drag Capwise from the panel under System Settings into the list. Already listed? Just switch it on."
+find_in_list = "Find Capwise in the list and switch it on. If macOS asked first, choose Open System Settings."
+no_prompt = "No prompt showed up? Switch Capwise on in System Settings."
+open_settings = "Open System Settings, find Capwise in the list and switch it on."
+turned_off = "It was turned off earlier, so switch Capwise on in System Settings. Or skip it for now."
 
 [permission.onboarding.microphone]
 allow = "Allow microphone"
 body = "Add your voice to your recordings. You can skip this and turn it on later."
 done_body = "Your voice can be in your recordings."
 done_title = "Microphone is on"
-title = "Let Cap hear you"
+title = "Let Capwise hear you"
 
 [permission.onboarding.relaunch]
-body = "macOS turns on screen recording once Cap restarts. You'll pick up right here."
+body = "macOS turns on screen recording once Capwise restarts. You'll pick up right here."
 button = { text = "Relaunch", context = "Small secondary button beside a hint." }
-hint = "Switched on but still waiting? Restart Cap to apply it."
-later = "macOS applies it after Cap restarts. You can do that once you're done here."
+hint = "Switched on but still waiting? Restart Capwise to apply it."
+later = "macOS applies it after Capwise restarts. You can do that once you're done here."
 title = "One restart and you're set"
 
 [permission.onboarding.screen]
 allow = "Allow screen recording"
-body = "Screen Recording lets Cap capture your displays, windows and system audio."
-done_body = "Cap can capture your screen."
+body = "Screen Recording lets Capwise capture your displays, windows and system audio."
+done_body = "Capwise can capture your screen."
 done_title = "Screen recording is on"
-title = "Let Cap see your screen"
+title = "Let Capwise see your screen"
 
 [permission.onboarding.status]
 allowed = "Allowed"
@@ -1672,7 +1673,7 @@ renderer_not_running = "The screenshot renderer is not running"
 renderer_stopped = "The renderer stopped before the export finished"
 save_project = { text = "Error saving project: {error}", context = "{error} is a technical error message, usually in English." }
 serialize = { text = "Failed to serialize screenshot config: {error}", context = "{error} is a technical error message, usually in English." }
-sign_in_to_share = "Sign in to Cap in your browser, then share again"
+sign_in_to_share = "Sign in to Capwise in your browser, then share again"
 too_large = { text = "Image dimensions exceed maximum: {width}x{height}", context = "{width} and {height} are pixel sizes." }
 upgrade_required = "This feature requires an upgraded plan"
 upload_task = { text = "The upload task failed: {error}", context = "{error} is a technical error message, usually in English." }
@@ -2032,7 +2033,7 @@ remove_default = "Remove as default"
 rename = "Rename"
 rename_title = "Rename Style Preset"
 save = "Save style as preset"
-save_failed = "Couldn't save presets. Cap can't write its settings file."
+save_failed = "Couldn't save presets. Capwise can't write its settings file."
 set_default = "Set as default"
 tooltip = "Style presets"
 update = "Update with current style"
@@ -2123,7 +2124,7 @@ title = "Title"
 typewriter = "Typewriter"
 
 [editor.panel.text_preset.sample]
-caption = "Recorded with Cap"
+caption = "Recorded with Capwise"
 cinematic = "Chapter one"
 gradient = "Beautiful text"
 headline = "Ship faster"
@@ -2134,7 +2135,7 @@ name_tag = { text = "Richie · Founder", context = "Richie is a person's name an
 neon = "Glow up"
 quote = "“Make it feel effortless”"
 sticker = "Boom!"
-title = { text = "Introducing Cap", context = "Sample text a new text segment takes when this preset is applied. Cap is the product name." }
+title = { text = "Introducing Capwise", context = "Sample text a new text segment takes when this preset is applied. Capwise is the product name." }
 typewriter = "typing it out…"
 
 [editor.panel.text_segment]
@@ -2339,7 +2340,7 @@ text_item = "Text"
 append_error = { text = "Failed to add clip: {message}", context = "{message} explains why." }
 append_error_title = "Recording Error"
 back = "Back to editor"
-cap_filter = { text = "Cap Recording", context = "File type filter name for .cap recordings in the file picker." }
+cap_filter = { text = "Capwise Recording", context = "File type filter name for .cap recordings in the file picker." }
 clip = { text = "Clip {number}", context = "Default clip name; {number} starts at 1." }
 empty_description = "Record or import a clip and it will show up here."
 empty_title = "No clips yet"
@@ -2365,11 +2366,11 @@ instant_target = "Instant mode recordings cannot be edited"
 into_itself = "Cannot import a recording into itself"
 missing_video = "Missing video file: {path}"
 no_duration = "Imported video has no valid duration"
-not_a_project = "Select a Cap project folder"
-source_empty = "Source Cap project has no recording segments"
-source_failed = "Source Cap project failed: {error}"
-source_recording = "Source Cap project is still recording"
-source_unimportable = "Source Cap project has no importable recording segments"
+not_a_project = "Select a Capwise project folder"
+source_empty = "Source Capwise project has no recording segments"
+source_failed = "Source Capwise project failed: {error}"
+source_recording = "Source Capwise project is still recording"
+source_unimportable = "Source Capwise project has no importable recording segments"
 unfinished_target = "Finish or recover this recording before importing a clip"
 unsupported_video = "Unsupported video file: {path}"
 
@@ -2428,7 +2429,7 @@ open_file = "Open File"
 open_link = "Open link"
 retry_copy = "Retry Copy"
 reuploaded = "Your latest edit is ready at the same link"
-uploaded = "Your Cap has been uploaded successfully"
+uploaded = "Your Capwise has been uploaded successfully"
 
 [editor.export.estimate]
 gigabytes = "~{value} GB"
@@ -2576,11 +2577,11 @@ generate = "Generate Captions"
 generate_failed = "Failed to generate captions: {reason}"
 generating = "Generating..."
 highlight_color = "Highlight Color"
-highlight_note = "This is the first version of captions in Cap. Active word highlighting may be inaccurate in some situations. We're working on a fix for this and it will be released in upcoming versions."
+highlight_note = "This is the first version of captions in Capwise. Active word highlighting may be inaccurate in some situations. We're working on a fix for this and it will be released in upcoming versions."
 highlight_style = "Highlight Style"
 horizontal_position = "Horizontal Position"
 intel_unavailable = "Parakeet caption models are unavailable on Intel Macs. Whisper models remain available."
-keep_open = "Keep Cap open while the model downloads. Editor reloads will reconnect automatically."
+keep_open = "Keep Capwise open while the model downloads. Editor reloads will reconnect automatically."
 language_label = "Language"
 model_downloaded = "{model} model downloaded"
 model_label = "Model"
@@ -2724,7 +2725,7 @@ top_left = "Top Left"
 top_right = "Top Right"
 
 [editor.tabs.sync]
-auto_description = "Cap calculated these offsets automatically to keep audio in sync with the video. Adjust them if anything still sounds off."
+auto_description = "Capwise calculated these offsets automatically to keep audio in sync with the video. Adjust them if anything still sounds off."
 auto_synced = "Auto-synced"
 camera = "Camera Offset"
 clip = "Clip {number}"
@@ -3146,32 +3147,32 @@ zoom_all = { one = "All {count} selected", other = "All {count} selected", conte
 zoom_some = { one = "{count} of {total} selected", other = "{count} of {total} selected", context = "Some of the zoom segments on the track are selected." }
 
 [dialog.quit]
-canceled = { text = "Quit canceled: {error}. Cap will stay open so you can finish or recover the recording.", context = "{error} explains why the recording could not stop." }
+canceled = { text = "Quit canceled: {error}. Capwise will stay open so you can finish or recover the recording.", context = "{error} explains why the recording could not stop." }
 files_kept = "Everything recorded so far stays in the recording's folder."
-keep_open = "Keep Cap Open"
-pending = "Quit canceled because recording shutdown is still pending. Cap will stay open. Use Stop once available, then try Quit again."
+keep_open = "Keep Capwise Open"
+pending = "Quit canceled because recording shutdown is still pending. Capwise will stay open. Use Stop once available, then try Quit again."
 quit_anyway = "Quit Anyway"
-still_open = "Cap is still open"
-unconfirmed = "Quit canceled because recording shutdown could not be confirmed. Cap will stay open. Use Stop, then try Quit again."
+still_open = "Capwise is still open"
+unconfirmed = "Quit canceled because recording shutdown could not be confirmed. Capwise will stay open. Use Stop, then try Quit again."
 
 [dialog.update]
-already_getting = { text = "Cap is already getting version {version} ready.", context = "{version} is a version number such as 0.6.2." }
-available = { text = "Version {version} of Cap is available. Cap will download it in the background and let you know when it's ready to install.", context = "{version} is a version number such as 0.6.2." }
-busy = "Finish your recording, export, upload, import, or transcription task before updating Cap."
-busy_title = "Cap is busy"
+already_getting = { text = "Capwise is already getting version {version} ready.", context = "{version} is a version number such as 0.6.2." }
+available = { text = "Version {version} of Capwise is available. Capwise will download it in the background and let you know when it's ready to install.", context = "{version} is a version number such as 0.6.2." }
+busy = "Finish your recording, export, upload, import, or transcription task before updating Capwise."
+busy_title = "Capwise is busy"
 check_failed = { text = "Couldn't check for updates: {error}", context = "{error} is a technical reason, usually in English." }
 download = { text = "Download", context = "Button: download the update now." }
 download_failed = { text = "Couldn't download version {version}: {error}", context = "{error} is a technical reason, usually in English." }
-failed = { text = "{message}\n\nYou can always download the latest version from Cap.so/download.", context = "{message} is one of the other update error sentences." }
+failed = { text = "{message}\n\nYou can always download the latest version from Capwise.so/download.", context = "{message} is one of the other update error sentences." }
 install_failed = { text = "Couldn't install version {version}: {error}", context = "{error} is a technical reason, usually in English." }
 later = "Later"
-no_update = "You're already using the latest version of Cap."
+no_update = "You're already using the latest version of Capwise."
 no_update_title = "No Update Available"
 not_now = "Not Now"
-package_not_installed = "The package wasn't installed. Approve the system prompt, or install it from Cap.so/download."
-ready = { text = "Cap {version} is ready. Restart Cap to finish updating.", context = "{version} is a version number such as 0.6.2." }
+package_not_installed = "The package wasn't installed. Approve the system prompt, or install it from Capwise.so/download."
+ready = { text = "Capwise {version} is ready. Restart Capwise to finish updating.", context = "{version} is a version number such as 0.6.2." }
 restart_now = "Restart Now"
-title = { text = "Update Cap", context = "Title of every update dialog." }
+title = { text = "Update Capwise", context = "Title of every update dialog." }
 
 [message.recording]
 task_failed = "Recording task failed."
@@ -3191,12 +3192,12 @@ finalization_no_result = "Recording finalization ended without a result. Your fi
 stopped_metadata_unsaved = "Capture stopped, but stopped metadata could not be saved; local files preserved"
 discard_stop_unconfirmed = "Studio discard stop is unconfirmed; local files preserved"
 discard_unconfirmed = "Studio discard is unconfirmed; local files preserved"
-crashed_before_capture = "Cap closed before this recording captured anything."
+crashed_before_capture = "Capwise closed before this recording captured anything."
 capture_state_failed = { text = "Could not confirm capture state: {error}", context = "{error} is a technical error message, usually in English." }
 completion_task_failed = { text = "Recording completion task failed: {error}", context = "{error} is a technical error message, usually in English." }
 stop_task_failed = { text = "Stop task failed: {error}", context = "{error} is a technical error message, usually in English." }
 control_task_failed = { text = "Capture control task failed: {error}", context = "{error} is a technical error message, usually in English." }
-restart_hide_failed = { text = "Restart could not hide Cap windows: {error}", context = "{error} is a technical error message, usually in English." }
+restart_hide_failed = { text = "Restart could not hide Capwise windows: {error}", context = "{error} is a technical error message, usually in English." }
 discard_task_failed = { text = "Studio discard task failed: {error}; cleanup is unconfirmed", context = "{error} is a technical error message, usually in English." }
 cancel_task_failed = { text = "Cancel task failed: {error}. Cleanup is unconfirmed; retry Stop.", context = "{error} is a technical error message, usually in English." }
 then_cleanup_unconfirmed_shortcut = { text = "{error}. Capture cleanup is unconfirmed. Use Ctrl+Shift+F9 to retry Stop.", context = "{error} is a technical error message, usually in English. Ctrl+Shift+F9 is a keyboard shortcut; keep it as written." }
@@ -3207,10 +3208,10 @@ then_use_stop_control = { text = "{error}. Use your recording Stop control to st
 then_discard_stopped = { text = "{error}; discard/restart stopped, local recording retained", context = "{error} is a technical error message, usually in English." }
 then_files_preserved = { text = "{error}. Failed recording files were preserved.", context = "{error} is a technical error message, usually in English." }
 then_cleanup_retry = { text = "{error}. Cleanup is unconfirmed; retry Stop.", context = "{error} is a technical error message, usually in English." }
-low_storage_preserved = { text = "Low storage. Your recording files are preserved at {path}. Free up space, then recover the recording in Cap.", context = "{path} is a folder path." }
+low_storage_preserved = { text = "Low storage. Your recording files are preserved at {path}. Free up space, then recover the recording in Capwise.", context = "{path} is a folder path." }
 
 [message.permission]
-unavailable = { text = "{permission} access is unavailable. Allow Cap in System Settings > Privacy & Security > {permission}, then select the device again.", context = "{permission} is the macOS privacy pane name, such as Camera or Microphone, already translated." }
+unavailable = { text = "{permission} access is unavailable. Allow Capwise in System Settings > Privacy & Security > {permission}, then select the device again.", context = "{permission} is the macOS privacy pane name, such as Camera or Microphone, already translated." }
 
 [message.upload]
 offline = { text = "offline", context = "Shown under a recording whose upload is waiting for the network. Written in lowercase in English." }
@@ -3234,3 +3235,22 @@ verification_failed = { text = "Recording verification failed: {status}", contex
 
 [message.cli]
 binary_missing = { text = "Bundled CLI binary not found at {path}", context = "{path} is a file path." }
+
+[settings.about]
+tagline = "Beautiful screen recordings that stay on your Mac."
+check_updates = "Check for updates"
+report_issue = "Report an issue"
+guide = "User guide"
+source = "Source code"
+wechat_title = "Follow on WeChat"
+wechat_hint = "Search 向阳乔木推荐看"
+reward_title = "Buy me a coffee"
+link_blog = "Blog"
+link_picks = "Picks"
+reward_hint = "Scan with WeChat"
+privacy = "Recordings never leave this Mac. Capwise only goes online to download a transcription model you ask for."
+license = { text = "© {year} 向阳乔木 · AGPL-3.0 · Based on Cap", context = "{year} is the current year. Cap is the open-source project Capwise is built on; keep the name." }
+
+[brand]
+name = "Capwise"
+alt_name = "灵录"

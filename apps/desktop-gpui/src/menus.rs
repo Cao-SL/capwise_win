@@ -43,6 +43,7 @@ use crate::{
 /// `productName` in `tauri.conf.json`, which is what macOS renames the first
 /// submenu to.
 pub const APP_NAME: &str = "Capwise";
+const REPO_URL: &str = "https://github.com/joeseesun/capwise";
 
 struct MenuRegistration(UpdateRow);
 
@@ -169,8 +170,7 @@ pub fn init(cx: &mut App) {
     cx.bind_keys(bindings());
 
     cx.on_action(|_: &About, cx: &mut App| {
-        cx.spawn(async move |_| platform::show_about_panel(APP_NAME, app_version()))
-            .detach();
+        cx.defer(|cx: &mut App| app_windows::open_settings(Page::About, cx));
     });
     cx.on_action(|_: &CheckForUpdate, cx: &mut App| {
         updates::check_manually(cx);
@@ -202,18 +202,16 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &ImportMedia, cx: &mut App| {
         crate::import::pick_and_import_media(cx);
     });
-    cx.on_action(|_: &Changelog, cx: &mut App| {
-        app_windows::open_settings(crate::settings_window::Page::Changelog, cx)
-    });
+    cx.on_action(|_: &Changelog, cx: &mut App| cx.open_url(&format!("{REPO_URL}/releases")));
     cx.on_action(|_: &HelpDashboard, cx: &mut App| cx.open_url("https://cap.so/dashboard"));
-    cx.on_action(|_: &HelpDocs, cx: &mut App| cx.open_url("https://cap.so/docs"));
+    cx.on_action(|_: &HelpDocs, cx: &mut App| cx.open_url(&format!("{REPO_URL}#readme")));
     cx.on_action(|_: &HelpFaq, cx: &mut App| cx.open_url("https://cap.so/faq"));
     cx.on_action(|_: &HelpSelfHosting, cx: &mut App| cx.open_url("https://cap.so/self-hosting"));
     cx.on_action(|_: &HelpCenter, cx: &mut App| cx.open_url("https://help.cap.so/"));
     cx.on_action(|_: &HelpStatus, cx: &mut App| cx.open_url("https://cap.openstatus.dev/"));
     cx.on_action(|_: &HelpDiscord, cx: &mut App| cx.open_url("https://cap.link/discord"));
     cx.on_action(|_: &HelpFeedback, cx: &mut App| {
-        app_windows::open_settings(crate::settings_window::Page::Feedback, cx)
+        cx.open_url(&format!("{REPO_URL}/issues/new"))
     });
     cx.on_action(|_: &CloseWindow, cx: &mut App| close_key_window(cx));
     cx.on_action(|_: &Minimize, cx: &mut App| with_key_native(cx, platform::minimize_native));
@@ -349,16 +347,13 @@ fn settings_shortcut_allowed(idle: bool, onboarding_open: bool, hotkeys_paused: 
 ///
 /// One-to-one with `build_macos_app_menu`, including the empty Help submenu
 /// (`Submenu::with_id_and_items(.., HELP_SUBMENU_ID, "Help", true, &[])`).
-pub fn build_menus(update_status: &updates::UpdateStatus, settings_enabled: bool) -> Vec<Menu> {
-    let update_row = UpdateRow::of(update_status);
-
+pub fn build_menus(_update_status: &updates::UpdateStatus, settings_enabled: bool) -> Vec<Menu> {
     vec![
         Menu {
             name: APP_NAME.into(),
             disabled: false,
             items: vec![
                 MenuItem::action(tr::menu::app::about(), About),
-                MenuItem::action(update_row.title, CheckForUpdate).disabled(!update_row.enabled),
                 MenuItem::separator(),
                 MenuItem::action(tr::menu::app::settings(), OpenSettings)
                     .disabled(!settings_enabled),
@@ -434,17 +429,10 @@ pub fn build_menus(update_status: &updates::UpdateStatus, settings_enabled: bool
             name: tr::menu::help::title().into(),
             disabled: false,
             items: vec![
-                MenuItem::action(tr::menu::help::feedback(), HelpFeedback),
-                MenuItem::separator(),
+                MenuItem::action(tr::menu::help::documentation(), HelpDocs),
                 MenuItem::action(tr::menu::help::changelog(), Changelog),
                 MenuItem::separator(),
-                MenuItem::action(tr::menu::help::dashboard(), HelpDashboard),
-                MenuItem::action(tr::menu::help::documentation(), HelpDocs),
-                MenuItem::action(tr::menu::help::faq(), HelpFaq),
-                MenuItem::action(tr::menu::help::self_hosting(), HelpSelfHosting),
-                MenuItem::action(tr::menu::help::help_center(), HelpCenter),
-                MenuItem::action(tr::menu::help::system_status(), HelpStatus),
-                MenuItem::action(tr::menu::help::discord(), HelpDiscord),
+                MenuItem::action(tr::menu::help::feedback(), HelpFeedback),
             ],
         },
     ]

@@ -17,10 +17,10 @@ search = "Rechercher"
 yes = "Oui"
 
 [menu.app]
-about = "À propos de Cap"
-hide = "Masquer Cap"
+about = "À propos de Capwise"
+hide = "Masquer Capwise"
 hide_others = "Masquer les autres"
-quit = "Quitter Cap"
+quit = "Quitter Capwise"
 services = "Services"
 settings = "Réglages…"
 
@@ -74,7 +74,7 @@ no_recent_items = "Aucun élément récent"
 open_main_window = "Ouvrir la fenêtre principale"
 previous = "Récents"
 recording_mode = "Mode d'enregistrement"
-quit = "Quitter Cap"
+quit = "Quitter Capwise"
 record_area = "Enregistrer une zone"
 record_display = "Enregistrer l'écran"
 record_window = "Enregistrer une fenêtre"
@@ -85,9 +85,9 @@ screenshot_window = "Capturer une fenêtre"
 select_mode = "Choisir le mode"
 settings = "Paramètres"
 take_screenshot = "Prendre une capture d'écran"
-tooltip_recording = "Cap - Arrêter l'enregistrement"
+tooltip_recording = "Capwise - Arrêter l'enregistrement"
 upload_logs = "Envoyer les journaux"
-version = "Cap v{version}"
+version = "Capwise v{version}"
 view_all_recordings = "Voir tous les enregistrements"
 view_all_screenshots = "Voir toutes les captures d'écran"
 
@@ -112,28 +112,28 @@ shortcuts = "Raccourcis"
 transcription = "Transcription"
 
 [settings.general.language]
-description = "Choisissez la langue d'affichage de Cap."
+description = "Choisissez la langue d'affichage de Capwise."
 label = "Langue de l'app"
 system_default = "Langue du système ({language})"
 title = "Langue"
 
 [settings.general.appearance]
 dark = "Sombre"
-description = "Adaptez Cap au thème de votre système ou choisissez une apparence fixe."
+description = "Adaptez Capwise au thème de votre système ou choisissez une apparence fixe."
 light = "Clair"
 system = "Système"
 title = "Apparence"
 
 [settings.general.app]
-description = "Choisissez comment Cap apparaît sur votre système."
+description = "Choisissez comment Capwise apparaît sur votre système."
 title = "App"
 
 [settings.general.app.dock_icon]
-description = "Garder Cap dans le Dock même lorsqu'aucune fenêtre n'est ouverte."
+description = "Garder Capwise dans le Dock même lorsqu'aucune fenêtre n'est ouverte."
 label = "Toujours afficher l'icône dans le Dock"
 
 [settings.general.app.notifications]
-description = "Afficher des notifications pour les copies dans le presse-papiers, les fichiers enregistrés, etc. Vous devrez peut-être autoriser Cap dans les réglages de notifications de votre système."
+description = "Afficher des notifications pour les copies dans le presse-papiers, les fichiers enregistrés, etc. Vous devrez peut-être autoriser Capwise dans les réglages de notifications de votre système."
 label = "Notifications système"
 
 [settings.general.recording]
@@ -169,7 +169,7 @@ description = "Indique si la fenêtre d'enregistrement doit se rouvrir."
 label = "Après la suppression d'un enregistrement"
 
 [settings.general.recording.delete_after_upload]
-description = "Cap supprime le fichier local une fois la mise en ligne réussie."
+description = "Capwise supprime le fichier local une fois la mise en ligne réussie."
 label = "Supprimer les enregistrements Instant après la mise en ligne"
 
 [settings.general.recording.crash_recovery]
@@ -213,7 +213,7 @@ label = "Émettre un son pour les repères"
 [settings.general.storage]
 choose_folder = "Choisir un dossier"
 default_location = "Par défaut (Application Support)"
-description = "Le dossier où Cap sauvegarde vos enregistrements."
+description = "Le dossier où Capwise sauvegarde vos enregistrements."
 title = "Stockage"
 
 [settings.general.project_name]
@@ -238,25 +238,25 @@ time_values = "l'heure de l'enregistrement"
 description = "Masquer des fenêtres dans les enregistrements."
 empty = "Aucune fenêtre n'est exclue pour le moment."
 missing_body = "Les fenêtres de caméra, de paramètres ou d'enregistrement peuvent apparaître comme des rectangles noirs dans les enregistrements d'écran. Manquantes : {names}."
-missing_title = "Des fenêtres Cap recommandées ne sont pas exclues"
+missing_title = "Des fenêtres Capwise recommandées ne sont pas exclues"
 restore = "Restaurer"
 title = "Fenêtres exclues"
 
 [settings.general.updates]
-description = "Choisissez les versions de Cap que vous recevez."
+description = "Choisissez les versions de Capwise que vous recevez."
 nightly_description = "Les versions les plus récentes, mises à jour automatiquement en arrière-plan lorsque vous n'enregistrez pas et n'exportez pas. Peuvent être instables."
 nightly_switch_back = "Revenir au canal Stable vous ramènera à la dernière version stable, qui peut être plus ancienne que votre version actuelle."
 stable_description = "Versions numérotées (recommandé)"
 title = "Mises à jour"
 
 [settings.general.updates.channel]
-description = "Le canal de publication à partir duquel Cap se met à jour."
+description = "Le canal de publication à partir duquel Capwise se met à jour."
 label = "Canal de mise à jour"
 
 [settings.general.self_host]
 confirm_change = "Voulez-vous vraiment remplacer l'URL du serveur par « {origin} » ? Vous devrez vous reconnecter."
-description = "Ne modifiez ce réglage que si vous hébergez votre propre instance de Cap Web."
-server_url = "URL du serveur Cap"
+description = "Ne modifiez ce réglage que si vous hébergez votre propre instance de Capwise Web."
+server_url = "URL du serveur Capwise"
 title = "Auto-hébergement"
 update = "Mettre à jour"
 
@@ -264,7 +264,7 @@ update = "Mettre à jour"
 title = "Confidentialité"
 
 [settings.general.privacy.telemetry]
-description = "Cap utilise une télémétrie anonyme pour améliorer sa fiabilité et corriger des bugs. Nous ne collectons jamais le contenu des enregistrements, les titres de fenêtres, les chemins de fichiers ni aucune information personnelle."
+description = "Capwise utilise une télémétrie anonyme pour améliorer sa fiabilité et corriger des bugs. Nous ne collectons jamais le contenu des enregistrements, les titres de fenêtres, les chemins de fichiers ni aucune information personnelle."
 label = "Partager la télémétrie anonyme"
 [settings.prompt]
 ok = "OK"
@@ -338,7 +338,7 @@ ultra_description = "Conserve un maximum de détails pour les retouches poussée
 
 [settings.quality.instant]
 description = "Mis en ligne pendant l'enregistrement, le lien est prêt dès que vous arrêtez. Pour une qualité optimale, utilisez le mode Studio : il enregistre dans la meilleure qualité permise par votre écran et vous pouvez exporter jusqu'en 4K."
-free_plan = "720p avec l'offre gratuite. Cap Pro enregistre jusqu'en 4K."
+free_plan = "720p avec l'offre gratuite. Capwise Pro enregistre jusqu'en 4K."
 max_resolution = "Résolution maximale"
 res_1080p = "Texte net pour une taille de mise en ligne raisonnable."
 res_1440p = "Plus de détails pour les grands écrans haute résolution."
@@ -367,7 +367,7 @@ screen_region = "Zone de l'écran"
 [settings.options.post_studio]
 do_nothing = "Ne rien faire"
 open_editor = "Ouvrir l'éditeur"
-show_cap = "Afficher Cap"
+show_cap = "Afficher Capwise"
 
 [settings.options.post_screenshot]
 copy = "Copier dans le presse-papiers"
@@ -386,12 +386,12 @@ quarter = "Quart"
 
 [settings.shortcuts]
 blocked_while_recording = "Impossible de modifier les raccourcis tant que cet enregistrement utilise sa touche d'arrêt. Arrêtez d'abord l'enregistrement."
-cancelling_description = "Pour les captures et les enregistrements lancés depuis un raccourci ou l'icône de Cap."
+cancelling_description = "Pour les captures et les enregistrements lancés depuis un raccourci ou l'icône de Capwise."
 cancelling_title = "Annulation"
 needs_modifier_macos = "Incluez ⌘, ⌃ ou ⌥ pour que le raccourci ne gêne pas la saisie."
 needs_modifier_other = "Incluez Ctrl, Alt ou Win pour que le raccourci ne gêne pas la saisie."
 record_shortcut = "Définir un raccourci"
-recording_description = "Lancez un enregistrement sans ouvrir Cap au préalable."
+recording_description = "Lancez un enregistrement sans ouvrir Capwise au préalable."
 recording_hint = "Appuyez sur les touches à utiliser. Échap annule, Suppr retire le raccourci."
 recording_title = "Enregistrement"
 saved = "Enregistré. Appuyez sur {keys} dans n'importe quelle app pour {effect}."
@@ -404,7 +404,7 @@ unsupported_key = "Cette touche ne peut pas être utilisée dans un raccourci. E
 while_recording_title = "Pendant l'enregistrement"
 
 [settings.shortcuts.after_screenshot]
-hint = "Pour chaque capture, depuis un raccourci ou depuis Cap"
+hint = "Pour chaque capture, depuis un raccourci ou depuis Capwise"
 title = "Après une capture d'écran"
 
 [settings.shortcuts.after_studio]
@@ -420,15 +420,15 @@ hint = "Esc ou fermeture du sélecteur"
 title = "Quand vous annulez"
 
 [settings.shortcuts.outcome]
-cancel_show_cap = "Afficher Cap"
+cancel_show_cap = "Afficher Capwise"
 cancel_show_cap_hint = "Retour à l'enregistreur"
 cancel_stay_hidden = "Rester masqué"
-cancel_stay_hidden_hint = "Sauf si Cap était ouvert"
+cancel_stay_hidden_hint = "Sauf si Capwise était ouvert"
 instant_copy_link = "Copier le lien seulement"
 instant_copy_link_hint = "Rien ne s'ouvre"
 instant_open_link = "Ouvrir le lien"
 instant_open_link_hint = "Dans votre navigateur"
-instant_show_cap = "Afficher Cap"
+instant_show_cap = "Afficher Capwise"
 instant_show_cap_hint = "Retour à l'enregistreur"
 saved_to_library = "Enregistré dans la bibliothèque"
 screenshot_copy = "Copier"
@@ -441,7 +441,7 @@ screenshot_open_editor_hint = "Annoter d'abord"
 studio_do_nothing = "Ne rien faire"
 studio_open_editor = "Ouvrir l'éditeur"
 studio_open_editor_hint = "Modifier tout de suite"
-studio_show_cap = "Afficher Cap"
+studio_show_cap = "Afficher Capwise"
 studio_show_cap_hint = "Retour à l'enregistreur"
 
 [settings.shortcuts.label]
@@ -466,7 +466,7 @@ add_marker = "marquer ce moment dans un enregistrement Studio"
 cycle_mode = "passer d'un mode à l'autre : Studio, Instant et Capture d'écran"
 instant_copy = "enregistrer l'écran ou la fenêtre sélectionnés en mode Instant, puis copier le lien de partage à l'arrêt"
 instant_copy_and_open = "enregistrer l'écran ou la fenêtre sélectionnés en mode Instant, puis copier et ouvrir le lien de partage à l'arrêt"
-open_picker = "ouvrir Cap pour choisir ce que vous voulez enregistrer"
+open_picker = "ouvrir Capwise pour choisir ce que vous voulez enregistrer"
 pause = "mettre en pause l'enregistrement en cours, ou le reprendre"
 picker_area_instant = "sélectionner une zone, puis l'enregistrer en mode Instant"
 picker_area_screenshot = "sélectionner une zone, puis en faire une capture d'écran"
@@ -499,7 +499,7 @@ add_marker = "Marquer ce moment dans un enregistrement Studio."
 cycle_mode = "Passer d'un mode à l'autre : Studio, Instant et Capture d'écran."
 instant_copy = "Enregistrer l'écran ou la fenêtre sélectionnés en mode Instant, puis copier le lien de partage à l'arrêt."
 instant_copy_and_open = "Enregistrer l'écran ou la fenêtre sélectionnés en mode Instant, puis copier et ouvrir le lien de partage à l'arrêt."
-open_picker = "Ouvrir Cap pour choisir ce que vous voulez enregistrer."
+open_picker = "Ouvrir Capwise pour choisir ce que vous voulez enregistrer."
 pause = "Mettre en pause l'enregistrement en cours, ou le reprendre."
 picker_area_instant = "Sélectionner une zone, puis l'enregistrer en mode Instant."
 picker_area_screenshot = "Sélectionner une zone, puis en faire une capture d'écran."
@@ -530,7 +530,7 @@ studio_open_editor = "Enregistrer l'écran ou la fenêtre sélectionnés en mode
 [settings.cli]
 command = "Commande"
 copy = "Copier"
-description = "Installez la commande Cap pour les terminaux, les agents, les scripts et l'automatisation locale."
+description = "Installez la commande Capwise pour les terminaux, les agents, les scripts et l'automatisation locale."
 install = "Installer la CLI"
 installed = "Installée"
 installing = "Installation..."
@@ -570,14 +570,14 @@ app_version = "Version de l'app"
 capture_support = "Prise en charge de la capture"
 capture_supported = "Capture d'écran : prise en charge"
 capture_unsupported = "Capture d'écran : non prise en charge"
-community_description = "Des questions, des idées à partager, ou simplement envie de discuter ? Rejoignez la communauté Discord de Cap."
+community_description = "Des questions, des idées à partager, ou simplement envie de discuter ? Rejoignez la communauté Discord de Capwise."
 community_title = "Rejoindre la communauté"
-debug_description = "Envoyez vos journaux pour nous aider à diagnostiquer les problèmes de Cap. Aucune information personnelle n'est incluse."
+debug_description = "Envoyez vos journaux pour nous aider à diagnostiquer les problèmes de Capwise. Aucune information personnelle n'est incluse."
 debug_title = "Informations de débogage"
-description = "Aidez-nous à améliorer Cap en envoyant vos commentaires ou en signalant des bugs. Nous nous en occupons tout de suite."
+description = "Aidez-nous à améliorer Capwise en envoyant vos commentaires ou en signalant des bugs. Nous nous en occupons tout de suite."
 join_discord = "Rejoindre Discord"
 operating_system = "Système d'exploitation"
-placeholder = "Dites-nous ce que vous pensez de Cap..."
+placeholder = "Dites-nous ce que vous pensez de Capwise..."
 submit = "Envoyer les commentaires"
 submit_failed = "Échec de l'envoi des commentaires"
 submitting = "Envoi..."
@@ -591,24 +591,24 @@ upload_sent = "Envoyé. Merci, cela nous aide à trouver le problème."
 uploading = "Envoi..."
 
 [settings.feedback.diagnostic]
-confirm_body = "Cap va occuper votre écran avec un motif clignotant et émettre des bips forts pendant environ {seconds} secondes par chaîne de traitement. Retirez votre casque, laissez le volume audible et ne touchez pas à l'ordinateur jusqu'à la fin."
+confirm_body = "Capwise va occuper votre écran avec un motif clignotant et émettre des bips forts pendant environ {seconds} secondes par chaîne de traitement. Retirez votre casque, laissez le volume audible et ne touchez pas à l'ordinateur jusqu'à la fin."
 confirm_title = "Lancer le diagnostic ?"
 description = "Enregistre une courte mire clignotante et sonore, mesure le décalage entre l'image et le son, et relève vos écrans, caméras, micros, espace disque et paramètres d'enregistrement. Rien n'est envoyé tant que vous ne le décidez pas."
 mic_description = "Enregistre aussi votre micro et vérifie qu'il capte les bips à temps. Nécessite des haut-parleurs que le micro peut réellement entendre."
 mic_label = "Tester le micro"
 mode_description = "La chaîne de traitement à tester. « Les deux » exécute d'abord la partie Studio, puis la partie Instant."
 mode_label = "Mode d'enregistrement"
-no_cli = "L'outil en ligne de commande Cap est introuvable à côté de cette version, le rapport ne couvrira donc que votre environnement."
-no_cli_sync = "L'outil en ligne de commande Cap est introuvable à côté de cette version, le test de synchronisation n'a donc pas pu s'exécuter."
+no_cli = "L'outil en ligne de commande Capwise est introuvable à côté de cette version, le rapport ne couvrira donc que votre environnement."
+no_cli_sync = "L'outil en ligne de commande Capwise est introuvable à côté de cette version, le test de synchronisation n'a donc pas pu s'exécuter."
 run = "Lancer le diagnostic"
 run_again = "Relancer"
-send = "Envoyer à Cap"
+send = "Envoyer à Capwise"
 sending = "Envoi..."
 show_file = "Afficher le fichier"
 stop_recording_first = "Arrêtez l'enregistrement en cours avant de lancer un diagnostic."
 title = "Rapport de diagnostic"
 try_again = "Réessayer"
-warning_body = "Une fenêtre plein écran clignote en noir et blanc pendant que des bips à 1 kHz sortent de vos haut-parleurs ; Cap l'enregistre et mesure le décalage entre l'image et le son. Ne touchez pas à l'ordinateur pendant le test. Les deux modes prennent quelques minutes au total."
+warning_body = "Une fenêtre plein écran clignote en noir et blanc pendant que des bips à 1 kHz sortent de vos haut-parleurs ; Capwise l'enregistre et mesure le décalage entre l'image et le son. Ne touchez pas à l'ordinateur pendant le test. Les deux modes prennent quelques minutes au total."
 warning_title = "Le test occupe votre écran et fait du bruit."
 
 [settings.feedback.diagnostic.verdict]
@@ -634,13 +634,13 @@ activating = "Activation..."
 active_title = "Licence de bureau"
 checking = "Vérification…"
 deactivate = "Désactiver la licence"
-description = "Votre offre Cap et votre licence de bureau, au même endroit."
-desktop_description = "Votre licence de bureau couvre l'enregistrement et le montage à usage commercial. Cap Pro ajoute le partage dans le cloud et les fonctionnalités collaboratives."
+description = "Votre offre Capwise et votre licence de bureau, au même endroit."
+desktop_description = "Votre licence de bureau couvre l'enregistrement et le montage à usage commercial. Capwise Pro ajoute le partage dans le cloud et les fonctionnalités collaboratives."
 desktop_name = "Licence de bureau"
 expires = "Expire le"
 explore_description = "Comparez les tarifs actuels et tout ce qui est inclus sur notre site."
 explore_desktop = "Licence de bureau · Usage commercial de l'enregistreur et de l'éditeur de bureau."
-explore_pro = "Cap Pro · Une licence de bureau, plus le partage dans le cloud, les fonctionnalités IA et la collaboration."
+explore_pro = "Capwise Pro · Une licence de bureau, plus le partage dans le cloud, les fonctionnalités IA et la collaboration."
 explore_title = "Découvrir les offres"
 free_description = "Enregistrez et montez en local pour un usage personnel. Choisissez une offre payante pour un usage commercial ou plus de fonctionnalités cloud."
 have_key = "Vous avez une clé de licence ?"
@@ -653,14 +653,14 @@ pro_description = "Votre compte inclut le partage dans le cloud, les fonctionnal
 refresh = "Actualiser l'offre"
 refresh_failed = "Impossible d'actualiser votre offre. Veuillez réessayer."
 save_failed = "Impossible d'enregistrer la licence"
-sign_in_hint = "Vous avez déjà Cap Pro ? Connectez-vous à votre compte depuis la barre latérale."
+sign_in_hint = "Vous avez déjà Capwise Pro ? Connectez-vous à votre compte depuis la barre latérale."
 title = "Offre et licence"
 view_pricing = "Voir les offres et tarifs ↗"
 
 [settings.integrations]
 configure = "Configurer"
-description = "Configurez des intégrations pour étendre les fonctionnalités de Cap et le connecter à des services tiers."
-google_drive_description = "Connectez Google Drive pour les nouvelles mises en ligne avec lien de partage. Cap stocke les nouvelles vidéos dans un dossier Cap privé de votre Drive et continue de les diffuser via Cap après les vérifications d'accès habituelles."
+description = "Configurez des intégrations pour étendre les fonctionnalités de Capwise et le connecter à des services tiers."
+google_drive_description = "Connectez Google Drive pour les nouvelles mises en ligne avec lien de partage. Capwise stocke les nouvelles vidéos dans un dossier Capwise privé de votre Drive et continue de les diffuser via Capwise après les vérifications d'accès habituelles."
 managed = "Géré par votre organisation"
 managed_by = "Géré par votre organisation : {organization}"
 request_timed_out = "La requête a expiré"
@@ -678,7 +678,7 @@ deleted = "Configuration S3 supprimée"
 endpoint = "Point de terminaison"
 fetch_failed = "Impossible de récupérer la configuration S3"
 guide = "guide de configuration du stockage"
-guide_intro = "La configuration et la connexion de votre bucket à Cap devraient prendre moins de 10 minutes. Consultez le\u00A0{guide}\u00A0pour commencer."
+guide_intro = "La configuration et la connexion de votre bucket à Capwise devraient prendre moins de 10 minutes. Consultez le\u00A0{guide}\u00A0pour commencer."
 other_provider = "Autre compatible S3"
 provider = "Fournisseur de stockage"
 region = "Région"
@@ -701,7 +701,7 @@ cached = "En cache depuis le {time}"
 connect = "Connecter Google Drive"
 connect_failed = "Impossible de lancer la connexion à Google Drive"
 connected_inactive = "Connecté mais inactif"
-connection_description = "Google Drive stocke les nouvelles mises en ligne dans un dossier Cap privé de votre Drive. Les vidéos existantes hébergées par Cap ou sur S3 restent sur leur stockage actuel."
+connection_description = "Google Drive stocke les nouvelles mises en ligne dans un dossier Capwise privé de votre Drive. Les vidéos existantes hébergées par Capwise ou sur S3 restent sur leur stockage actuel."
 connection_title = "Connexion"
 disconnect = "Déconnecter"
 disconnect_failed = "Impossible de déconnecter Google Drive"
@@ -735,12 +735,12 @@ add_condition = "Ajouter une condition"
 auto_name_empty = "Automatisation {trigger}"
 browse = "Parcourir"
 check_compatibility = "Vérifier la compatibilité"
-compatibility_checked = "Compatibilité vérifiée : cette automatisation ne s'exécute pas encore dans Cap. Les règles enregistrées restent disponibles pour la CLI Cap. Aucune action n'a été exécutée."
+compatibility_checked = "Compatibilité vérifiée : cette automatisation ne s'exécute pas encore dans Capwise. Les règles enregistrées restent disponibles pour la CLI Capwise. Aucune action n'a été exécutée."
 condition_never_matches = "Cette condition ne correspond jamais au déclencheur sélectionné."
 copy_link = "Copier le lien dans le presse-papiers"
-dangerous = "Dans la CLI Cap, cette automatisation exécute des commandes ou envoie des requêtes réseau avec vos autorisations. N'utilisez que des valeurs de confiance."
+dangerous = "Dans la CLI Capwise, cette automatisation exécute des commandes ou envoie des requêtes réseau avec vos autorisations. N'utilisez que des valeurs de confiance."
 delete = "Supprimer"
-description = "Les règles sont partagées avec la CLI Cap. Cap enregistre ces règles mais n'exécute pas encore les automatisations."
+description = "Les règles sont partagées avec la CLI Capwise. Capwise enregistre ces règles mais n'exécute pas encore les automatisations."
 empty_description = "Choisissez un modèle ci-dessous pour démarrer en un clic, ou créez la vôtre de zéro."
 empty_title = "Aucune automatisation pour l'instant"
 enabled = "Activée"
@@ -932,7 +932,7 @@ description = "Prenez une capture, elle est aussitôt prête à coller."
 name = "Copier automatiquement les nouvelles captures"
 
 [settings.automations.template.ocr_screenshot]
-description = "Cap lit le texte de votre capture et le copie pour vous."
+description = "Capwise lit le texte de votre capture et le copie pour vous."
 name = "Extraire le texte des captures"
 
 [settings.automations.template.save_screenshot]
@@ -987,10 +987,10 @@ system_audio_on = "Avec l'audio système"
 
 [main.device.access]
 allow_access = "Autoriser l'accès"
-camera_denied = "Cap ne peut pas utiliser votre caméra. Activez-la dans Réglages Système."
-camera_needed = "Cap a besoin de votre accord pour utiliser votre caméra."
-microphone_denied = "Cap ne peut pas utiliser votre micro. Activez-le dans Réglages Système."
-microphone_needed = "Cap a besoin de votre accord pour utiliser votre micro."
+camera_denied = "Capwise ne peut pas utiliser votre caméra. Activez-la dans Réglages Système."
+camera_needed = "Capwise a besoin de votre accord pour utiliser votre caméra."
+microphone_denied = "Capwise ne peut pas utiliser votre micro. Activez-le dans Réglages Système."
+microphone_needed = "Capwise a besoin de votre accord pour utiliser votre micro."
 open_system_settings = "Ouvrir Réglages Système"
 turn_on_in_settings = "Activer dans Réglages"
 
@@ -1084,7 +1084,7 @@ personal = "Personnel"
 
 [main.recording]
 cancel = "Annuler l'enregistrement"
-paused_notice = "Enregistrement en pause. Cap se masquera avant de reprendre."
+paused_notice = "Enregistrement en pause. Capwise se masquera avant de reprendre."
 resume = "Reprendre"
 starting = "Démarrage..."
 starts_in = "L'enregistrement commence dans {remaining}"
@@ -1103,14 +1103,14 @@ title = "Enregistrement incomplet"
 
 [main.recovery.error]
 nothing_saved = "Aucune vidéo n'a été enregistrée avant l'arrêt de cet enregistrement, il n'y a donc rien à récupérer. Ses fichiers se trouvent toujours dans {path}."
-rebuild_failed = "Cap n'a pas pu reconstruire cet enregistrement ({error}). Rien n'a été supprimé et les fichiers d'origine se trouvent dans {path}."
+rebuild_failed = "Capwise n'a pas pu reconstruire cet enregistrement ({error}). Rien n'a été supprimé et les fichiers d'origine se trouvent dans {path}."
 storage = "L'espace libre est insuffisant pour récupérer cet enregistrement ({error}). Libérez de l'espace puis cliquez à nouveau sur Récupérer. Rien n'a été supprimé et les fichiers se trouvent dans {path}."
 
 [main.sign_in]
 message = "Le mode Instant met en ligne pendant l'enregistrement : votre lien de partage est prêt dès l'arrêt."
 not_now = "Pas maintenant"
 open_browser_again = "Rouvrir le navigateur"
-pending_message = "Terminez la connexion à Cap dans votre navigateur. Cap reviendra ici et ouvrira l'enregistreur une fois que ce sera fait."
+pending_message = "Terminez la connexion à Capwise dans votre navigateur. Capwise reviendra ici et ouvrira l'enregistreur une fois que ce sera fait."
 sign_in = "Se connecter"
 timed_out = "Le délai de connexion a expiré. Réessayez."
 title = "Connectez-vous pour utiliser le mode Instant"
@@ -1119,7 +1119,7 @@ waiting = "En attente de votre navigateur"
 
 [main.storage]
 blocked = "Seulement {available} Go disponibles sur le disque d'enregistrement. Libérez de l'espace pour avoir au moins 512 Mo disponibles avant d'enregistrer."
-can_start = "Seulement {available} Go disponibles sur le disque d'enregistrement. Cap s'arrêtera automatiquement si l'espace devient trop faible, en préservant votre enregistrement."
+can_start = "Seulement {available} Go disponibles sur le disque d'enregistrement. Capwise s'arrêtera automatiquement si l'espace devient trop faible, en préservant votre enregistrement."
 check_failed = "Impossible de vérifier l'espace d'enregistrement : {error}"
 record_anyway = "Enregistrer quand même"
 title = "Espace de stockage faible"
@@ -1139,7 +1139,7 @@ window = "Fenêtre"
 
 [controls]
 disk_full_resume = "Espace disque insuffisant pour reprendre. Libérez de l'espace et réessayez, ou appuyez sur Arrêter pour enregistrer."
-low_storage = "Espace de stockage faible. Cap va bientôt s'arrêter pour préserver votre enregistrement."
+low_storage = "Espace de stockage faible. Capwise va bientôt s'arrêter pour préserver votre enregistrement."
 paused_for_sleep = "L'enregistrement a été mis en pause car votre Mac s'est mis en veille. Reprenez-le quand vous êtes prêt, ou cliquez sur Arrêter pour l'enregistrer."
 
 [controls.confirm]
@@ -1180,7 +1180,7 @@ mirror_message = "L'aperçu de votre caméra n'est pas en miroir."
 mirror_title = "Miroir indisponible"
 
 [camera.issue]
-access_message = "Cliquez pour autoriser Cap à utiliser votre caméra dans Réglages Système."
+access_message = "Cliquez pour autoriser Capwise à utiliser votre caméra dans Réglages Système."
 access_title = "Accès à la caméra requis"
 generic = "La caméra sélectionnée n'a pas pu démarrer. Choisissez une autre caméra ou reconnectez celle-ci."
 invalid_format = "Cette caméra n'a signalé aucun format de capture utilisable."
@@ -1196,8 +1196,8 @@ cutout = "Détouré"
 
 [onboarding.customize]
 footer = "Vous pouvez modifier tout cela à tout moment dans les paramètres"
-subtitle = "Personnalisez tout, des raccourcis clavier au stockage. Cap s'adapte à votre façon de travailler."
-title = "Faites de Cap le vôtre"
+subtitle = "Personnalisez tout, des raccourcis clavier au stockage. Capwise s'adapte à votre façon de travailler."
+title = "Faites de Capwise le vôtre"
 
 [onboarding.customize.domain]
 description = "Utilisez votre propre domaine pour les liens de partage au lieu de cap.so"
@@ -1220,7 +1220,7 @@ background = "ARRIÈRE-PLAN"
 copied = "Copié !"
 copied_to_clipboard = "Copié dans le presse-papiers"
 copy = "Copier"
-editor = "Éditeur Cap"
+editor = "Éditeur Capwise"
 export = "Exporter"
 export_complete = "Exportation terminée !"
 exporting = "Exportation..."
@@ -1249,15 +1249,15 @@ subtitle = "Tout ce qu'il faut savoir pour bien démarrer."
 title = "Questions fréquentes"
 
 [onboarding.faq.free]
-answer = "Cap est gratuit pour un usage personnel. Pour les équipes et un usage commercial, consultez nos offres."
-question = "Cap est-il gratuit ?"
+answer = "Capwise est gratuit pour un usage personnel. Pour les équipes et un usage commercial, consultez nos offres."
+question = "Capwise est-il gratuit ?"
 
 [onboarding.faq.instant_vs_studio]
 answer = "Le mode Instant met en ligne pendant l'enregistrement : arrêtez et votre lien de partage est prêt immédiatement. Le mode Studio enregistre localement en pleine qualité pour que vous puissiez ajouter arrière-plans, effets et plus encore avant de partager."
 question = "Quelle est la différence entre Instant et Studio ?"
 
 [onboarding.faq.sharing]
-answer = "En mode Instant, vous obtenez automatiquement un lien de partage à l'arrêt de l'enregistrement. En mode Studio, exportez votre vidéo montée puis partagez-la via le cloud de Cap ou enregistrez-la localement."
+answer = "En mode Instant, vous obtenez automatiquement un lien de partage à l'arrêt de l'enregistrement. En mode Studio, exportez votre vidéo montée puis partagez-la via le cloud de Capwise ou enregistrez-la localement."
 question = "Comment fonctionne le partage ?"
 
 [onboarding.faq.shortcuts]
@@ -1265,7 +1265,7 @@ answer = "Rendez-vous dans Paramètres → Raccourcis à tout moment pour person
 question = "Puis-je modifier mes raccourcis plus tard ?"
 
 [onboarding.faq.storage]
-answer = "Tous les enregistrements sont stockés localement sur votre ordinateur. En mode Instant, ils sont aussi mis en ligne sur le cloud de Cap pour faciliter le partage. Vous pouvez gérer le stockage dans les paramètres."
+answer = "Tous les enregistrements sont stockés localement sur votre ordinateur. En mode Instant, ils sont aussi mis en ligne sur le cloud de Capwise pour faciliter le partage. Vous pouvez gérer le stockage dans les paramètres."
 question = "Où sont stockés mes enregistrements ?"
 
 [onboarding.modes.instant]
@@ -1297,20 +1297,20 @@ title = "Mode Studio"
 
 [onboarding.nav]
 back = "←  Retour"
-continue_to_cap = "Continuer vers Cap"
+continue_to_cap = "Continuer vers Capwise"
 keyboard_hint = "Appuyez sur Entrée ↵ ou utilisez les flèches ← →"
 next = "Continuer"
 permissions_needed = "Accordez les autorisations requises pour continuer"
-relaunch = "Relancer Cap"
+relaunch = "Relancer Capwise"
 skip = "Passer la visite"
-start = "Commencer à utiliser Cap"
+start = "Commencer à utiliser Capwise"
 
 [onboarding.overview]
-subtitle = "Que vous ayez besoin de rapidité, de qualité studio ou d'une capture rapide, Cap a un mode pour cela."
+subtitle = "Que vous ayez besoin de rapidité, de qualité studio ou d'une capture rapide, Capwise a un mode pour cela."
 title = "Une app, tous les usages"
 
 [onboarding.toggle]
-subtitle = "Passez d'un mode à l'autre en un clic depuis la fenêtre principale de Cap."
+subtitle = "Passez d'un mode à l'autre en un clic depuis la fenêtre principale de Capwise."
 title = "Changez de mode à tout moment"
 
 [onboarding.welcome]
@@ -1330,7 +1330,7 @@ restart = "Redémarrer pour mettre à jour…"
 
 [settings.general.updates.download_policy]
 auto = "Automatique"
-description = "Choisissez si Cap télécharge les mises à jour automatiquement."
+description = "Choisissez si Capwise télécharge les mises à jour automatiquement."
 label = "Téléchargements de mises à jour"
 manual = "Demander d'abord"
 never = "Jamais"
@@ -1382,20 +1382,20 @@ no_microphone_body = "Cet enregistrement n'inclura pas votre voix."
 open_recording_failed = "Impossible d'ouvrir cet enregistrement : {error}"
 
 [dialog.capture]
-approve_shortcut = "Approuvez un raccourci d'enregistrement, ou activez l'icône d'arrêt de Cap dans la zone de notification lorsqu'elle apparaît. L'enregistrement n'a pas commencé."
+approve_shortcut = "Approuvez un raccourci d'enregistrement, ou activez l'icône d'arrêt de Capwise dans la zone de notification lorsqu'elle apparaît. L'enregistrement n'a pas commencé."
 area_unavailable = "La zone sélectionnée a changé ou n'est plus disponible. Sélectionnez-la à nouveau."
 camera_needs_x11 = "Sous Linux, les incrustations de caméra en mode Instant nécessitent un bureau X11"
-camera_notice = "Cap masquera son aperçu de caméra et ses commandes d'enregistrement. La caméra sélectionnée continuera d'être enregistrée sur une piste distincte modifiable."
-camera_notice_instant = "Cap masquera son aperçu et ses commandes. La caméra sélectionnée apparaîtra à l'emplacement de son aperçu, avec la forme et les effets choisis. Gardez tout l'aperçu dans la zone de capture. Ouvrir Cap arrêtera cet enregistrement Instant avant d'afficher ses commandes."
+camera_notice = "Capwise masquera son aperçu de caméra et ses commandes d'enregistrement. La caméra sélectionnée continuera d'être enregistrée sur une piste distincte modifiable."
+camera_notice_instant = "Capwise masquera son aperçu et ses commandes. La caméra sélectionnée apparaîtra à l'emplacement de son aperçu, avec la forme et les effets choisis. Gardez tout l'aperçu dans la zone de capture. Ouvrir Capwise arrêtera cet enregistrement Instant avant d'afficher ses commandes."
 camera_outside_area = "Placez tout l'aperçu de la caméra dans la zone de capture avant de lancer l'enregistrement Instant"
 camera_preview_closed = "Ouvrez l'aperçu de la caméra sélectionnée avant l'enregistrement Instant"
 cleanup_incomplete = "Le nettoyage de l'enregistrement est incomplet : {error}. Un nouvel enregistrement est bloqué."
 devices_changed = "Les appareils sélectionnés ont changé. Recommencez pour confirmer les nouvelles entrées d'enregistrement."
 devices_changed_before_start = "Les appareils sélectionnés ont changé avant le début de l'enregistrement. Recommencez pour confirmer les entrées."
-shortcut_conflict = "Ctrl+Shift+F9 est attribué à une autre action de Cap. Modifiez ce raccourci avant d'enregistrer."
-shortcut_description = "Lancer ou arrêter cet enregistrement Cap"
+shortcut_conflict = "Ctrl+Shift+F9 est attribué à une autre action de Capwise. Modifiez ce raccourci avant d'enregistrer."
+shortcut_description = "Lancer ou arrêter cet enregistrement Capwise"
 shortcut_hint = "Appuyez sur {shortcut} puis relâchez pour démarrer. Utilisez le même raccourci pour arrêter. Ce raccourci temporaire ne modifie pas vos réglages."
-tray_stop_hint = "Activez l'icône d'arrêt de Cap dans la zone de notification pour démarrer. Activez-la à nouveau pour arrêter. L'enregistrement ne commencera pas tant que vous n'aurez pas utilisé cette commande."
+tray_stop_hint = "Activez l'icône d'arrêt de Capwise dans la zone de notification pour démarrer. Activez-la à nouveau pour arrêter. L'enregistrement ne commencera pas tant que vous n'aurez pas utilisé cette commande."
 window_unavailable = "La fenêtre sélectionnée n'est plus disponible. Sélectionnez-la à nouveau."
 
 [dialog.clipboard]
@@ -1414,7 +1414,7 @@ editor_changed = "L'éditeur a changé pendant la confirmation de la suppression
 editor_closed = "L'éditeur est déjà fermé. L'enregistrement n'a pas été supprimé."
 failed = "La suppression de l'enregistrement a échoué : {error}"
 failed_title = "Impossible de supprimer l'enregistrement"
-finishing_body = "Cap attend la fin du nettoyage de l'enregistrement avant de terminer cette suppression."
+finishing_body = "Capwise attend la fin du nettoyage de l'enregistrement avant de terminer cette suppression."
 finishing_title = "La suppression est toujours en cours"
 in_use = "Cet enregistrement est encore utilisé. Terminez ou annulez son envoi, puis réessayez : {error}"
 outside_library = "Cet enregistrement se trouve hors de la bibliothèque d'enregistrements. Ses fichiers n'ont pas été modifiés."
@@ -1428,7 +1428,7 @@ export_filter = "Export"
 failed = "La boîte de dialogue de fichier n'a pas pu aboutir : {error}"
 images_filter = "Images"
 unavailable_title = "Boîte de dialogue de fichier indisponible"
-unconfirmed = "Cap n'a pas pu confirmer la fermeture de la boîte de dialogue de fichier. Fermez toute boîte de dialogue restante et redémarrez Cap avant de réessayer."
+unconfirmed = "Capwise n'a pas pu confirmer la fermeture de la boîte de dialogue de fichier. Fermez toute boîte de dialogue restante et redémarrez Capwise avant de réessayer."
 
 [dialog.mode_select]
 instant = "Partagez instantanément avec un lien. L'envoi se fait pendant l'enregistrement."
@@ -1444,7 +1444,7 @@ stopping = "Espace de stockage faible. Arrêt et sauvegarde de votre enregistrem
 
 [dialog.teleprompter]
 cue_markers = "Repères"
-hidden = "Cette fenêtre est masquée dans les enregistrements Cap"
+hidden = "Cette fenêtre est masquée dans les enregistrements Capwise"
 mirror = "Texte en miroir"
 paused = "Défilement en pause avec l'enregistrement"
 placeholder = "Collez ou saisissez votre script…"
@@ -1521,7 +1521,7 @@ take_screenshot = "Prendre une capture d'écran"
 size_title = "Modifier la taille de la fenêtre"
 size_body = "Redimensionner la fenêtre selon un format ou une taille exacte avant d'enregistrer."
 size_needs_accessibility_title = "Le redimensionnement nécessite l'accès Accessibilité"
-size_needs_accessibility_body = "Activez Cap dans Accessibilité, dans Réglages Système, pour redimensionner les fenêtres des autres apps."
+size_needs_accessibility_body = "Activez Capwise dans Accessibilité, dans Réglages Système, pour redimensionner les fenêtres des autres apps."
 size_unavailable_title = "Redimensionnement indisponible"
 size_unavailable_body = "Wayland ne permet pas aux apps de redimensionner les fenêtres d'autres apps."
 focus_title = "Mode focus"
@@ -1537,7 +1537,7 @@ center_description = "Déplace la fenêtre au centre quand vous la choisissez"
 [permission.guide]
 accessibility_body = "Déposez-le dans la liste « Accessibilité » ci-dessus, puis vérifiez que son interrupteur est activé."
 screen_body = "Déposez-le dans la liste « Enregistrement de l'écran et des sons du système » ci-dessus, puis vérifiez que son interrupteur est activé."
-title = "Faites glisser Cap dans la liste"
+title = "Faites glisser Capwise dans la liste"
 
 [permission.name]
 accessibility = "Accessibilité"
@@ -1548,18 +1548,18 @@ screen_recording = "Enregistrement de l'écran"
 [permission.onboarding]
 open_settings_again = "Rouvrir Réglages Système"
 skip = "Ignorer pour l'instant"
-switch_on_title = "Activez Cap dans Réglages Système"
+switch_on_title = "Activez Capwise dans Réglages Système"
 
 [permission.onboarding.accessibility]
 allow = "Autoriser l'accessibilité"
-body = "L'accessibilité permet à Cap de voir vos clics et votre curseur, uniquement sur ce Mac, pour que le zoom automatique sache où regarder."
+body = "L'accessibilité permet à Capwise de voir vos clics et votre curseur, uniquement sur ce Mac, pour que le zoom automatique sache où regarder."
 done_body = "Le zoom automatique peut suivre vos clics."
 done_title = "L'accessibilité est activée"
-title = "Laissez Cap suivre votre curseur"
+title = "Laissez Capwise suivre votre curseur"
 
 [permission.onboarding.all_set]
-body = "Cap a tout ce qu'il lui faut. Voyons maintenant rapidement ce qu'il sait faire."
-regained = "Merci. Cap peut de nouveau enregistrer."
+body = "Capwise a tout ce qu'il lui faut. Voyons maintenant rapidement ce qu'il sait faire."
+regained = "Merci. Capwise peut de nouveau enregistrer."
 title = "Tout est prêt"
 
 [permission.onboarding.camera]
@@ -1567,41 +1567,41 @@ allow = "Autoriser la caméra"
 body = "Apparaissez dans un coin de vos enregistrements. Ignorez cette étape si vous n'en avez pas besoin."
 done_body = "Vous pouvez ajouter votre caméra à n'importe quel enregistrement."
 done_title = "La caméra est activée"
-title = "Laissez Cap vous voir"
+title = "Laissez Capwise vous voir"
 
 [permission.onboarding.checklist]
 lede = "macOS vous demande d'abord d'autoriser quelques éléments. Cela ne prend qu'une minute."
 regained_lede = "Un élément a été désactivé dans Réglages Système. Réactivez-le pour continuer à enregistrer."
-regained_title = "Cap a besoin de récupérer une autorisation"
-title = "Préparons Cap"
+regained_title = "Capwise a besoin de récupérer une autorisation"
+title = "Préparons Capwise"
 
 [permission.onboarding.hint]
-drag_into_list = "Faites glisser Cap depuis le panneau sous Réglages Système vers la liste. Déjà dans la liste ? Activez-le simplement."
-find_in_list = "Trouvez Cap dans la liste et activez-le. Si macOS vous a d'abord posé la question, choisissez « Ouvrir Réglages Système »."
-no_prompt = "Aucune demande n'est apparue ? Activez Cap dans Réglages Système."
-open_settings = "Ouvrez Réglages Système, trouvez Cap dans la liste et activez-le."
-turned_off = "Cette autorisation a été désactivée auparavant : activez Cap dans Réglages Système, ou ignorez cette étape pour l'instant."
+drag_into_list = "Faites glisser Capwise depuis le panneau sous Réglages Système vers la liste. Déjà dans la liste ? Activez-le simplement."
+find_in_list = "Trouvez Capwise dans la liste et activez-le. Si macOS vous a d'abord posé la question, choisissez « Ouvrir Réglages Système »."
+no_prompt = "Aucune demande n'est apparue ? Activez Capwise dans Réglages Système."
+open_settings = "Ouvrez Réglages Système, trouvez Capwise dans la liste et activez-le."
+turned_off = "Cette autorisation a été désactivée auparavant : activez Capwise dans Réglages Système, ou ignorez cette étape pour l'instant."
 
 [permission.onboarding.microphone]
 allow = "Autoriser le micro"
 body = "Ajoutez votre voix à vos enregistrements. Vous pouvez ignorer cette étape et l'activer plus tard."
 done_body = "Votre voix peut figurer dans vos enregistrements."
 done_title = "Le micro est activé"
-title = "Laissez Cap vous entendre"
+title = "Laissez Capwise vous entendre"
 
 [permission.onboarding.relaunch]
-body = "macOS active l'enregistrement de l'écran une fois Cap redémarré. Vous reprendrez ici même."
+body = "macOS active l'enregistrement de l'écran une fois Capwise redémarré. Vous reprendrez ici même."
 button = "Relancer"
-hint = "Activé mais toujours en attente ? Redémarrez Cap pour l'appliquer."
-later = "macOS l'applique après le redémarrage de Cap. Vous pourrez le faire une fois terminé ici."
+hint = "Activé mais toujours en attente ? Redémarrez Capwise pour l'appliquer."
+later = "macOS l'applique après le redémarrage de Capwise. Vous pourrez le faire une fois terminé ici."
 title = "Un redémarrage et c'est prêt"
 
 [permission.onboarding.screen]
 allow = "Autoriser l'enregistrement de l'écran"
-body = "L'enregistrement de l'écran permet à Cap de capturer vos écrans, vos fenêtres et l'audio du système."
-done_body = "Cap peut capturer votre écran."
+body = "L'enregistrement de l'écran permet à Capwise de capturer vos écrans, vos fenêtres et l'audio du système."
+done_body = "Capwise peut capturer votre écran."
 done_title = "L'enregistrement de l'écran est activé"
-title = "Laissez Cap voir votre écran"
+title = "Laissez Capwise voir votre écran"
 
 [permission.onboarding.status]
 allowed = "Autorisé"
@@ -1670,7 +1670,7 @@ renderer_not_running = "Le moteur de rendu des captures d'écran n'est pas lanc�
 renderer_stopped = "Le moteur de rendu s'est arrêté avant la fin de l'exportation"
 save_project = "Erreur lors de l'enregistrement du projet : {error}"
 serialize = "Impossible de sérialiser la configuration de la capture d'écran : {error}"
-sign_in_to_share = "Connectez-vous à Cap dans votre navigateur, puis partagez à nouveau"
+sign_in_to_share = "Connectez-vous à Capwise dans votre navigateur, puis partagez à nouveau"
 too_large = "Les dimensions de l'image dépassent le maximum : {width}x{height}"
 upgrade_required = "Cette fonctionnalité nécessite une offre supérieure"
 upload_task = "La tâche d'envoi a échoué : {error}"
@@ -2030,7 +2030,7 @@ remove_default = "Ne plus utiliser par défaut"
 rename = "Renommer"
 rename_title = "Renommer le préréglage de style"
 save = "Enregistrer le style comme préréglage"
-save_failed = "Impossible d'enregistrer les préréglages. Cap ne peut pas écrire son fichier de réglages."
+save_failed = "Impossible d'enregistrer les préréglages. Capwise ne peut pas écrire son fichier de réglages."
 set_default = "Définir par défaut"
 tooltip = "Préréglages de style"
 update = "Mettre à jour avec le style actuel"
@@ -2121,7 +2121,7 @@ title = "Titre"
 typewriter = "Machine à écrire"
 
 [editor.panel.text_preset.sample]
-caption = "Enregistré avec Cap"
+caption = "Enregistré avec Capwise"
 cinematic = "Chapitre un"
 gradient = "Un beau texte"
 headline = "Livrez plus vite"
@@ -2132,7 +2132,7 @@ name_tag = "Richie · Fondateur"
 neon = "Éclat"
 quote = "« Que tout paraisse facile »"
 sticker = "Boum !"
-title = "Voici Cap"
+title = "Voici Capwise"
 typewriter = "en train d'écrire…"
 
 [editor.panel.text_segment]
@@ -2337,7 +2337,7 @@ text_item = "Texte"
 append_error = "Impossible d'ajouter le clip : {message}"
 append_error_title = "Erreur d'enregistrement"
 back = "Retour à l'éditeur"
-cap_filter = "Enregistrement Cap"
+cap_filter = "Enregistrement Capwise"
 clip = "Clip {number}"
 empty_description = "Enregistrez ou importez un clip et il apparaîtra ici."
 empty_title = "Aucun clip pour l'instant"
@@ -2363,11 +2363,11 @@ instant_target = "Les enregistrements en mode Instant ne peuvent pas être modif
 into_itself = "Impossible d'importer un enregistrement dans lui-même"
 missing_video = "Fichier vidéo manquant : {path}"
 no_duration = "La vidéo importée n'a pas de durée valide"
-not_a_project = "Sélectionnez un dossier de projet Cap"
-source_empty = "Le projet Cap source n'a aucun segment d'enregistrement"
-source_failed = "Le projet Cap source a échoué : {error}"
-source_recording = "Le projet Cap source est encore en cours d'enregistrement"
-source_unimportable = "Le projet Cap source n'a aucun segment d'enregistrement importable"
+not_a_project = "Sélectionnez un dossier de projet Capwise"
+source_empty = "Le projet Capwise source n'a aucun segment d'enregistrement"
+source_failed = "Le projet Capwise source a échoué : {error}"
+source_recording = "Le projet Capwise source est encore en cours d'enregistrement"
+source_unimportable = "Le projet Capwise source n'a aucun segment d'enregistrement importable"
 unfinished_target = "Terminez ou récupérez cet enregistrement avant d'importer un clip"
 unsupported_video = "Fichier vidéo non pris en charge : {path}"
 
@@ -2426,7 +2426,7 @@ open_file = "Ouvrir le fichier"
 open_link = "Ouvrir le lien"
 retry_copy = "Réessayer la copie"
 reuploaded = "Votre dernière modification est disponible sur le même lien"
-uploaded = "Votre Cap a bien été mis en ligne"
+uploaded = "Votre Capwise a bien été mis en ligne"
 
 [editor.export.estimate]
 gigabytes = "~{value} Go"
@@ -2574,11 +2574,11 @@ generate = "Générer les sous-titres"
 generate_failed = "Impossible de générer les sous-titres : {reason}"
 generating = "Génération..."
 highlight_color = "Couleur de surlignage"
-highlight_note = "Ceci est la première version des sous-titres dans Cap. Le surlignage du mot actif peut être imprécis dans certains cas. Nous travaillons à un correctif qui sera publié dans une prochaine version."
+highlight_note = "Ceci est la première version des sous-titres dans Capwise. Le surlignage du mot actif peut être imprécis dans certains cas. Nous travaillons à un correctif qui sera publié dans une prochaine version."
 highlight_style = "Style de surlignage"
 horizontal_position = "Position horizontale"
 intel_unavailable = "Les modèles de sous-titres Parakeet ne sont pas disponibles sur les Mac Intel. Les modèles Whisper restent disponibles."
-keep_open = "Laissez Cap ouvert pendant le téléchargement du modèle. Les rechargements de l'éditeur se reconnectent automatiquement."
+keep_open = "Laissez Capwise ouvert pendant le téléchargement du modèle. Les rechargements de l'éditeur se reconnectent automatiquement."
 language_label = "Langue"
 model_downloaded = "Modèle {model} téléchargé"
 model_label = "Modèle"
@@ -2722,7 +2722,7 @@ top_left = "En haut à gauche"
 top_right = "En haut à droite"
 
 [editor.tabs.sync]
-auto_description = "Cap a calculé ces décalages automatiquement pour garder l'audio synchronisé avec la vidéo. Ajustez-les si quelque chose sonne encore faux."
+auto_description = "Capwise a calculé ces décalages automatiquement pour garder l'audio synchronisé avec la vidéo. Ajustez-les si quelque chose sonne encore faux."
 auto_synced = "Synchronisé automatiquement"
 camera = "Décalage de la caméra"
 clip = "Clip {number}"
@@ -3144,32 +3144,32 @@ zoom_all = { one = "{count} sélectionné", other = "Tous sélectionnés ({count
 zoom_some = { one = "{count} sur {total} sélectionné", other = "{count} sur {total} sélectionnés" }
 
 [dialog.quit]
-canceled = "Fermeture annulée : {error}. Cap reste ouvert pour que vous puissiez terminer ou récupérer l'enregistrement."
+canceled = "Fermeture annulée : {error}. Capwise reste ouvert pour que vous puissiez terminer ou récupérer l'enregistrement."
 files_kept = "Tout ce qui a été enregistré jusqu'ici reste dans le dossier de l'enregistrement."
-keep_open = "Garder Cap ouvert"
-pending = "Fermeture annulée, car l'arrêt de l'enregistrement est toujours en cours. Cap reste ouvert. Utilisez Arrêter dès que possible, puis quittez à nouveau."
+keep_open = "Garder Capwise ouvert"
+pending = "Fermeture annulée, car l'arrêt de l'enregistrement est toujours en cours. Capwise reste ouvert. Utilisez Arrêter dès que possible, puis quittez à nouveau."
 quit_anyway = "Quitter quand même"
-still_open = "Cap est toujours ouvert"
-unconfirmed = "Fermeture annulée, car l'arrêt de l'enregistrement n'a pas pu être confirmé. Cap reste ouvert. Utilisez Arrêter, puis quittez à nouveau."
+still_open = "Capwise est toujours ouvert"
+unconfirmed = "Fermeture annulée, car l'arrêt de l'enregistrement n'a pas pu être confirmé. Capwise reste ouvert. Utilisez Arrêter, puis quittez à nouveau."
 
 [dialog.update]
-already_getting = "Cap prépare déjà la version {version}."
-available = "La version {version} de Cap est disponible. Cap la télécharge en arrière-plan et vous prévient quand elle est prête à être installée."
-busy = "Terminez votre enregistrement, exportation, mise en ligne, importation ou transcription avant de mettre à jour Cap."
-busy_title = "Cap est occupé"
+already_getting = "Capwise prépare déjà la version {version}."
+available = "La version {version} de Capwise est disponible. Capwise la télécharge en arrière-plan et vous prévient quand elle est prête à être installée."
+busy = "Terminez votre enregistrement, exportation, mise en ligne, importation ou transcription avant de mettre à jour Capwise."
+busy_title = "Capwise est occupé"
 check_failed = "Impossible de rechercher des mises à jour : {error}"
 download = "Télécharger"
 download_failed = "Impossible de télécharger la version {version} : {error}"
-failed = "{message}\n\nVous pouvez toujours télécharger la dernière version sur Cap.so/download."
+failed = "{message}\n\nVous pouvez toujours télécharger la dernière version sur Capwise.so/download."
 install_failed = "Impossible d'installer la version {version} : {error}"
 later = "Plus tard"
-no_update = "Vous utilisez déjà la dernière version de Cap."
+no_update = "Vous utilisez déjà la dernière version de Capwise."
 no_update_title = "Aucune mise à jour disponible"
 not_now = "Plus tard"
-package_not_installed = "Le paquet n'a pas été installé. Acceptez la demande du système, ou installez-le depuis Cap.so/download."
-ready = "Cap {version} est prêt. Redémarrez Cap pour terminer la mise à jour."
+package_not_installed = "Le paquet n'a pas été installé. Acceptez la demande du système, ou installez-le depuis Capwise.so/download."
+ready = "Capwise {version} est prêt. Redémarrez Capwise pour terminer la mise à jour."
 restart_now = "Redémarrer maintenant"
-title = "Mettre à jour Cap"
+title = "Mettre à jour Capwise"
 
 [message.recording]
 task_failed = "La tâche d'enregistrement a échoué."
@@ -3189,12 +3189,12 @@ finalization_no_result = "La finalisation de l'enregistrement s'est terminée sa
 stopped_metadata_unsaved = "La capture est arrêtée, mais ses métadonnées n'ont pas pu être enregistrées ; les fichiers locaux sont conservés"
 discard_stop_unconfirmed = "Lors de la suppression Studio, l'arrêt de la capture n'est pas confirmé ; les fichiers locaux sont conservés"
 discard_unconfirmed = "La suppression Studio n'est pas confirmée ; les fichiers locaux sont conservés"
-crashed_before_capture = "Cap s'est fermé avant que cet enregistrement ne capture quoi que ce soit."
+crashed_before_capture = "Capwise s'est fermé avant que cet enregistrement ne capture quoi que ce soit."
 capture_state_failed = "Impossible de confirmer l'état de la capture : {error}"
 completion_task_failed = "La tâche de fin d'enregistrement a échoué : {error}"
 stop_task_failed = "La tâche d'arrêt a échoué : {error}"
 control_task_failed = "La tâche de contrôle de la capture a échoué : {error}"
-restart_hide_failed = "Le redémarrage n'a pas pu masquer les fenêtres de Cap : {error}"
+restart_hide_failed = "Le redémarrage n'a pas pu masquer les fenêtres de Capwise : {error}"
 discard_task_failed = "La tâche de suppression Studio a échoué : {error} ; le nettoyage n'est pas confirmé"
 cancel_task_failed = "La tâche d'annulation a échoué : {error}. Le nettoyage n'est pas confirmé ; relancez l'arrêt."
 then_cleanup_unconfirmed_shortcut = "{error}. Le nettoyage de la capture n'est pas confirmé. Utilisez Ctrl+Shift+F9 pour relancer l'arrêt."
@@ -3205,10 +3205,10 @@ then_use_stop_control = "{error}. Utilisez la commande Arrêter de l'enregistrem
 then_discard_stopped = "{error} ; suppression/redémarrage interrompu, l'enregistrement local est conservé"
 then_files_preserved = "{error}. Les fichiers de l'enregistrement ayant échoué ont été conservés."
 then_cleanup_retry = "{error}. Le nettoyage n'est pas confirmé ; relancez l'arrêt."
-low_storage_preserved = "Espace de stockage insuffisant. Vos fichiers d'enregistrement sont conservés dans {path}. Libérez de l'espace, puis récupérez l'enregistrement dans Cap."
+low_storage_preserved = "Espace de stockage insuffisant. Vos fichiers d'enregistrement sont conservés dans {path}. Libérez de l'espace, puis récupérez l'enregistrement dans Capwise."
 
 [message.permission]
-unavailable = "L'accès « {permission} » n'est pas disponible. Autorisez Cap dans Réglages Système > Confidentialité et sécurité > {permission}, puis sélectionnez à nouveau l'appareil."
+unavailable = "L'accès « {permission} » n'est pas disponible. Autorisez Capwise dans Réglages Système > Confidentialité et sécurité > {permission}, puis sélectionnez à nouveau l'appareil."
 
 [message.upload]
 offline = "Hors ligne"

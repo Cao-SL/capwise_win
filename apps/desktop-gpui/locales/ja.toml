@@ -17,10 +17,10 @@ search = "検索"
 yes = "はい"
 
 [menu.app]
-about = "Capについて"
-hide = "Capを非表示"
+about = "Capwiseについて"
+hide = "Capwiseを非表示"
 hide_others = "ほかを非表示"
-quit = "Capを終了"
+quit = "Capwiseを終了"
 services = "サービス"
 settings = "設定…"
 
@@ -74,7 +74,7 @@ no_recent_items = "最近の項目はありません"
 open_main_window = "メインウィンドウを開く"
 previous = "最近の項目"
 recording_mode = "録画モード"
-quit = "Capを終了"
+quit = "Capwiseを終了"
 record_area = "範囲を録画"
 record_display = "ディスプレイを録画"
 record_window = "ウィンドウを録画"
@@ -85,9 +85,9 @@ screenshot_window = "ウィンドウのスクリーンショット"
 select_mode = "モードを選択"
 settings = "設定"
 take_screenshot = "スクリーンショットを撮る"
-tooltip_recording = "Cap - 録画を停止"
+tooltip_recording = "Capwise - 録画を停止"
 upload_logs = "ログをアップロード"
-version = "Cap v{version}"
+version = "Capwise v{version}"
 view_all_recordings = "すべての録画を表示"
 view_all_screenshots = "すべてのスクリーンショットを表示"
 
@@ -112,28 +112,28 @@ shortcuts = "ショートカット"
 transcription = "文字起こし"
 
 [settings.general.language]
-description = "Capの表示言語を選択します。"
+description = "Capwiseの表示言語を選択します。"
 label = "アプリの言語"
 system_default = "システムのデフォルト（{language}）"
 title = "言語"
 
 [settings.general.appearance]
 dark = "ダーク"
-description = "Capの外観をシステムのテーマに合わせるか、固定の外観を選択します。"
+description = "Capwiseの外観をシステムのテーマに合わせるか、固定の外観を選択します。"
 light = "ライト"
 system = "システム"
 title = "外観"
 
 [settings.general.app]
-description = "システム上でのCapの表示方法を選択します。"
+description = "システム上でのCapwiseの表示方法を選択します。"
 title = "アプリ"
 
 [settings.general.app.dock_icon]
-description = "ウィンドウが開いていないときもCapをDockに表示します。"
+description = "ウィンドウが開いていないときもCapwiseをDockに表示します。"
 label = "Dockアイコンを常に表示"
 
 [settings.general.app.notifications]
-description = "クリップボードへのコピーやファイルの保存などを通知します。システムの通知設定でCapを許可する必要がある場合があります。"
+description = "クリップボードへのコピーやファイルの保存などを通知します。システムの通知設定でCapwiseを許可する必要がある場合があります。"
 label = "システム通知"
 
 [settings.general.recording]
@@ -169,7 +169,7 @@ description = "録画ウィンドウをもう一度開くかどうか。"
 label = "録画を削除した後"
 
 [settings.general.recording.delete_after_upload]
-description = "アップロードが完了すると、Capはローカルのファイルを削除します。"
+description = "アップロードが完了すると、Capwiseはローカルのファイルを削除します。"
 label = "アップロード後にInstant録画を削除"
 
 [settings.general.recording.crash_recovery]
@@ -213,7 +213,7 @@ label = "マーカー追加時に音を鳴らす"
 [settings.general.storage]
 choose_folder = "フォルダを選択"
 default_location = "デフォルト（Application Support）"
-description = "Capが録画を保存する場所。"
+description = "Capwiseが録画を保存する場所。"
 title = "保存先"
 
 [settings.general.project_name]
@@ -238,25 +238,25 @@ time_values = "録画の時刻"
 description = "録画に映さないウィンドウ。"
 empty = "現在、除外されているウィンドウはありません。"
 missing_body = "カメラ、設定、録画のウィンドウが画面録画に黒い四角形として映ることがあります。除外されていないウィンドウ：{names}。"
-missing_title = "推奨されるCapのウィンドウが除外されていません"
+missing_title = "推奨されるCapwiseのウィンドウが除外されていません"
 restore = "元に戻す"
 title = "除外するウィンドウ"
 
 [settings.general.updates]
-description = "受け取るCapのビルドを選択します。"
+description = "受け取るCapwiseのビルドを選択します。"
 nightly_description = "最新のビルドです。録画や書き出しをしていないときにバックグラウンドで自動的に更新されます。不安定な場合があります。"
 nightly_switch_back = "Stableに戻すと最新の安定版に切り替わります。現在のビルドより古い場合があります。"
 stable_description = "バージョン付きのリリース（推奨）"
 title = "アップデート"
 
 [settings.general.updates.channel]
-description = "Capのアップデートを受け取るリリースチャンネル。"
+description = "Capwiseのアップデートを受け取るリリースチャンネル。"
 label = "アップデートチャンネル"
 
 [settings.general.self_host]
 confirm_change = "サーバーURLを「{origin}」に変更してもよろしいですか？もう一度サインインする必要があります。"
-description = "独自のCap Webインスタンスを運用している場合にのみ変更してください。"
-server_url = "CapサーバーURL"
+description = "独自のCapwise Webインスタンスを運用している場合にのみ変更してください。"
+server_url = "CapwiseサーバーURL"
 title = "セルフホスト"
 update = "更新"
 
@@ -264,7 +264,7 @@ update = "更新"
 title = "プライバシー"
 
 [settings.general.privacy.telemetry]
-description = "Capは信頼性の向上と不具合の修正のために匿名のテレメトリを使用します。録画の内容、ウィンドウのタイトル、ファイルパス、個人情報を収集することはありません。"
+description = "Capwiseは信頼性の向上と不具合の修正のために匿名のテレメトリを使用します。録画の内容、ウィンドウのタイトル、ファイルパス、個人情報を収集することはありません。"
 label = "匿名のテレメトリを共有"
 [settings.prompt]
 ok = "OK"
@@ -338,7 +338,7 @@ ultra_description = "本格的な編集のためにディテールを最大限�
 
 [settings.quality.instant]
 description = "録画しながらアップロードされるため、停止した瞬間にリンクが使えます。最高画質が必要な場合はStudioモードを使ってください。画面が許す最高画質で録画し、最大4Kで書き出せます。"
-free_plan = "無料プランでは720pです。Cap Proでは最大4Kで録画できます。"
+free_plan = "無料プランでは720pです。Capwise Proでは最大4Kで録画できます。"
 max_resolution = "最大解像度"
 res_1080p = "実用的なアップロードサイズで文字がくっきり。"
 res_1440p = "大きな高解像度画面向けのより細かいディテール。"
@@ -367,7 +367,7 @@ screen_region = "画面の範囲"
 [settings.options.post_studio]
 do_nothing = "何もしない"
 open_editor = "エディタを開く"
-show_cap = "Capを表示"
+show_cap = "Capwiseを表示"
 
 [settings.options.post_screenshot]
 copy = "クリップボードにコピー"
@@ -386,12 +386,12 @@ quarter = "1/4"
 
 [settings.shortcuts]
 blocked_while_recording = "録画が停止キーを使用している間はショートカットを変更できません。先に録画を停止してください。"
-cancelling_description = "ショートカットまたはCapのアイコンから開始したスクリーンショットと録画に適用されます。"
+cancelling_description = "ショートカットまたはCapwiseのアイコンから開始したスクリーンショットと録画に適用されます。"
 cancelling_title = "キャンセル"
 needs_modifier_macos = "入力の邪魔にならないよう、⌘、⌃、⌥のいずれかを含めてください。"
 needs_modifier_other = "入力の邪魔にならないよう、Ctrl、Alt、Winのいずれかを含めてください。"
 record_shortcut = "ショートカットを記録"
-recording_description = "Capを開かずに録画を開始できます。"
+recording_description = "Capwiseを開かずに録画を開始できます。"
 recording_hint = "使いたいキーを押してください。Escでキャンセル、Deleteで削除します。"
 recording_title = "録画"
 saved = "保存しました。どのアプリでも{keys}を押すと{effect}。"
@@ -404,7 +404,7 @@ unsupported_key = "このキーはショートカットに使えません。文�
 while_recording_title = "録画中"
 
 [settings.shortcuts.after_screenshot]
-hint = "ショートカットでもCapからでも、すべてのスクリーンショットに適用"
+hint = "ショートカットでもCapwiseからでも、すべてのスクリーンショットに適用"
 title = "スクリーンショットの後"
 
 [settings.shortcuts.after_studio]
@@ -420,15 +420,15 @@ hint = "Escまたはピッカーを閉じる"
 title = "キャンセルしたとき"
 
 [settings.shortcuts.outcome]
-cancel_show_cap = "Capを表示"
+cancel_show_cap = "Capwiseを表示"
 cancel_show_cap_hint = "レコーダーに戻る"
 cancel_stay_hidden = "非表示のまま"
-cancel_stay_hidden_hint = "Capが開いていた場合を除く"
+cancel_stay_hidden_hint = "Capwiseが開いていた場合を除く"
 instant_copy_link = "リンクのコピーのみ"
 instant_copy_link_hint = "何も開きません"
 instant_open_link = "リンクを開く"
 instant_open_link_hint = "ブラウザで"
-instant_show_cap = "Capを表示"
+instant_show_cap = "Capwiseを表示"
 instant_show_cap_hint = "レコーダーに戻る"
 saved_to_library = "ライブラリに保存"
 screenshot_copy = "コピー"
@@ -441,7 +441,7 @@ screenshot_open_editor_hint = "先に注釈を付ける"
 studio_do_nothing = "何もしない"
 studio_open_editor = "エディタを開く"
 studio_open_editor_hint = "すぐに編集"
-studio_show_cap = "Capを表示"
+studio_show_cap = "Capwiseを表示"
 studio_show_cap_hint = "レコーダーに戻る"
 
 [settings.shortcuts.label]
@@ -466,7 +466,7 @@ add_marker = "Studio録画のこの瞬間にマーカーを付けます"
 cycle_mode = "Studio、Instant、スクリーンショットの各モードを切り替えます"
 instant_copy = "選択した画面またはウィンドウをInstantモードで録画し、停止すると共有リンクをコピーします"
 instant_copy_and_open = "選択した画面またはウィンドウをInstantモードで録画し、停止すると共有リンクをコピーして開きます"
-open_picker = "Capを開いて録画する対象を選びます"
+open_picker = "Capwiseを開いて録画する対象を選びます"
 pause = "現在の録画を一時停止または再開します"
 picker_area_instant = "範囲を選択してInstantモードで録画します"
 picker_area_screenshot = "範囲を選択してスクリーンショットを撮ります"
@@ -499,7 +499,7 @@ add_marker = "Studio録画のこの瞬間にマーカーを付けます。"
 cycle_mode = "Studio、Instant、スクリーンショットの各モードを切り替えます。"
 instant_copy = "選択した画面またはウィンドウをInstantモードで録画し、停止すると共有リンクをコピーします。"
 instant_copy_and_open = "選択した画面またはウィンドウをInstantモードで録画し、停止すると共有リンクをコピーして開きます。"
-open_picker = "Capを開いて録画する対象を選びます。"
+open_picker = "Capwiseを開いて録画する対象を選びます。"
 pause = "現在の録画を一時停止または再開します。"
 picker_area_instant = "範囲を選択してInstantモードで録画します。"
 picker_area_screenshot = "範囲を選択してスクリーンショットを撮ります。"
@@ -530,7 +530,7 @@ studio_open_editor = "選択した画面またはウィンドウをStudioモー�
 [settings.cli]
 command = "コマンド"
 copy = "コピー"
-description = "ターミナル、エージェント、スクリプト、ローカル自動化で使えるCapコマンドをインストールします。"
+description = "ターミナル、エージェント、スクリプト、ローカル自動化で使えるCapwiseコマンドをインストールします。"
 install = "CLIをインストール"
 installed = "インストール済み"
 installing = "インストール中..."
@@ -570,14 +570,14 @@ app_version = "アプリのバージョン"
 capture_support = "キャプチャ対応"
 capture_supported = "画面キャプチャ：対応"
 capture_unsupported = "画面キャプチャ：非対応"
-community_description = "質問やアイデアの共有、ちょっとした雑談に。CapのDiscordコミュニティに参加しましょう。"
+community_description = "質問やアイデアの共有、ちょっとした雑談に。CapwiseのDiscordコミュニティに参加しましょう。"
 community_title = "コミュニティに参加"
-debug_description = "ログをアップロードして、Capの問題の診断にご協力ください。個人情報は含まれません。"
+debug_description = "ログをアップロードして、Capwiseの問題の診断にご協力ください。個人情報は含まれません。"
 debug_title = "デバッグ情報"
-description = "フィードバックやバグ報告を送って、Capの改善にご協力ください。すぐに対応します。"
+description = "フィードバックやバグ報告を送って、Capwiseの改善にご協力ください。すぐに対応します。"
 join_discord = "Discordに参加"
 operating_system = "OS"
-placeholder = "Capについてのご意見をお聞かせください..."
+placeholder = "Capwiseについてのご意見をお聞かせください..."
 submit = "フィードバックを送信"
 submit_failed = "フィードバックを送信できませんでした"
 submitting = "送信中..."
@@ -591,24 +591,24 @@ upload_sent = "送信しました。ありがとうございます。問題の�
 uploading = "アップロード中..."
 
 [settings.feedback.diagnostic]
-confirm_body = "Capは画面全体に点滅パターンを表示し、処理ごとに約{seconds}秒間大きなビープ音を鳴らします。ヘッドフォンを外し、音が聞こえる音量にして、終わるまでコンピュータに触れないでください。"
+confirm_body = "Capwiseは画面全体に点滅パターンを表示し、処理ごとに約{seconds}秒間大きなビープ音を鳴らします。ヘッドフォンを外し、音が聞こえる音量にして、終わるまでコンピュータに触れないでください。"
 confirm_title = "診断を実行しますか？"
 description = "点滅とビープ音の短いテストパターンを録画し、映像と音声のずれを測定して、ディスプレイ、カメラ、マイク、ディスク容量、録画設定の状態を記録します。送信を選ぶまで、何も送信されません。"
 mic_description = "マイクも録音し、ビープ音を正しいタイミングで拾えているか確認します。マイクに実際に聞こえるスピーカーが必要です。"
 mic_label = "マイクをテスト"
 mode_description = "テストする処理を選びます。「両方」を選ぶと、Studioモードの後にInstantモードを実行します。"
 mode_label = "録画モード"
-no_cli = "このビルドの横にCapコマンドラインツールが見つからないため、レポートには環境情報のみが含まれます。"
-no_cli_sync = "このビルドの横にCapコマンドラインツールが見つからないため、同期テストを実行できませんでした。"
+no_cli = "このビルドの横にCapwiseコマンドラインツールが見つからないため、レポートには環境情報のみが含まれます。"
+no_cli_sync = "このビルドの横にCapwiseコマンドラインツールが見つからないため、同期テストを実行できませんでした。"
 run = "診断を実行"
 run_again = "もう一度実行"
-send = "Capに送信"
+send = "Capwiseに送信"
 sending = "送信中..."
 show_file = "ファイルを表示"
 stop_recording_first = "診断を実行する前に、現在の録画を停止してください。"
 title = "診断レポート"
 try_again = "再試行"
-warning_body = "全画面のウィンドウが白黒に点滅し、スピーカーから1kHzのビープ音が鳴ります。Capはそれを録画し、映像と音声のずれを測定します。実行中はコンピュータに触れないでください。両方のモードで数分かかります。"
+warning_body = "全画面のウィンドウが白黒に点滅し、スピーカーから1kHzのビープ音が鳴ります。Capwiseはそれを録画し、映像と音声のずれを測定します。実行中はコンピュータに触れないでください。両方のモードで数分かかります。"
 warning_title = "テスト中は画面全体が使われ、音が鳴ります。"
 
 [settings.feedback.diagnostic.verdict]
@@ -634,13 +634,13 @@ activating = "有効化中..."
 active_title = "デスクトップライセンス"
 checking = "確認中…"
 deactivate = "ライセンスを無効化"
-description = "Capのプランとデスクトップライセンスをまとめて確認できます。"
-desktop_description = "デスクトップライセンスで商用の録画と編集ができます。Cap Proではさらにクラウド共有とコラボレーション機能が使えます。"
+description = "Capwiseのプランとデスクトップライセンスをまとめて確認できます。"
+desktop_description = "デスクトップライセンスで商用の録画と編集ができます。Capwise Proではさらにクラウド共有とコラボレーション機能が使えます。"
 desktop_name = "デスクトップライセンス"
 expires = "有効期限"
 explore_description = "現在の料金と含まれる内容をウェブサイトで比較できます。"
 explore_desktop = "デスクトップライセンス · デスクトップのレコーダーとエディタを商用利用できます。"
-explore_pro = "Cap Pro · デスクトップライセンスに加え、クラウド共有、AI機能、コラボレーション。"
+explore_pro = "Capwise Pro · デスクトップライセンスに加え、クラウド共有、AI機能、コラボレーション。"
 explore_title = "プランを見る"
 free_description = "個人利用ならローカルで録画と編集ができます。商用利用やより多くのクラウド機能には有料プランを選んでください。"
 have_key = "ライセンスキーをお持ちですか？"
@@ -653,14 +653,14 @@ pro_description = "お使いのアカウントには、クラウド共有、Pro�
 refresh = "プラン情報を更新"
 refresh_failed = "プラン情報を更新できませんでした。もう一度お試しください。"
 save_failed = "ライセンスを保存できませんでした"
-sign_in_hint = "すでにCap Proをお持ちですか？サイドバーからアカウントでサインインしてください。"
+sign_in_hint = "すでにCapwise Proをお持ちですか？サイドバーからアカウントでサインインしてください。"
 title = "プランとライセンス"
 view_pricing = "プランと料金を見る ↗"
 
 [settings.integrations]
 configure = "設定"
-description = "連携を設定して、Capの機能を拡張し、外部サービスと接続します。"
-google_drive_description = "Google Driveを接続して、新しい共有リンクのアップロード先として使用します。Capは新しい動画をDrive内の非公開のCapフォルダに保存し、通常のアクセス確認を行ったうえでCap経由で配信します。"
+description = "連携を設定して、Capwiseの機能を拡張し、外部サービスと接続します。"
+google_drive_description = "Google Driveを接続して、新しい共有リンクのアップロード先として使用します。Capwiseは新しい動画をDrive内の非公開のCapwiseフォルダに保存し、通常のアクセス確認を行ったうえでCapwise経由で配信します。"
 managed = "組織が管理しています"
 managed_by = "組織が管理しています：{organization}"
 request_timed_out = "リクエストがタイムアウトしました"
@@ -678,7 +678,7 @@ deleted = "S3設定を削除しました"
 endpoint = "エンドポイント"
 fetch_failed = "S3設定を取得できませんでした"
 guide = "ストレージ設定ガイド"
-guide_intro = "ストレージバケットの設定とCapへの接続は10分以内で完了します。始めるには\u00A0{guide}\u00A0をご覧ください。"
+guide_intro = "ストレージバケットの設定とCapwiseへの接続は10分以内で完了します。始めるには\u00A0{guide}\u00A0をご覧ください。"
 other_provider = "その他のS3互換"
 provider = "ストレージプロバイダ"
 region = "リージョン"
@@ -701,7 +701,7 @@ cached = "{time}時点のキャッシュ"
 connect = "Google Driveを接続"
 connect_failed = "Google Driveの接続を開始できませんでした"
 connected_inactive = "接続済み（未使用）"
-connection_description = "Google Driveは新しいアップロードをDrive内の非公開のCapフォルダに保存します。既存のCapホストの動画とS3の動画は、現在の保存先を使い続けます。"
+connection_description = "Google Driveは新しいアップロードをDrive内の非公開のCapwiseフォルダに保存します。既存のCapwiseホストの動画とS3の動画は、現在の保存先を使い続けます。"
 connection_title = "接続"
 disconnect = "接続を解除"
 disconnect_failed = "Google Driveの接続を解除できませんでした"
@@ -735,12 +735,12 @@ add_condition = "条件を追加"
 auto_name_empty = "{trigger}のオートメーション"
 browse = "参照"
 check_compatibility = "互換性を確認"
-compatibility_checked = "互換性を確認しました：このオートメーションはまだCapでは実行されません。保存したルールはCap CLIで引き続き使えます。アクションは実行されていません。"
+compatibility_checked = "互換性を確認しました：このオートメーションはまだCapwiseでは実行されません。保存したルールはCapwise CLIで引き続き使えます。アクションは実行されていません。"
 condition_never_matches = "この条件は選択したトリガーでは一致しません。"
 copy_link = "リンクをクリップボードにコピー"
-dangerous = "Cap CLIでは、このオートメーションはあなたの権限でコマンドを実行したりネットワークリクエストを送信したりします。信頼できる値だけを使ってください。"
+dangerous = "Capwise CLIでは、このオートメーションはあなたの権限でコマンドを実行したりネットワークリクエストを送信したりします。信頼できる値だけを使ってください。"
 delete = "削除"
-description = "ルールはCap CLIと共有されます。Capはこれらのルールを保存しますが、オートメーションはまだ実行しません。"
+description = "ルールはCapwise CLIと共有されます。Capwiseはこれらのルールを保存しますが、オートメーションはまだ実行しません。"
 empty_description = "下のテンプレートを選べばワンクリックで始められます。一から自分で作ることもできます。"
 empty_title = "オートメーションはまだありません"
 enabled = "有効"
@@ -932,7 +932,7 @@ description = "スクリーンショットを撮ったら、すぐに貼り付�
 name = "新しいスクリーンショットを自動でクリップボードにコピー"
 
 [settings.automations.template.ocr_screenshot]
-description = "Capがスクリーンショット内の文字を読み取り、コピーします。"
+description = "Capwiseがスクリーンショット内の文字を読み取り、コピーします。"
 name = "スクリーンショットから文字を取り出す"
 
 [settings.automations.template.save_screenshot]
@@ -987,10 +987,10 @@ system_audio_on = "システム音声を録音"
 
 [main.device.access]
 allow_access = "アクセスを許可"
-camera_denied = "Capはカメラを使用できません。システム設定でオンにしてください。"
-camera_needed = "Capがカメラを使用するには許可が必要です。"
-microphone_denied = "Capはマイクを使用できません。システム設定でオンにしてください。"
-microphone_needed = "Capがマイクを使用するには許可が必要です。"
+camera_denied = "Capwiseはカメラを使用できません。システム設定でオンにしてください。"
+camera_needed = "Capwiseがカメラを使用するには許可が必要です。"
+microphone_denied = "Capwiseはマイクを使用できません。システム設定でオンにしてください。"
+microphone_needed = "Capwiseがマイクを使用するには許可が必要です。"
 open_system_settings = "システム設定を開く"
 turn_on_in_settings = "設定でオンにする"
 
@@ -1084,7 +1084,7 @@ personal = "個人"
 
 [main.recording]
 cancel = "録画をキャンセル"
-paused_notice = "録画を一時停止しました。再開前にCapは非表示になります。"
+paused_notice = "録画を一時停止しました。再開前にCapwiseは非表示になります。"
 resume = "再開"
 starting = "開始しています..."
 starts_in = "{remaining}秒後に録画を開始します"
@@ -1103,14 +1103,14 @@ title = "未完了の録画"
 
 [main.recovery.error]
 nothing_saved = "この録画が停止する前に保存されたビデオがないため、復元できるものはありません。ファイルは引き続き {path} にあります。"
-rebuild_failed = "Cap はこの録画を再構築できませんでした ({error})。何も削除されていません。元のファイルは {path} にあります。"
+rebuild_failed = "Capwise はこの録画を再構築できませんでした ({error})。何も削除されていません。元のファイルは {path} にあります。"
 storage = "この録画を復元するための空き容量が不足しています ({error})。空き容量を確保してから、もう一度「復元」を押してください。何も削除されていません。ファイルは {path} にあります。"
 
 [main.sign_in]
 message = "Instantモードは録画しながらアップロードするので、停止した瞬間に共有リンクが用意されます。"
 not_now = "今はしない"
 open_browser_again = "ブラウザをもう一度開く"
-pending_message = "ブラウザでCapへのサインインを完了してください。完了するとCapがここに戻り、レコーダーを開きます。"
+pending_message = "ブラウザでCapwiseへのサインインを完了してください。完了するとCapwiseがここに戻り、レコーダーを開きます。"
 sign_in = "サインイン"
 timed_out = "サインインがタイムアウトしました。もう一度お試しください。"
 title = "Instantモードを使うにはサインインしてください"
@@ -1119,7 +1119,7 @@ waiting = "ブラウザを待っています"
 
 [main.storage]
 blocked = "録画用ドライブの空き容量は{available} GBしかありません。録画する前に、512 MB以上の空きを確保してください。"
-can_start = "録画用ドライブの空き容量は{available} GBしかありません。容量が足りなくなるとCapは録画を保存して自動的に停止します。"
+can_start = "録画用ドライブの空き容量は{available} GBしかありません。容量が足りなくなるとCapwiseは録画を保存して自動的に停止します。"
 check_failed = "録画用ストレージを確認できませんでした：{error}"
 record_anyway = "このまま録画"
 title = "空き容量が不足しています"
@@ -1139,7 +1139,7 @@ window = "ウィンドウ"
 
 [controls]
 disk_full_resume = "再開するための空き容量が足りません。空きを確保してもう一度試すか、停止を押して保存してください。"
-low_storage = "空き容量が不足しています。録画を保存するため、Capはまもなく停止します。"
+low_storage = "空き容量が不足しています。録画を保存するため、Capwiseはまもなく停止します。"
 paused_for_sleep = "Mac がスリープしたため、録画を一時停止しました。準備ができたら再開するか、「停止」を押して保存してください。"
 
 [controls.confirm]
@@ -1180,7 +1180,7 @@ mirror_message = "カメラのプレビューは反転されていません。"
 mirror_title = "反転を使用できません"
 
 [camera.issue]
-access_message = "クリックして、システム設定でCapにカメラの使用を許可してください。"
+access_message = "クリックして、システム設定でCapwiseにカメラの使用を許可してください。"
 access_title = "カメラへのアクセスが必要です"
 generic = "選択したカメラを起動できませんでした。別のカメラを選ぶか、このカメラを接続し直してください。"
 invalid_format = "このカメラから使用可能なキャプチャフォーマットを取得できませんでした。"
@@ -1196,8 +1196,8 @@ cutout = "切り抜き"
 
 [onboarding.customize]
 footer = "これらはすべて、いつでも設定で変更できます"
-subtitle = "キーボードショートカットから保存先まで、すべてをカスタマイズ。Capはあなたの作業スタイルに合わせます。"
-title = "Capを自分仕様に"
+subtitle = "キーボードショートカットから保存先まで、すべてをカスタマイズ。Capwiseはあなたの作業スタイルに合わせます。"
+title = "Capwiseを自分仕様に"
 
 [onboarding.customize.domain]
 description = "共有リンクにcap.soではなく独自ドメインを使えます"
@@ -1220,7 +1220,7 @@ background = "背景"
 copied = "コピーしました！"
 copied_to_clipboard = "クリップボードにコピーしました"
 copy = "コピー"
-editor = "Capエディタ"
+editor = "Capwiseエディタ"
 export = "書き出す"
 export_complete = "書き出しが完了しました！"
 exporting = "書き出し中..."
@@ -1249,15 +1249,15 @@ subtitle = "使い始めるために知っておきたいことをまとめま�
 title = "よくある質問"
 
 [onboarding.faq.free]
-answer = "Capは個人利用なら無料です。チームや商用での利用については料金プランをご覧ください。"
-question = "Capは無料で使えますか？"
+answer = "Capwiseは個人利用なら無料です。チームや商用での利用については料金プランをご覧ください。"
+question = "Capwiseは無料で使えますか？"
 
 [onboarding.faq.instant_vs_studio]
 answer = "Instantモードは録画しながらアップロードするので、停止するとすぐに共有リンクが手に入ります。Studioモードはフル画質でローカルに録画し、共有前に背景やエフェクトなどを加えて編集できます。"
 question = "InstantとStudioの違いは何ですか？"
 
 [onboarding.faq.sharing]
-answer = "Instantモードでは、録画を停止すると自動的に共有リンクが作成されます。Studioモードでは、編集した動画を書き出して、Capのクラウドで共有するかローカルに保存します。"
+answer = "Instantモードでは、録画を停止すると自動的に共有リンクが作成されます。Studioモードでは、編集した動画を書き出して、Capwiseのクラウドで共有するかローカルに保存します。"
 question = "共有はどのように行いますか？"
 
 [onboarding.faq.shortcuts]
@@ -1265,7 +1265,7 @@ answer = "いつでも「設定」→「ショートカット」から、すべ�
 question = "ショートカットはあとで変更できますか？"
 
 [onboarding.faq.storage]
-answer = "録画はすべてコンピュータにローカル保存されます。Instantモードでは、簡単に共有できるようにCapのクラウドにもアップロードされます。保存先の管理は設定から行えます。"
+answer = "録画はすべてコンピュータにローカル保存されます。Instantモードでは、簡単に共有できるようにCapwiseのクラウドにもアップロードされます。保存先の管理は設定から行えます。"
 question = "録画はどこに保存されますか？"
 
 [onboarding.modes.instant]
@@ -1297,20 +1297,20 @@ title = "Studioモード"
 
 [onboarding.nav]
 back = "←  戻る"
-continue_to_cap = "Capへ進む"
+continue_to_cap = "Capwiseへ進む"
 keyboard_hint = "Enter ↵ を押すか、← → キーで移動"
 next = "続ける"
 permissions_needed = "続けるには必要な権限を許可してください"
-relaunch = "Capを再起動"
+relaunch = "Capwiseを再起動"
 skip = "ツアーをスキップ"
-start = "Capを使い始める"
+start = "Capwiseを使い始める"
 
 [onboarding.overview]
-subtitle = "スピード重視でも、スタジオ品質でも、手早いスクリーンショットでも。Capにはそれぞれに合ったモードがあります。"
+subtitle = "スピード重視でも、スタジオ品質でも、手早いスクリーンショットでも。Capwiseにはそれぞれに合ったモードがあります。"
 title = "ひとつのアプリで、あらゆる作業に"
 
 [onboarding.toggle]
-subtitle = "Capのメインウィンドウから、ワンクリックでモードを切り替えられます。"
+subtitle = "Capwiseのメインウィンドウから、ワンクリックでモードを切り替えられます。"
 title = "モードはいつでも切り替え可能"
 
 [onboarding.welcome]
@@ -1330,7 +1330,7 @@ restart = "再起動してアップデート…"
 
 [settings.general.updates.download_policy]
 auto = "自動"
-description = "Capがアップデートを自動でダウンロードするか選択します。"
+description = "Capwiseがアップデートを自動でダウンロードするか選択します。"
 label = "アップデートのダウンロード"
 manual = "事前に確認"
 never = "しない"
@@ -1382,20 +1382,20 @@ no_microphone_body = "この録画にはあなたの声は入りません。"
 open_recording_failed = "この録画を開けませんでした：{error}"
 
 [dialog.capture]
-approve_shortcut = "録画用のショートカットを承認するか、Capの停止トレイアイコンが表示されたらそれをクリックしてください。録画はまだ始まっていません。"
+approve_shortcut = "録画用のショートカットを承認するか、Capwiseの停止トレイアイコンが表示されたらそれをクリックしてください。録画はまだ始まっていません。"
 area_unavailable = "選択した範囲が変更されたか、使用できなくなりました。もう一度選択してください。"
 camera_needs_x11 = "LinuxでInstantのカメラオーバーレイを使うにはX11デスクトップが必要です"
-camera_notice = "Capはカメラのプレビューと録画コントロールを非表示にします。選択したカメラは、個別に編集できるトラックとして録画され続けます。"
-camera_notice_instant = "Capはプレビューとコントロールを非表示にします。選択したカメラは、選んだ形とエフェクトでプレビューの位置に表示されます。プレビュー全体をキャプチャ範囲内に収めてください。Capを開くと、コントロールを表示する前にこのInstant録画が停止します。"
+camera_notice = "Capwiseはカメラのプレビューと録画コントロールを非表示にします。選択したカメラは、個別に編集できるトラックとして録画され続けます。"
+camera_notice_instant = "Capwiseはプレビューとコントロールを非表示にします。選択したカメラは、選んだ形とエフェクトでプレビューの位置に表示されます。プレビュー全体をキャプチャ範囲内に収めてください。Capwiseを開くと、コントロールを表示する前にこのInstant録画が停止します。"
 camera_outside_area = "Instant録画を始める前に、カメラのプレビュー全体をキャプチャ範囲内に移動してください"
 camera_preview_closed = "Instant録画の前に、選択したカメラのプレビューを開いてください"
 cleanup_incomplete = "録画のクリーンアップが完了していません：{error}。新しい録画は開始できません。"
 devices_changed = "選択したデバイスが変更されました。新しい録画の入力を確認するため、もう一度開始してください。"
 devices_changed_before_start = "録画の開始前に選択したデバイスが変更されました。入力を確認するため、もう一度開始してください。"
-shortcut_conflict = "Ctrl+Shift+F9はCapの別の操作に割り当てられています。録画の前にそのショートカットを変更してください。"
-shortcut_description = "このCap録画を開始または停止"
+shortcut_conflict = "Ctrl+Shift+F9はCapwiseの別の操作に割り当てられています。録画の前にそのショートカットを変更してください。"
+shortcut_description = "このCapwise録画を開始または停止"
 shortcut_hint = "{shortcut}を押して離すと開始します。同じショートカットで停止できます。この一時的なショートカットは設定を変更しません。"
-tray_stop_hint = "Capの停止トレイアイコンをクリックすると開始します。同じアイコンをもう一度クリックすると停止します。このコントロールを使うまで録画は始まりません。"
+tray_stop_hint = "Capwiseの停止トレイアイコンをクリックすると開始します。同じアイコンをもう一度クリックすると停止します。このコントロールを使うまで録画は始まりません。"
 window_unavailable = "選択したウィンドウは使用できなくなりました。もう一度選択してください。"
 
 [dialog.clipboard]
@@ -1414,7 +1414,7 @@ editor_changed = "削除の確認中にエディタが変更されました。�
 editor_closed = "エディタはすでに閉じられています。録画は削除されていません。"
 failed = "録画を削除できませんでした：{error}"
 failed_title = "録画を削除できませんでした"
-finishing_body = "Capは録画のクリーンアップが終わるのを待ってから、この削除を完了します。"
+finishing_body = "Capwiseは録画のクリーンアップが終わるのを待ってから、この削除を完了します。"
 finishing_title = "削除はまだ完了していません"
 in_use = "この録画はまだ使用中です。アップロードを完了またはキャンセルしてから、もう一度お試しください：{error}"
 outside_library = "この録画は録画ライブラリの外にあります。ファイルは変更されていません。"
@@ -1428,7 +1428,7 @@ export_filter = "書き出し"
 failed = "ファイルダイアログを完了できませんでした：{error}"
 images_filter = "画像"
 unavailable_title = "ファイルダイアログを使用できません"
-unconfirmed = "Capはファイルダイアログが閉じたことを確認できませんでした。残っているファイルダイアログを閉じ、Capを再起動してからもう一度お試しください。"
+unconfirmed = "Capwiseはファイルダイアログが閉じたことを確認できませんでした。残っているファイルダイアログを閉じ、Capwiseを再起動してからもう一度お試しください。"
 
 [dialog.mode_select]
 instant = "リンクですぐに共有。録画しながらアップロードします。"
@@ -1444,7 +1444,7 @@ stopping = "ストレージが不足しています。録画を停止して保�
 
 [dialog.teleprompter]
 cue_markers = "キューマーカー"
-hidden = "このウィンドウはCapの録画に映りません"
+hidden = "このウィンドウはCapwiseの録画に映りません"
 mirror = "テキストを反転"
 paused = "録画に合わせてスクロールを一時停止中"
 placeholder = "台本を貼り付けるか入力してください…"
@@ -1521,7 +1521,7 @@ take_screenshot = "スクリーンショットを撮る"
 size_title = "ウィンドウサイズを変更"
 size_body = "録画の前に、ウィンドウを特定の比率や正確なサイズに変更します。"
 size_needs_accessibility_title = "サイズ変更にはアクセシビリティが必要です"
-size_needs_accessibility_body = "ほかのアプリのウィンドウサイズを変更するには、システム設定でCapのアクセシビリティをオンにしてください。"
+size_needs_accessibility_body = "ほかのアプリのウィンドウサイズを変更するには、システム設定でCapwiseのアクセシビリティをオンにしてください。"
 size_unavailable_title = "サイズ変更は使用できません"
 size_unavailable_body = "Waylandでは、アプリがほかのアプリのウィンドウサイズを変更できません。"
 focus_title = "フォーカスモード"
@@ -1537,7 +1537,7 @@ center_description = "選んだときにウィンドウを画面の中央に移�
 [permission.guide]
 accessibility_body = "上の「アクセシビリティ」のリストにドロップし、スイッチがオンになっていることを確認してください。"
 screen_body = "上の「画面収録とシステムオーディオ録音」のリストにドロップし、スイッチがオンになっていることを確認してください。"
-title = "Capをリストにドラッグ"
+title = "Capwiseをリストにドラッグ"
 
 [permission.name]
 accessibility = "アクセシビリティ"
@@ -1548,18 +1548,18 @@ screen_recording = "画面収録"
 [permission.onboarding]
 open_settings_again = "システム設定をもう一度開く"
 skip = "今はスキップ"
-switch_on_title = "システム設定でCapをオンにする"
+switch_on_title = "システム設定でCapwiseをオンにする"
 
 [permission.onboarding.accessibility]
 allow = "アクセシビリティを許可"
-body = "アクセシビリティを許可すると、CapがこのMac上だけでクリックとカーソルを把握し、自動ズームがどこを映すべきかわかるようになります。"
+body = "アクセシビリティを許可すると、CapwiseがこのMac上だけでクリックとカーソルを把握し、自動ズームがどこを映すべきかわかるようになります。"
 done_body = "自動ズームがクリックを追えるようになりました。"
 done_title = "アクセシビリティはオンです"
-title = "Capがカーソルを追えるようにする"
+title = "Capwiseがカーソルを追えるようにする"
 
 [permission.onboarding.all_set]
-body = "Capに必要なものはすべてそろいました。次は、できることをざっと見てみましょう。"
-regained = "ありがとうございます。Capで再び録画できます。"
+body = "Capwiseに必要なものはすべてそろいました。次は、できることをざっと見てみましょう。"
+regained = "ありがとうございます。Capwiseで再び録画できます。"
 title = "準備完了です"
 
 [permission.onboarding.camera]
@@ -1567,41 +1567,41 @@ allow = "カメラを許可"
 body = "録画の隅に自分を映せます。必要なければスキップしてください。"
 done_body = "どの録画にもカメラを追加できます。"
 done_title = "カメラはオンです"
-title = "Capがあなたを映せるようにする"
+title = "Capwiseがあなたを映せるようにする"
 
 [permission.onboarding.checklist]
 lede = "最初にmacOSがいくつかの許可を求めます。1分ほどで終わります。"
 regained_lede = "システム設定でオフにされた項目があります。録画を続けるにはオンに戻してください。"
-regained_title = "Capの権限をもう一度オンにしてください"
-title = "Capの準備をしましょう"
+regained_title = "Capwiseの権限をもう一度オンにしてください"
+title = "Capwiseの準備をしましょう"
 
 [permission.onboarding.hint]
-drag_into_list = "システム設定の下にあるパネルからCapをリストにドラッグしてください。すでにリストにある場合は、オンにするだけです。"
-find_in_list = "リストでCapを見つけてオンにしてください。macOSから先に確認された場合は、「システム設定を開く」を選んでください。"
-no_prompt = "確認ダイアログが表示されませんか？システム設定でCapをオンにしてください。"
-open_settings = "システム設定を開き、リストでCapを見つけてオンにしてください。"
-turned_off = "以前オフにしたため、システム設定でCapをオンにしてください。今はスキップすることもできます。"
+drag_into_list = "システム設定の下にあるパネルからCapwiseをリストにドラッグしてください。すでにリストにある場合は、オンにするだけです。"
+find_in_list = "リストでCapwiseを見つけてオンにしてください。macOSから先に確認された場合は、「システム設定を開く」を選んでください。"
+no_prompt = "確認ダイアログが表示されませんか？システム設定でCapwiseをオンにしてください。"
+open_settings = "システム設定を開き、リストでCapwiseを見つけてオンにしてください。"
+turned_off = "以前オフにしたため、システム設定でCapwiseをオンにしてください。今はスキップすることもできます。"
 
 [permission.onboarding.microphone]
 allow = "マイクを許可"
 body = "録画に声を入れられます。スキップして後でオンにすることもできます。"
 done_body = "録画に声を入れられるようになりました。"
 done_title = "マイクはオンです"
-title = "Capがあなたの声を聞けるようにする"
+title = "Capwiseがあなたの声を聞けるようにする"
 
 [permission.onboarding.relaunch]
-body = "Capを再起動するとmacOSが画面収録をオンにします。この画面から続けられます。"
+body = "Capwiseを再起動するとmacOSが画面収録をオンにします。この画面から続けられます。"
 button = "再起動"
-hint = "オンにしたのにまだ待機中ですか？Capを再起動すると反映されます。"
-later = "macOSはCapの再起動後にこれを反映します。ここでの設定が終わってから再起動できます。"
+hint = "オンにしたのにまだ待機中ですか？Capwiseを再起動すると反映されます。"
+later = "macOSはCapwiseの再起動後にこれを反映します。ここでの設定が終わってから再起動できます。"
 title = "再起動すれば準備完了です"
 
 [permission.onboarding.screen]
 allow = "画面収録を許可"
-body = "画面収録を許可すると、Capがディスプレイ、ウィンドウ、システムオーディオをキャプチャできます。"
-done_body = "Capで画面をキャプチャできるようになりました。"
+body = "画面収録を許可すると、Capwiseがディスプレイ、ウィンドウ、システムオーディオをキャプチャできます。"
+done_body = "Capwiseで画面をキャプチャできるようになりました。"
 done_title = "画面収録はオンです"
-title = "Capが画面を見られるようにする"
+title = "Capwiseが画面を見られるようにする"
 
 [permission.onboarding.status]
 allowed = "許可済み"
@@ -1670,7 +1670,7 @@ renderer_not_running = "スクリーンショットのレンダラーが動作�
 renderer_stopped = "書き出しが終わる前にレンダラーが停止しました"
 save_project = "プロジェクトの保存中にエラーが発生しました：{error}"
 serialize = "スクリーンショットの設定をシリアライズできませんでした：{error}"
-sign_in_to_share = "ブラウザでCapにサインインしてから、もう一度共有してください"
+sign_in_to_share = "ブラウザでCapwiseにサインインしてから、もう一度共有してください"
 too_large = "画像サイズが上限を超えています：{width}x{height}"
 upgrade_required = "この機能を使うにはプランのアップグレードが必要です"
 upload_task = "アップロード処理に失敗しました：{error}"
@@ -2030,7 +2030,7 @@ remove_default = "デフォルトを解除"
 rename = "名前を変更"
 rename_title = "スタイルプリセット名を変更"
 save = "スタイルをプリセットとして保存"
-save_failed = "プリセットを保存できませんでした。Capが設定ファイルに書き込めません。"
+save_failed = "プリセットを保存できませんでした。Capwiseが設定ファイルに書き込めません。"
 set_default = "デフォルトに設定"
 tooltip = "スタイルプリセット"
 update = "現在のスタイルで更新"
@@ -2121,7 +2121,7 @@ title = "タイトル"
 typewriter = "タイプライター"
 
 [editor.panel.text_preset.sample]
-caption = "Capで録画"
+caption = "Capwiseで録画"
 cinematic = "第一章"
 gradient = "美しいテキスト"
 headline = "もっと速くリリース"
@@ -2132,7 +2132,7 @@ name_tag = "Richie · 創業者"
 neon = "グローアップ"
 quote = "「軽やかに感じさせて」"
 sticker = "ドーン！"
-title = "Capのご紹介"
+title = "Capwiseのご紹介"
 typewriter = "タイプ中…"
 
 [editor.panel.text_segment]
@@ -2337,7 +2337,7 @@ text_item = "テキスト"
 append_error = "クリップを追加できませんでした：{message}"
 append_error_title = "録画エラー"
 back = "エディタに戻る"
-cap_filter = "Cap録画"
+cap_filter = "Capwise録画"
 clip = "クリップ{number}"
 empty_description = "クリップを録画するか読み込むと、ここに表示されます。"
 empty_title = "クリップはまだありません"
@@ -2363,11 +2363,11 @@ instant_target = "Instantモードの録画は編集できません"
 into_itself = "録画をそれ自体に読み込むことはできません"
 missing_video = "動画ファイルがありません：{path}"
 no_duration = "読み込んだ動画に有効な長さがありません"
-not_a_project = "Capのプロジェクトフォルダを選択してください"
-source_empty = "読み込み元のCapプロジェクトに録画セグメントがありません"
-source_failed = "読み込み元のCapプロジェクトでエラーが発生しました：{error}"
-source_recording = "読み込み元のCapプロジェクトはまだ録画中です"
-source_unimportable = "読み込み元のCapプロジェクトに読み込める録画セグメントがありません"
+not_a_project = "Capwiseのプロジェクトフォルダを選択してください"
+source_empty = "読み込み元のCapwiseプロジェクトに録画セグメントがありません"
+source_failed = "読み込み元のCapwiseプロジェクトでエラーが発生しました：{error}"
+source_recording = "読み込み元のCapwiseプロジェクトはまだ録画中です"
+source_unimportable = "読み込み元のCapwiseプロジェクトに読み込める録画セグメントがありません"
 unfinished_target = "クリップを読み込む前に、この録画を完了するか復元してください"
 unsupported_video = "対応していない動画ファイルです：{path}"
 
@@ -2574,11 +2574,11 @@ generate = "字幕を生成"
 generate_failed = "字幕を生成できませんでした：{reason}"
 generating = "生成中..."
 highlight_color = "ハイライトの色"
-highlight_note = "これはCapの字幕機能の最初のバージョンです。話している単語のハイライトは、状況によって不正確になる場合があります。修正に取り組んでおり、今後のバージョンで公開する予定です。"
+highlight_note = "これはCapwiseの字幕機能の最初のバージョンです。話している単語のハイライトは、状況によって不正確になる場合があります。修正に取り組んでおり、今後のバージョンで公開する予定です。"
 highlight_style = "ハイライトのスタイル"
 horizontal_position = "水平位置"
 intel_unavailable = "Intel搭載のMacではParakeetの字幕モデルを利用できません。Whisperモデルは引き続き利用できます。"
-keep_open = "モデルのダウンロード中はCapを開いたままにしてください。エディタを再読み込みしても自動的に再接続されます。"
+keep_open = "モデルのダウンロード中はCapwiseを開いたままにしてください。エディタを再読み込みしても自動的に再接続されます。"
 language_label = "言語"
 model_downloaded = "{model}モデルをダウンロード済み"
 model_label = "モデル"
@@ -2722,7 +2722,7 @@ top_left = "左上"
 top_right = "右上"
 
 [editor.tabs.sync]
-auto_description = "Capは音声を動画と同期させるため、これらのオフセットを自動で計算しました。まだずれて聞こえる場合は調整してください。"
+auto_description = "Capwiseは音声を動画と同期させるため、これらのオフセットを自動で計算しました。まだずれて聞こえる場合は調整してください。"
 auto_synced = "自動同期済み"
 camera = "カメラのオフセット"
 clip = "クリップ{number}"
@@ -3144,32 +3144,32 @@ zoom_all = { other = "{count}個すべてを選択中" }
 zoom_some = { other = "{total}個中{count}個を選択中" }
 
 [dialog.quit]
-canceled = "終了をキャンセルしました：{error}。録画を完了または復元できるよう、Capは開いたままになります。"
+canceled = "終了をキャンセルしました：{error}。録画を完了または復元できるよう、Capwiseは開いたままになります。"
 files_kept = "これまでに録画した内容はすべて録画のフォルダに残ります。"
-keep_open = "Cap を開いたままにする"
-pending = "録画の停止処理がまだ終わっていないため、終了をキャンセルしました。Capは開いたままになります。「停止」が使えるようになったら停止してから、もう一度終了してください。"
+keep_open = "Capwise を開いたままにする"
+pending = "録画の停止処理がまだ終わっていないため、終了をキャンセルしました。Capwiseは開いたままになります。「停止」が使えるようになったら停止してから、もう一度終了してください。"
 quit_anyway = "それでも終了"
-still_open = "Capはまだ開いています"
-unconfirmed = "録画の停止を確認できなかったため、終了をキャンセルしました。Capは開いたままになります。「停止」を使ってから、もう一度終了してください。"
+still_open = "Capwiseはまだ開いています"
+unconfirmed = "録画の停止を確認できなかったため、終了をキャンセルしました。Capwiseは開いたままになります。「停止」を使ってから、もう一度終了してください。"
 
 [dialog.update]
-already_getting = "Capはすでにバージョン{version}を準備しています。"
-available = "Capのバージョン{version}が利用可能です。バックグラウンドでダウンロードし、インストールの準備ができたらお知らせします。"
-busy = "Capをアップデートする前に、録画、書き出し、アップロード、読み込み、または文字起こしを完了してください。"
-busy_title = "Capは処理中です"
+already_getting = "Capwiseはすでにバージョン{version}を準備しています。"
+available = "Capwiseのバージョン{version}が利用可能です。バックグラウンドでダウンロードし、インストールの準備ができたらお知らせします。"
+busy = "Capwiseをアップデートする前に、録画、書き出し、アップロード、読み込み、または文字起こしを完了してください。"
+busy_title = "Capwiseは処理中です"
 check_failed = "アップデートを確認できませんでした：{error}"
 download = "ダウンロード"
 download_failed = "バージョン{version}をダウンロードできませんでした：{error}"
-failed = "{message}\n\n最新バージョンはいつでもCap.so/downloadからダウンロードできます。"
+failed = "{message}\n\n最新バージョンはいつでもCapwise.so/downloadからダウンロードできます。"
 install_failed = "バージョン{version}をインストールできませんでした：{error}"
 later = "後で"
-no_update = "Capはすでに最新バージョンです。"
+no_update = "Capwiseはすでに最新バージョンです。"
 no_update_title = "アップデートはありません"
 not_now = "今はしない"
-package_not_installed = "パッケージはインストールされませんでした。システムの確認を承認するか、Cap.so/downloadからインストールしてください。"
-ready = "Cap {version}の準備ができました。アップデートを完了するにはCapを再起動してください。"
+package_not_installed = "パッケージはインストールされませんでした。システムの確認を承認するか、Capwise.so/downloadからインストールしてください。"
+ready = "Capwise {version}の準備ができました。アップデートを完了するにはCapwiseを再起動してください。"
 restart_now = "今すぐ再起動"
-title = "Capをアップデート"
+title = "Capwiseをアップデート"
 
 [message.recording]
 task_failed = "録画タスクが失敗しました。"
@@ -3189,12 +3189,12 @@ finalization_no_result = "録画の仕上げが結果を返さずに終了しま
 stopped_metadata_unsaved = "キャプチャは停止しましたが、停止時のメタデータを保存できませんでした。ローカルファイルは保持されています"
 discard_stop_unconfirmed = "Studioの録画を破棄する際、キャプチャの停止を確認できません。ローカルファイルは保持されています"
 discard_unconfirmed = "Studioの破棄を確認できません。ローカルファイルは保持されています"
-crashed_before_capture = "この録画で何もキャプチャされないうちにCapが終了しました。"
+crashed_before_capture = "この録画で何もキャプチャされないうちにCapwiseが終了しました。"
 capture_state_failed = "キャプチャの状態を確認できませんでした：{error}"
 completion_task_failed = "録画の完了処理が失敗しました：{error}"
 stop_task_failed = "停止タスクが失敗しました：{error}"
 control_task_failed = "キャプチャの制御タスクが失敗しました：{error}"
-restart_hide_failed = "やり直し時にCapのウィンドウを非表示にできませんでした：{error}"
+restart_hide_failed = "やり直し時にCapwiseのウィンドウを非表示にできませんでした：{error}"
 discard_task_failed = "Studioの破棄タスクが失敗しました：{error}。後処理を確認できません"
 cancel_task_failed = "キャンセルタスクが失敗しました：{error}。後処理を確認できません。停止をやり直してください。"
 then_cleanup_unconfirmed_shortcut = "{error}。キャプチャの後処理を確認できません。Ctrl+Shift+F9で停止をやり直してください。"
@@ -3205,10 +3205,10 @@ then_use_stop_control = "{error}。録画を止めるには、録画の停止コ
 then_discard_stopped = "{error}。破棄/やり直しを中止しました。ローカルの録画は保持されています"
 then_files_preserved = "{error}。失敗した録画のファイルは保持されています。"
 then_cleanup_retry = "{error}。後処理を確認できません。停止をやり直してください。"
-low_storage_preserved = "ストレージの空き容量が不足しています。録画ファイルは{path}に保持されています。空き容量を確保してから、Capで録画を復元してください。"
+low_storage_preserved = "ストレージの空き容量が不足しています。録画ファイルは{path}に保持されています。空き容量を確保してから、Capwiseで録画を復元してください。"
 
 [message.permission]
-unavailable = "{permission}へのアクセスを利用できません。「システム設定」>「プライバシーとセキュリティ」>「{permission}」でCapを許可してから、デバイスをもう一度選択してください。"
+unavailable = "{permission}へのアクセスを利用できません。「システム設定」>「プライバシーとセキュリティ」>「{permission}」でCapwiseを許可してから、デバイスをもう一度選択してください。"
 
 [message.upload]
 offline = "オフライン"

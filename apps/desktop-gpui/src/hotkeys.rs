@@ -90,6 +90,19 @@ impl HotkeyAction {
             .iter()
             .find(|(stored, _)| *stored == key)
             .map(|(_, action)| *action)
+            .filter(|action| action.is_available())
+    }
+
+    /// Capwise records Studio only, with no screenshots.
+    pub fn is_available(self) -> bool {
+        !matches!(
+            self,
+            Self::StartInstantRecording
+                | Self::CycleRecordingMode
+                | Self::ScreenshotDisplay
+                | Self::ScreenshotWindow
+                | Self::ScreenshotArea
+        )
     }
 
     fn store_key(self) -> &'static str {
