@@ -63,7 +63,7 @@ pub enum ExportDestination {
 }
 
 impl ExportDestination {
-    const ALL: &'static [Self] = &[Self::File, Self::Clipboard, Self::Link];
+    const ALL: &'static [Self] = &[Self::File, Self::Clipboard];
 
     fn label(self) -> &'static str {
         match self {

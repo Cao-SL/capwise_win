@@ -42,7 +42,7 @@ use crate::{
 
 /// `productName` in `tauri.conf.json`, which is what macOS renames the first
 /// submenu to.
-pub const APP_NAME: &str = "Cap";
+pub const APP_NAME: &str = "Capwise";
 
 struct MenuRegistration(UpdateRow);
 

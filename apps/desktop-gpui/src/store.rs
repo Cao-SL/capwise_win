@@ -1708,54 +1708,13 @@ impl AuthSnapshot {
     }
 }
 
-/// `maybeProtectedHeaders` (`utils/web-api.ts:64-75`): `secret.api_key` wins
-/// over `secret.token`, and `plan.upgraded` is the Pro gate.
+/// Always returns a signed-in, upgraded snapshot — cloud auth is removed.
 pub fn auth_snapshot() -> AuthSnapshot {
-    let auth = store_section("auth");
-    let token = auth
-        .get("secret")
-        .and_then(Value::as_object)
-        .and_then(|secret| {
-            secret
-                .get("api_key")
-                .or_else(|| secret.get("token"))
-                .and_then(Value::as_str)
-        })
-        .map(str::to_string);
-    let plan = auth.get("plan").and_then(Value::as_object);
-    let plan_upgraded = plan
-        .and_then(|plan| plan.get("upgraded"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let plan_manual = plan
-        .and_then(|plan| plan.get("manual"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let organizations = auth
-        .get("organizations")
-        .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| {
-                    let object = entry.as_object()?;
-                    Some(AuthOrganization {
-                        id: object.get("id")?.as_str()?.to_string(),
-                        name: object
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or("Organization")
-                            .to_string(),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
     AuthSnapshot {
-        token,
-        plan_upgraded,
-        plan_manual,
-        organizations,
+        token: Some("offline".to_string()),
+        plan_upgraded: true,
+        plan_manual: false,
+        organizations: Vec::new(),
     }
 }
 

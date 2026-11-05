@@ -434,13 +434,13 @@ fn main() {
                     titlebar: None,
                     #[cfg(target_os = "windows")]
                     titlebar: Some(gpui::TitlebarOptions {
-                        title: Some("Cap".into()),
+                        title: Some("Capwise".into()),
                         appears_transparent: true,
                         ..Default::default()
                     }),
                     #[cfg(target_os = "linux")]
                     titlebar: Some(gpui::TitlebarOptions {
-                        title: Some("Cap".into()),
+                        title: Some("Capwise".into()),
                         ..Default::default()
                     }),
                     #[cfg(target_os = "linux")]
@@ -504,10 +504,11 @@ fn main() {
         }
         #[cfg(target_os = "linux")]
         single_instance::init_linux_reopen(cx);
-        updates::schedule_startup_check(cx);
+        // Auto-update and upload queue disabled — offline mode.
+        // updates::schedule_startup_check(cx);
         app_windows::schedule_launch_render_warmup(cx);
-        upload::queue::init(cx);
-        upload::instant_cleanup::init(cx);
+        // upload::queue::init(cx);
+        // upload::instant_cleanup::init(cx);
 
         // The app menu (and with it ⌘W/⌘M/⌘Q) and the status-bar item. Both
         // reach into the window registry, so they come after it -- and the menu

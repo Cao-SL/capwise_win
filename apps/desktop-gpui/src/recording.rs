@@ -2294,9 +2294,7 @@ async fn start_internal(
     if matches!(config.target, ScreenCaptureTarget::CameraOnly) && config.camera.is_none() {
         return Err(anyhow!("Camera-only recording requires a selected camera."));
     }
-    if config.mode == RecordingMode::Instant && !crate::store::auth_snapshot().signed_in() {
-        return Err(anyhow!("Please sign in to use instant recording"));
-    }
+    // Cloud auth gate removed — instant mode works offline.
 
     let project_dir = create_project_dir(&config.target, config.mode)?;
     let project_name = project_dir
