@@ -18,7 +18,7 @@ pub use caption_timing::{
 pub use caption_words::{
     MAX_CAPTION_WORD_DURATION, MAX_CAPTION_WORDS_PER_SEGMENT, MIN_FINAL_CAPTION_WORDS,
     TARGET_CAPTION_WORDS_PER_SEGMENT, caption_boundary_word_is_weak, caption_display_text,
-    caption_text_from_words, is_unspaced_script,
+    caption_text_from_words, is_unspaced_script, joins_without_space,
     caption_word_chunks, normalize_caption_words,
 };
 pub use configuration::*;

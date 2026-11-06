@@ -132,7 +132,7 @@ fn is_unspaced_punctuation(c: char) -> bool {
 
 /// No space between two CJK characters or beside CJK punctuation; CJK next
 /// to Latin keeps its space ("豆包的 API key").
-fn joins_without_space(previous: &str, next: &str) -> bool {
+pub fn joins_without_space(previous: &str, next: &str) -> bool {
     let (Some(before), Some(after)) = (previous.chars().last(), next.chars().next()) else {
         return false;
     };

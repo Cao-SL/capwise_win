@@ -200,7 +200,7 @@ impl TranscriptDoc {
                 let mut text = String::new();
                 let mut spans = Vec::with_capacity(range.len());
                 for word in &words[range.clone()] {
-                    if !text.is_empty() {
+                    if !text.is_empty() && !cap_project::joins_without_space(&text, &word.text) {
                         text.push(' ');
                     }
                     let start = text.len();

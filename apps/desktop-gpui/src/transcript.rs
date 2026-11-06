@@ -81,6 +81,9 @@ pub(crate) struct WordDrag {
 
 pub(crate) struct SearchState {
     pub input: gpui::Entity<crate::ui::TextInputState>,
+    pub replace: gpui::Entity<crate::ui::TextInputState>,
+    /// How many matches the last replace changed, shown until the query changes.
+    pub replaced: Option<usize>,
     pub matches: Arc<Vec<Range<usize>>>,
     pub current: usize,
     pub query: String,

@@ -21,6 +21,7 @@ pub(super) fn is_editor_shell_surface_key(key: &str) -> bool {
 const FORMATTED: &[&str] = &[
     "editor.transcript.fillers.remove_all",
     "editor.transcript.pauses.summary",
+    "editor.transcript.replaced",
     "editor.transcript.restore_hint",
     "editor.transcript.search_count",
     "editor.transcript.seconds",
@@ -563,6 +564,9 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Set up cloud recognition",
         ),
         (tr::editor::tabs::captions::manage_models(), "Manage models…"),
+        (tr::editor::transcript::replace(), "Replace"),
+        (tr::editor::transcript::replace_all(), "Replace all"),
+        (tr::editor::transcript::replace_placeholder(), "Replace with"),
         (tr::editor::tabs::captions::model::qwen(), "Qwen3-ASR 0.6B"),
         (
             tr::editor::tabs::captions::model::qwen_description(),

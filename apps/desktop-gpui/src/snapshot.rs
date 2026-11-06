@@ -35,6 +35,32 @@ pub fn arm_from_env(cx: &mut App) {
         cx.background_executor()
             .timer(Duration::from_millis(delay))
             .await;
+        // `CAP_GPUI_SNAPSHOT_TRANSCRIPT=<find>|<replace>`: open the first
+        // editor's transcript with its search and replace fields filled.
+        if let Ok(spec) = std::env::var("CAP_GPUI_SNAPSHOT_TRANSCRIPT") {
+            let mut parts = spec.split('|').map(str::to_string);
+            let find = parts.next().unwrap_or_default();
+            let replace = parts.next().unwrap_or_default();
+            let apply = parts.next().is_some_and(|flag| flag == "all");
+            cx.update(|cx| {
+                if let Some((_, editor)) = cx.global::<crate::app_windows::AppWindows>().editors.first().cloned() {
+                    let _ = editor.update(cx, |editor, window, cx| {
+                        editor.harness_transcript_search(&find, &replace, window, cx);
+                    });
+                }
+            });
+            cx.background_executor().timer(Duration::from_millis(1200)).await;
+            if apply {
+                cx.update(|cx| {
+                    if let Some((_, editor)) = cx.global::<crate::app_windows::AppWindows>().editors.first().cloned() {
+                        let _ = editor.update(cx, |editor, window, cx| {
+                            editor.harness_transcript_replace_all(window, cx);
+                        });
+                    }
+                });
+                cx.background_executor().timer(Duration::from_millis(1200)).await;
+            }
+        }
         let mut number = None;
         for _ in 0..20 {
             number = cx.update(|cx| {
@@ -43,6 +69,11 @@ pub fn arm_from_env(cx: &mut App) {
                     crate::permission_guide::window_handle(cx)
                 } else if target == "main" {
                     Some(cx.global::<crate::app_windows::AppWindows>().main.into())
+                } else if target == "editor" {
+                    cx.global::<crate::app_windows::AppWindows>()
+                        .editors
+                        .first()
+                        .map(|(_, editor)| (*editor).into())
                 } else if target.starts_with("settings") {
                     cx.global::<crate::app_windows::AppWindows>()
                         .settings

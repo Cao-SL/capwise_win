@@ -12,6 +12,7 @@ mod auth;
 mod blur_recovery;
 #[cfg(target_os = "macos")]
 mod camera_bench;
+mod caption_replace;
 #[cfg(target_os = "macos")]
 mod camera_blur;
 #[cfg(any(not(target_os = "macos"), test))]

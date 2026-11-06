@@ -2777,6 +2777,10 @@ video = { text = "Video", context = "Timeline gutter label of the recording's vi
 zoom = "Zoom"
 
 [editor.transcript]
+replace = "Replace"
+replace_all = "Replace all"
+replace_placeholder = "Replace with"
+replaced = { text = "Replaced {count}", context = "{count} is how many matches were replaced." }
 cleanup = "Clean up"
 cleanup_tooltip = "Remove filler words and shorten pauses"
 delete_matches = "Delete all"

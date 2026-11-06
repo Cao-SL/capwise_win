@@ -2775,6 +2775,10 @@ video = "视频"
 zoom = "缩放"
 
 [editor.transcript]
+replace = "替换"
+replace_all = "全部替换"
+replace_placeholder = "替换为"
+replaced = "已替换 {count} 处"
 cleanup = "清理"
 cleanup_tooltip = "移除填充词并缩短停顿"
 delete_matches = "全部删除"

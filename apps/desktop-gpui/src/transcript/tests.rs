@@ -1848,3 +1848,17 @@ fn removing_neighbouring_fillers_together_matches_removing_them_one_at_a_time() 
     assert_eq!(kept(&together, &durations), kept(&apart, &durations));
     assert_eq!(bounds(&together), bounds(&apart));
 }
+
+#[test]
+fn chinese_transcripts_read_without_spaces_and_search_across_characters() {
+    let words: Vec<(&str, f64, f64)> = "欢迎使用零路，零路很好"
+        .chars()
+        .enumerate()
+        .map(|(index, c)| (&*Box::leak(c.to_string().into_boxed_str()), index as f64, index as f64 + 0.5))
+        .collect();
+    let doc = TranscriptDoc::build(&captions(&words));
+    let text: String = doc.paragraphs.iter().map(|p| p.text.to_string()).collect();
+    assert!(!text.contains(' '), "{text}");
+    assert_eq!(super::view::find_matches(&doc, "零路"), [4..6, 6..8]);
+    assert!(super::view::find_matches(&doc, "灵录").is_empty());
+}

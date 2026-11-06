@@ -33,7 +33,41 @@ const FOLLOW_ANCHOR: f32 = 0.32;
 const LISTEN_BEFORE: f64 = 1.5;
 const LISTEN_AFTER: f64 = 1.0;
 
+/// Chinese and Japanese have no spaces between words, and a transcript word
+/// there is a character or two, so a query is found in the running text.
+fn find_text_matches(doc: &TranscriptDoc, query: &str) -> Vec<Range<usize>> {
+    let needle: String = query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut text = String::new();
+    let mut spans = Vec::with_capacity(doc.words.len());
+    for word in &doc.words {
+        if !text.is_empty() && !cap_project::joins_without_space(&text, &word.text) {
+            text.push(' ');
+        }
+        let start = text.len();
+        text.push_str(&word.text.to_lowercase());
+        spans.push(start..text.len());
+    }
+    let mut matches = Vec::new();
+    let mut from = 0;
+    while let Some(at) = text[from..].find(&needle) {
+        let (start, end) = (from + at, from + at + needle.len());
+        let first = spans.partition_point(|span| span.end <= start);
+        let last = spans.partition_point(|span| span.start < end);
+        if first < last {
+            matches.push(first..last);
+        }
+        from = end;
+    }
+    matches
+}
+
 pub(super) fn find_matches(doc: &TranscriptDoc, query: &str) -> Vec<Range<usize>> {
+    if query.chars().any(cap_project::is_unspaced_script) {
+        return find_text_matches(doc, query);
+    }
     let needle: Vec<String> = query
         .split_whitespace()
         .map(normalize_word)
@@ -549,6 +583,32 @@ fn byte_at(layout: &TextLayout, position: Point<Pixels>) -> usize {
 }
 
 impl EditorWindow {
+/// Debug-build screenshot harness: the transcript panel open with its search
+    /// and replace fields filled.
+    pub(crate) fn harness_transcript_search(
+        &mut self,
+        find: &str,
+        replace: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.transcript.open {
+            self.toggle_transcript(window, cx);
+        }
+        self.transcript_open_search(window, cx);
+        if let Some(search) = &self.transcript.search {
+            let (input, replace_input) = (search.input.clone(), search.replace.clone());
+            input.update(cx, |input, cx| input.set_text(find.to_string(), cx));
+            replace_input.update(cx, |input, cx| input.set_text(replace.to_string(), cx));
+        }
+        self.transcript_search_changed(find.to_string(), cx);
+    }
+
+    /// Debug-build screenshot harness: press "Replace all".
+    pub(crate) fn harness_transcript_replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.transcript_replace(true, window, cx);
+    }
+
     pub(crate) fn toggle_transcript(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.project_ready() {
             return;
@@ -1227,9 +1287,26 @@ impl EditorWindow {
             },
         );
         self.push_text_subscription(subscription);
+        let replace = cx.new(|cx| {
+            let mut input = ui::TextInputState::single_line(window, cx);
+            input.set_placeholder(tr::editor::transcript::replace_placeholder());
+            input
+        });
+        let subscription = cx.subscribe_in(
+            &replace,
+            window,
+            |this: &mut Self, _, event: &ui::TextInputEvent, window, cx| match event {
+                ui::TextInputEvent::Confirmed => this.transcript_replace(false, window, cx),
+                ui::TextInputEvent::Cancelled => this.transcript_close_search(window, cx),
+                _ => {}
+            },
+        );
+        self.push_text_subscription(subscription);
         input.update(cx, |input, cx| input.focus_and_select_all(window, cx));
         self.transcript.search = Some(SearchState {
             input,
+            replace,
+            replaced: None,
             matches: Arc::new(Vec::new()),
             current: 0,
             query: String::new(),
@@ -1264,6 +1341,7 @@ impl EditorWindow {
         let Some(search) = self.transcript.search.as_mut() else {
             return;
         };
+        search.replaced = None;
         search.query = query;
         search.current = matches
             .iter()
@@ -1294,6 +1372,65 @@ impl EditorWindow {
         });
         self.transcript_seek_word(range.start, cx);
         self.transcript_reveal(range.start, false);
+        self.invalidate_transcript(cx);
+    }
+
+    /// Replaces the current match, or every match, in the captions. The
+    /// replacement is also remembered as a transcription term, so the next
+    /// transcription spells it right.
+    fn transcript_replace(&mut self, all: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(search), Some(doc)) = (&self.transcript.search, self.transcript.doc.clone())
+        else {
+            return;
+        };
+        let find = search.query.trim().to_string();
+        let replacement = search.replace.read(cx).text().trim().to_string();
+        if find.is_empty() || search.matches.is_empty() {
+            return;
+        }
+        let within = if all {
+            None
+        } else {
+            let Some(range) = search.matches.get(search.current) else {
+                return;
+            };
+            let (first, last) = (&doc.words[range.start], &doc.words[range.end - 1]);
+            Some(first.start..last.end)
+        };
+        let recording_durations = self
+            .summary()
+            .map(|summary| summary.clip_display_durations.clone())
+            .unwrap_or_default();
+        let replaced = std::rc::Rc::new(std::cell::Cell::new(0));
+        let counted = replaced.clone();
+        let (find_for_edit, replacement_for_edit) = (find.clone(), replacement.clone());
+        self.edit_project("transcript-replace", window, cx, move |project| {
+            let Some(captions) = project.captions.as_mut() else {
+                return false;
+            };
+            let count = crate::caption_replace::replace_in_captions(
+                &mut captions.segments,
+                &find_for_edit,
+                &replacement_for_edit,
+                within,
+            );
+            if count == 0 {
+                return false;
+            }
+            counted.set(count);
+            let segments = captions.segments.clone();
+            if let Some(timeline) = project.timeline.as_mut() {
+                timeline.caption_segments =
+                    cap_project::derive_caption_track_segments(&segments, timeline, &recording_durations);
+            }
+            true
+        });
+        if replaced.get() > 0 {
+            crate::caption_replace::remember_term(&replacement);
+        }
+        if let Some(search) = self.transcript.search.as_mut() {
+            search.replaced = Some(replaced.get());
+        }
         self.invalidate_transcript(cx);
     }
 
@@ -1671,18 +1808,14 @@ impl EditorWindow {
                 count,
             ))
         };
-        Some(
-            div()
+        let replaced = search.replaced.map(|count| {
+            SharedString::from(tr::editor::transcript::replaced(count))
+        });
+        let find_row = div()
                 .flex()
                 .flex_row()
                 .items_center()
                 .gap(px(6.))
-                .flex_none()
-                .px(px(12.))
-                .py(px(8.))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .border_b_1()
-                .border_color(Hsla::from(theme.editor.line))
                 .child(
                     div().flex_1().min_w_0().child(
                         ui::TextInput::plain(&theme, "transcript-search-input", &search.input)
@@ -1720,7 +1853,55 @@ impl EditorWindow {
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.transcript_delete_matches(window, cx);
                         })),
-                )
+                );
+        let replace_row = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.))
+            .child(
+                div().flex_1().min_w_0().child(
+                    ui::TextInput::plain(&theme, "transcript-replace-input", &search.replace)
+                        .height(px(28.))
+                        .text_size(px(13.)),
+                ),
+            )
+            .children(replaced.map(|label| {
+                div()
+                    .flex_none()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_3))
+                    .child(label)
+            }))
+            .child(
+                ui::EditorButton::plain(&theme, "transcript-replace-one")
+                    .label(tr::editor::transcript::replace())
+                    .disabled(count == 0)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.transcript_replace(false, window, cx);
+                    })),
+            )
+            .child(
+                ui::EditorButton::plain(&theme, "transcript-replace-all")
+                    .label(tr::editor::transcript::replace_all())
+                    .disabled(count == 0)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.transcript_replace(true, window, cx);
+                    })),
+            );
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .flex_none()
+                .px(px(12.))
+                .py(px(8.))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .border_b_1()
+                .border_color(Hsla::from(theme.editor.line))
+                .child(find_row)
+                .child(replace_row)
                 .into_any_element(),
         )
     }
