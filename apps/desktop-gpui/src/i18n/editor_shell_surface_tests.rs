@@ -564,6 +564,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Set up cloud recognition",
         ),
         (tr::editor::tabs::captions::manage_models(), "Manage models…"),
+        (tr::editor::tabs::captions::find_replace(), "Find and replace"),
         (tr::editor::transcript::replace(), "Replace"),
         (tr::editor::transcript::replace_all(), "Replace all"),
         (tr::editor::transcript::replace_placeholder(), "Replace with"),

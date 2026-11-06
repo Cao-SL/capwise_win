@@ -2466,6 +2466,7 @@ source = { text = "Source", context = "Camera shape that keeps the camera's own 
 square = "Square"
 
 [editor.tabs.captions]
+find_replace = "Find and replace"
 manage_models = "Manage models…"
 cloud_ready = "API key saved in the keychain"
 cloud_settings = "Settings"

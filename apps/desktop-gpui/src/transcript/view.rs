@@ -583,7 +583,15 @@ fn byte_at(layout: &TextLayout, position: Point<Pixels>) -> usize {
 }
 
 impl EditorWindow {
-/// Debug-build screenshot harness: the transcript panel open with its search
+    /// Opens the transcript panel with its find-and-replace bar focused.
+    pub(crate) fn open_transcript_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.transcript.open {
+            self.toggle_transcript(window, cx);
+        }
+        self.transcript_open_search(window, cx);
+    }
+
+    /// Debug-build screenshot harness: the transcript panel open with its search
     /// and replace fields filled.
     pub(crate) fn harness_transcript_search(
         &mut self,
@@ -592,10 +600,7 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.transcript.open {
-            self.toggle_transcript(window, cx);
-        }
-        self.transcript_open_search(window, cx);
+        self.open_transcript_search(window, cx);
         if let Some(search) = &self.transcript.search {
             let (input, replace_input) = (search.input.clone(), search.replace.clone());
             input.update(cx, |input, cx| input.set_text(find.to_string(), cx));

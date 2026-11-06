@@ -2464,6 +2464,7 @@ source = "原始"
 square = "方形"
 
 [editor.tabs.captions]
+find_replace = "查找替换"
 manage_models = "管理模型…"
 cloud_ready = "API Key 已保存在钥匙串"
 cloud_settings = "设置"

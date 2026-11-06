@@ -3074,6 +3074,23 @@ impl EditorWindow {
                     })),
                 );
             }
+            if has_captions {
+                column = column.child(
+                    ui::Button::plain(
+                        &theme,
+                        "caption-find-replace",
+                        ui::ButtonVariant::Gray,
+                        ui::ButtonSize::Md,
+                    )
+                    .icon("icons/search.svg")
+                    .label(tr::editor::tabs::captions::find_replace())
+                    .full_width()
+                    .disabled(generating)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_transcript_search(window, cx);
+                    })),
+                );
+            }
             column = column.child(
                 div()
                     .flex()
