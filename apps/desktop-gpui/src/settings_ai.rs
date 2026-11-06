@@ -666,7 +666,7 @@ impl SettingsWindow {
                 self.ai_row(
                     monogram(model.model_name),
                     (model.label)().into(),
-                    None,
+                    (name == crate::local_qwen::MODEL).then(tr::settings::ai::recommended),
                     format!("{} · {}", (model.description)(), crate::i18n::decimal(model.size)).into(),
                     right,
                 )
@@ -805,8 +805,8 @@ impl SettingsWindow {
     pub(crate) fn render_ai_models(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let mut sections = vec![
             self.ai_recognizer_section(cx),
-            self.ai_cloud_section(cx),
             self.ai_local_section(cx),
+            self.ai_cloud_section(cx),
         ];
         sections.extend(self.render_transcription(cx));
         sections.push(self.ai_llm_section(cx));

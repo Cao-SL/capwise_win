@@ -247,6 +247,13 @@ pub struct CaptionModel {
 /// `MODEL_OPTIONS` (`CaptionsTab.tsx:87-116`).
 pub static CAPTION_MODELS: &[CaptionModel] = &[
     CaptionModel {
+        name: crate::local_qwen::MODEL,
+        label: tr::editor::tabs::captions::model::qwen,
+        model_name: "Qwen3-ASR 0.6B (llama.cpp)",
+        size: "~1.0GB",
+        description: tr::editor::tabs::captions::model::qwen_description,
+    },
+    CaptionModel {
         name: "best",
         label: tr::editor::tabs::captions::model::recommended,
         model_name: "parakeet-tdt-0.6b-v3 int8",
@@ -348,6 +355,7 @@ pub fn local_caption_models() -> Vec<&'static CaptionModel> {
         .filter(|model| {
             transcription::supports_parakeet() || !transcription::is_parakeet_model(model.name)
         })
+        .filter(|model| model.name != crate::local_qwen::MODEL || crate::local_qwen::supported())
         .collect()
 }
 
@@ -3951,8 +3959,10 @@ impl EditorWindow {
         let Some(request) = transcription::refinement_request(&project_path) else {
             return;
         };
-        // Cloud services return their own word times; there is no local model to refine with.
-        if crate::asr_cloud::is_cloud_model(&request.model) {
+        // Cloud services and Qwen3-ASR have no model here to refine word times with.
+        if crate::asr_cloud::is_cloud_model(&request.model)
+            || request.model == crate::local_qwen::MODEL
+        {
             transcription::clear_refinement_request(&project_path);
             return;
         }
@@ -4525,16 +4535,17 @@ mod tests {
         // `MODEL_OPTIONS` (`CaptionsTab.tsx:87-116`): two Parakeet entries in
         // front of the two Whisper ones, so the Intel-macOS slice keeps
         // exactly the Whisper pair.
-        assert_eq!(CAPTION_MODELS.len(), 4 + crate::asr_cloud::SERVICES.len());
-        assert_eq!(CAPTION_MODELS[0].name, "best");
-        assert_eq!(CAPTION_MODELS[1].name, "best-max");
-        assert_eq!(CAPTION_MODELS[2].name, "small");
-        assert_eq!(CAPTION_MODELS[3].name, "medium");
-        for (model, service) in CAPTION_MODELS[4..].iter().zip(crate::asr_cloud::SERVICES) {
+        assert_eq!(CAPTION_MODELS.len(), 5 + crate::asr_cloud::SERVICES.len());
+        assert_eq!(CAPTION_MODELS[0].name, crate::local_qwen::MODEL);
+        assert_eq!(CAPTION_MODELS[1].name, "best");
+        assert_eq!(CAPTION_MODELS[2].name, "best-max");
+        assert_eq!(CAPTION_MODELS[3].name, "small");
+        assert_eq!(CAPTION_MODELS[4].name, "medium");
+        for (model, service) in CAPTION_MODELS[5..].iter().zip(crate::asr_cloud::SERVICES) {
             assert_eq!(model.name, service.id);
         }
         assert!(
-            CAPTION_MODELS[2..]
+            CAPTION_MODELS[3..]
                 .iter()
                 .all(|model| !transcription::is_parakeet_model(model.name))
         );

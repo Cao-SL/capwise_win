@@ -117,7 +117,7 @@ impl Default for VerbatimOptions {
 pub const CAPTION_MODEL_FOLDER: &str = "transcription_models";
 
 /// Every model the catalogue can name, for the disk scan.
-const MODEL_NAMES: [&str; 4] = ["best", "best-max", "small", "medium"];
+const MODEL_NAMES: [&str; 5] = ["best", "best-max", "small", "medium", crate::local_qwen::MODEL];
 
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 const PARAKEET_UNSUPPORTED_MESSAGE: &str = "Parakeet transcription is not available on Intel macOS";
@@ -182,7 +182,9 @@ pub fn models_dir() -> PathBuf {
 /// `getModelPath` (`captions.ts:529-535`): Parakeet models are directories
 /// named `parakeet-{model}`, Whisper models are single `{model}.bin` files.
 pub fn model_path(model: &str) -> PathBuf {
-    if is_parakeet_model(model) {
+    if model == crate::local_qwen::MODEL {
+        crate::local_qwen::dir()
+    } else if is_parakeet_model(model) {
         models_dir().join(format!("parakeet-{model}"))
     } else {
         models_dir().join(format!("{model}.bin"))
@@ -192,6 +194,9 @@ pub fn model_path(model: &str) -> PathBuf {
 /// `check_model_exists` / `check_parakeet_model_exists`
 /// (`captions.rs:2223-2226,2579-2597`).
 fn model_files_present(model: &str) -> bool {
+    if model == crate::local_qwen::MODEL {
+        return crate::local_qwen::supported() && crate::local_qwen::installed();
+    }
     let path = model_path(model);
     if !is_parakeet_model(model) {
         return path.exists();
@@ -332,7 +337,7 @@ pub fn begin_download(model: &str) -> bool {
     true
 }
 
-fn set_download_progress(model: &str, progress: f64, message: String) {
+pub(crate) fn set_download_progress(model: &str, progress: f64, message: String) {
     let mut hub = hub();
     if let Some(download) = hub.download.as_mut()
         && download.model == model
@@ -347,7 +352,9 @@ fn set_download_progress(model: &str, progress: f64, message: String) {
 /// hub the way Tauri's spawned task lands it in `MODEL_DOWNLOADS`
 /// (`captions.rs:2079-2100`).
 pub async fn run_model_download(model: String) {
-    let result = if is_parakeet_model(&model) {
+    let result = if model == crate::local_qwen::MODEL {
+        crate::local_qwen::download().await
+    } else if is_parakeet_model(&model) {
         download_parakeet_model(&model).await
     } else {
         download_whisper_model(&model).await
@@ -408,6 +415,9 @@ pub fn run_model_delete(model: &str) {
 }
 
 fn delete_model_files(model: &str) -> Result<(), String> {
+    if model == crate::local_qwen::MODEL {
+        return crate::local_qwen::delete();
+    }
     let path = model_path(model);
     if !path.exists() {
         return Err(format!("Model file not found: {}", path.display()));
@@ -2177,10 +2187,15 @@ pub fn transcribe_blocking(
     timeline: Option<&TimelineConfiguration>,
     recording_durations: &[f64],
 ) -> Result<Transcript, String> {
-    if crate::asr_cloud::is_cloud_model(model) {
+    if crate::asr_cloud::is_cloud_model(model) || model == crate::local_qwen::MODEL {
         let hints = user_transcription_hints();
         let segments = transcribe_project_with(project_path, timeline, recording_durations, |audio_path| {
-            crate::asr_cloud::transcribe(model, &read_wav_16k_mono(audio_path)?, &hints)
+            let samples = read_wav_16k_mono(audio_path)?;
+            if model == crate::local_qwen::MODEL {
+                crate::local_qwen::transcribe(&samples, &hints)
+            } else {
+                crate::asr_cloud::transcribe(model, &samples, &hints)
+            }
         })?;
         return Ok(Transcript {
             segments,

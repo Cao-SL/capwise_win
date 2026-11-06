@@ -93,6 +93,7 @@ mod screenshot_export;
 mod script_text;
 mod session;
 mod llm;
+mod local_qwen;
 mod settings_about;
 mod settings_ai;
 mod settings_pages;

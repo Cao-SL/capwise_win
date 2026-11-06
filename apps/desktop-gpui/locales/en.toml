@@ -2621,6 +2621,8 @@ ur = "Urdu"
 zh = "Chinese"
 
 [editor.tabs.captions.model]
+qwen = "Qwen3-ASR 0.6B"
+qwen_description = "Best local model for Chinese · 30 languages and 22 Chinese dialects"
 high_accuracy = "Parakeet v3 (full)"
 high_accuracy_description = "Most accurate Parakeet · European languages only"
 medium = "Whisper Medium"
@@ -3346,3 +3348,8 @@ recommended = "Recommended"
 remove = "Remove"
 save = "Test and save"
 testing = "Testing…"
+
+[transcription]
+qwen_missing_server = "This copy of Capwise is missing its llama-server helper; reinstall Capwise."
+qwen_name = "Qwen3-ASR (local)"
+qwen_not_installed = "Download Qwen3-ASR in Settings → AI models first."

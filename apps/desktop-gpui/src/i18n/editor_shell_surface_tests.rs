@@ -563,6 +563,11 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Set up cloud recognition",
         ),
         (tr::editor::tabs::captions::manage_models(), "Manage models…"),
+        (tr::editor::tabs::captions::model::qwen(), "Qwen3-ASR 0.6B"),
+        (
+            tr::editor::tabs::captions::model::qwen_description(),
+            "Best local model for Chinese · 30 languages and 22 Chinese dialects",
+        ),
         (tr::editor::tabs::font::source_han_sans(), "Source Han Sans"),
         (tr::editor::tabs::font::smiley_sans(), "Smiley Sans"),
         (tr::editor::tabs::font::lxgw_wenkai(), "LXGW WenKai"),

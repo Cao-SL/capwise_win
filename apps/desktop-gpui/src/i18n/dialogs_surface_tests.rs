@@ -14,6 +14,8 @@ pub(super) fn is_dialogs_surface_key(key: &str) -> bool {
     ]
     .iter()
     .any(|prefix| key.starts_with(prefix))
+        // Capwise's own Qwen3-ASR messages replaced no Cap literal.
+        && !key.starts_with("transcription.qwen")
 }
 
 const FORMATTED: &[&str] = &[

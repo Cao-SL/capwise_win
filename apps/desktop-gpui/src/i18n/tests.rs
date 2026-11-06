@@ -16,6 +16,7 @@ const CAPWISE_KEYS: &[&str] = &[
     "settings.ai.",
     "settings.about.",
     "settings.nav.about",
+    "transcription.qwen",
 ];
 
 #[test]

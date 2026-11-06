@@ -26,6 +26,8 @@ pub enum Protocol {
     DoubaoFlash,
     OpenAiTranscriptions,
     ChatAudio,
+    /// llama.cpp's `llama-server` running Qwen3-ASR on this Mac.
+    LlamaAsr,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +37,8 @@ enum ContextMode {
     Doubao,
     /// Whisper's `prompt`: only its tail is read, so it stays short.
     Prompt,
+    /// Qwen3-ASR reads background text from the system message.
+    System,
 }
 
 pub struct AsrService {
@@ -211,6 +215,22 @@ pub static SERVICES: &[AsrService] = &[
     },
 ];
 
+/// Qwen3-ASR through the bundled `llama-server`; not a cloud service, so it
+/// is not in [`SERVICES`]. Short pieces keep the spread sentence times close.
+static LLAMA_QWEN: AsrService = AsrService {
+    id: "qwen3-asr",
+    name: tr::transcription::qwen_name,
+    note: tr::transcription::qwen_name,
+    protocol: Protocol::LlamaAsr,
+    base_url: "",
+    models: &[],
+    key_url: None,
+    needs_key: false,
+    context: ContextMode::System,
+    chunk_target: 15.0,
+    chunk_max: 30.0,
+};
+
 pub fn service(id: &str) -> Option<&'static AsrService> {
     SERVICES.iter().find(|service| service.id == id)
 }
@@ -231,6 +251,7 @@ const CONCURRENCY: usize = 3;
 const RETRIES: u32 = 3;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 const DOUBAO_CONTEXT_BUDGET: usize = 700;
+const SYSTEM_CONTEXT_BUDGET: usize = 1200;
 const PROMPT_BUDGET: usize = 160;
 
 /// On-screen line length, in CJK characters (a Latin letter counts ~half).
@@ -386,6 +407,14 @@ fn tidy(text: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Qwen3-ASR answers `language Chinese<asr_text>…`; the words follow the tag.
+fn asr_text(reply: &str) -> &str {
+    reply
+        .split_once("<asr_text>")
+        .map_or(reply, |(_, text)| text)
+        .trim_end_matches("</asr_text>")
 }
 
 /// Sentences, each a stretch of the piece in proportion to its length.
@@ -559,6 +588,20 @@ async fn send_once(
                 .multipart(form.part("file", file));
             if key.is_empty() { builder } else { builder.bearer_auth(key) }
         }
+        Protocol::LlamaAsr => {
+            let audio = base64::engine::general_purpose::STANDARD.encode(wav);
+            let mut messages = Vec::new();
+            if !context.is_empty() {
+                messages.push(json!({ "role": "system", "content": context }));
+            }
+            messages.push(json!({ "role": "user", "content": [{ "type": "input_audio", "input_audio": { "data": audio, "format": "wav" } }] }));
+            client.post(format!("{base}/chat/completions")).json(&json!({
+                "model": endpoint.model,
+                "messages": messages,
+                "temperature": 0,
+                "stream": false,
+            }))
+        }
         Protocol::ChatAudio => {
             let audio = base64::engine::general_purpose::STANDARD.encode(wav);
             let builder = client.post(format!("{base}/chat/completions")).json(&json!({
@@ -622,13 +665,13 @@ async fn send_once(
                 None => Ok(spread_sentences(&tidy(&parsed.text), duration_ms)),
             }
         }
-        Protocol::ChatAudio => {
+        Protocol::ChatAudio | Protocol::LlamaAsr => {
             let value: Value = response.json().await.map_err(|_| unreadable())?;
             let text = value
                 .pointer("/choices/0/message/content")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            Ok(spread_sentences(&tidy(text), duration_ms))
+            Ok(spread_sentences(&tidy(asr_text(text)), duration_ms))
         }
     }
 }
@@ -840,11 +883,27 @@ fn prompt_context(hints: &[String]) -> String {
     chars[chars.len().saturating_sub(PROMPT_BUDGET)..].iter().collect()
 }
 
+/// Qwen3-ASR's background text: the terms, as many as fit.
+fn system_context(hints: &[String]) -> String {
+    let mut text = String::new();
+    for term in terms(hints) {
+        if text.chars().count() + term.chars().count() + 1 > SYSTEM_CONTEXT_BUDGET {
+            break;
+        }
+        if !text.is_empty() {
+            text.push('、');
+        }
+        text.push_str(term);
+    }
+    text
+}
+
 fn context_for(service: &AsrService, hints: &[String]) -> String {
     match service.context {
         ContextMode::None => String::new(),
         ContextMode::Doubao => doubao_context(hints),
         ContextMode::Prompt => prompt_context(hints),
+        ContextMode::System => system_context(hints),
     }
 }
 
@@ -856,16 +915,39 @@ pub fn transcribe(
     hints: &[String],
 ) -> Result<Vec<CaptionSegment>, String> {
     let service = service(id).ok_or_else(|| format!("Unknown recognition service {id}"))?;
-    let endpoint = service.endpoint();
     let key = ai_store::key(Kind::Asr, id).unwrap_or_default();
     if service.needs_key && key.is_empty() {
         return Err(tr::asr::no_key((service.name)()));
     }
+    run(service, &service.endpoint(), &key, samples, hints)
+}
+
+/// Recognise with Qwen3-ASR behind a local `llama-server` at `base_url`.
+pub fn transcribe_llama(
+    base_url: &str,
+    model: &str,
+    samples: &[f32],
+    hints: &[String],
+) -> Result<Vec<CaptionSegment>, String> {
+    let endpoint = Endpoint {
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+    };
+    run(&LLAMA_QWEN, &endpoint, "", samples, hints)
+}
+
+fn run(
+    service: &'static AsrService,
+    endpoint: &Endpoint,
+    key: &str,
+    samples: &[f32],
+    hints: &[String],
+) -> Result<Vec<CaptionSegment>, String> {
     let context = context_for(service, hints);
     let request = Request {
         service,
-        endpoint: &endpoint,
-        key: &key,
+        endpoint,
+        key,
         context: &context,
     };
     let total = samples.len() as f64 / SAMPLE_RATE as f64;
@@ -875,7 +957,7 @@ pub fn transcribe(
         service.chunk_target,
         service.chunk_max,
     );
-    tracing::info!(service = id, pieces = chunks.len(), seconds = total, "cloud transcription");
+    tracing::info!(service = service.id, pieces = chunks.len(), seconds = total, "speech recognition");
     let client = reqwest::Client::new();
 
     tokio::runtime::Handle::current().block_on(async {
@@ -996,6 +1078,14 @@ mod tests {
         assert_eq!(segments[1].text, "Second sentence here!");
         assert_eq!(segments[1].words.len(), 3);
         assert!(segments[1].end <= 15.0 + 1e-3);
+    }
+
+    #[test]
+    fn qwen_replies_lose_their_language_tag() {
+        assert_eq!(asr_text("language Chinese<asr_text>大家好。"), "大家好。");
+        assert_eq!(asr_text("<asr_text>hi</asr_text>"), "hi");
+        assert_eq!(asr_text("plain"), "plain");
+        assert_eq!(system_context(&["灵录".into(), "通义千问".into()]), "灵录、通义千问");
     }
 
     #[test]

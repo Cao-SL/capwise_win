@@ -23,11 +23,15 @@ cargo_flags=()
 (cd "$ROOT" && cargo build -p cap ${cargo_flags[@]+"${cargo_flags[@]}"})
 
 "$HERE/scripts/fetch-caption-fonts.sh" >/dev/null
+"$HERE/scripts/fetch-llama-server.sh" >/dev/null
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources/onnxruntime/lib" "$STAGE/Contents/Frameworks"
 cp "$HERE/packaging/macos/Info.plist" "$STAGE/Contents/Info.plist"
 cp "$HERE/packaging/macos/icon.icns" "$STAGE/Contents/Resources/icon.icns"
+mkdir -p "$STAGE/Contents/Helpers/llama-server" "$STAGE/Contents/Resources/licenses"
+cp -a "$HERE/target/llama-server/llama-server" "$HERE"/target/llama-server/*.dylib "$STAGE/Contents/Helpers/llama-server/"
+cp "$HERE/target/llama-server/LICENSE" "$STAGE/Contents/Resources/licenses/llama.cpp-LICENSE.txt"
 mkdir -p "$STAGE/Contents/Resources/fonts"
 cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
 cp "$HERE/target/$PROFILE/cap-gpui" "$STAGE/Contents/MacOS/Capwise"
@@ -44,7 +48,8 @@ sign() { codesign --force --timestamp=none --options runtime --sign "$IDENTITY" 
 # Inside-out: libraries, helper binary, then the app itself.
 while IFS= read -r -d '' dylib; do
   sign "$dylib"
-done < <(find "$STAGE/Contents/Frameworks" "$STAGE/Contents/Resources" -type f -name "*.dylib" -print0)
+done < <(find "$STAGE/Contents/Frameworks" "$STAGE/Contents/Resources" "$STAGE/Contents/Helpers" -type f -name "*.dylib" -print0)
+sign "$STAGE/Contents/Helpers/llama-server/llama-server"
 sign "$STAGE/Contents/Frameworks/Spacedrive.framework"
 sign --entitlements "$ENTITLEMENTS" "$STAGE/Contents/MacOS/cap-cli"
 sign --entitlements "$ENTITLEMENTS" --identifier com.capwise.app "$STAGE"

@@ -2619,6 +2619,8 @@ ur = "乌尔都语"
 zh = "中文"
 
 [editor.tabs.captions.model]
+qwen = "Qwen3-ASR 0.6B"
+qwen_description = "本机中文最准 · 支持 30 种语言和 22 种方言"
 high_accuracy = "Parakeet v3 完整版"
 high_accuracy_description = "最准的 Parakeet · 仅欧洲语言"
 medium = "Whisper Medium"
@@ -3344,3 +3346,8 @@ recommended = "推荐"
 remove = "移除"
 save = "测试并保存"
 testing = "正在测试…"
+
+[transcription]
+qwen_missing_server = "灵录缺少 llama-server 组件，请重新安装灵录。"
+qwen_name = "Qwen3-ASR（本机）"
+qwen_not_installed = "请先在 设置 → AI 模型 里下载 Qwen3-ASR。"
