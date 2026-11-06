@@ -64,7 +64,6 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "cursor.svg",
     "chevron-left.svg",
     "chevron-right.svg",
-    "circle-help.svg",
     "circle-plus.svg",
     "circle-x.svg",
     "enlarge.svg",
@@ -191,6 +190,7 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "code.svg",
     "message-circle.svg",
     "circle-info.svg",
+    "sparkles.svg",
     // The settings Recordings page. `link` is Cap's own
     // (`packages/ui-solid/icons/link.svg`, which is Lucide's glyph); `import`
     // and `edit` are the Lucide 24x24 originals `~icons/lucide/*` resolves to;
@@ -330,6 +330,8 @@ mod tests {
         include_str!("target_overlay.rs"),
         include_str!("settings_window.rs"),
         include_str!("settings_pages.rs"),
+        include_str!("settings_about.rs"),
+        include_str!("settings_ai.rs"),
         include_str!("mode_select_window.rs"),
         include_str!("teleprompter_window.rs"),
         include_str!("editor_window.rs"),

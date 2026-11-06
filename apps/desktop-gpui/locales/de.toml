@@ -60,13 +60,7 @@ zoom = "Zoomen"
 title = "Hilfe"
 feedback = "Feedback geben…"
 changelog = "Änderungsprotokoll"
-dashboard = "Dashboard"
 documentation = "Dokumentation"
-faq = "FAQ"
-self_hosting = "Selbst hosten"
-help_center = "Hilfe-Center"
-system_status = "Systemstatus"
-discord = "Discord-Community beitreten"
 
 [tray]
 import_media = "Medien importieren..."
@@ -84,12 +78,9 @@ screenshot_display = "Bildschirmfoto: Bildschirm"
 screenshot_window = "Bildschirmfoto: Fenster"
 select_mode = "Modus wählen"
 settings = "Einstellungen"
-take_screenshot = "Bildschirmfoto aufnehmen"
 tooltip_recording = "Capwise - Aufnahme beenden"
-upload_logs = "Protokolle hochladen"
 version = "Capwise v{version}"
 view_all_recordings = "Alle Aufnahmen anzeigen"
-view_all_screenshots = "Alle Bildschirmfotos anzeigen"
 
 [tray.mode]
 instant = "Instant"
@@ -167,10 +158,6 @@ label = "Art der Fensteraufnahme"
 [settings.general.recording.post_deletion]
 description = "Ob das Aufnahmefenster wieder geöffnet werden soll."
 label = "Nach dem Löschen einer Aufnahme"
-
-[settings.general.recording.delete_after_upload]
-description = "Capwise entfernt die lokale Datei, sobald sie erfolgreich hochgeladen wurde."
-label = "Instant-Aufnahmen nach dem Hochladen löschen"
 
 [settings.general.recording.crash_recovery]
 description = "In Fragmenten aufnehmen, die nach einem Absturz oder Stromausfall wiederhergestellt werden können. Während der Aufnahme sind die Dateien etwas größer."
@@ -345,11 +332,6 @@ res_1440p = "Mehr Details für große, hochauflösende Bildschirme."
 res_4k = "Die meisten Details. Am besten mit schneller Verbindung."
 res_720p = "Kleinste Uploads, daher sind Links am schnellsten bereit."
 title = "Instant-Aufnahmen"
-
-[settings.quality.sharing]
-auto_open = "Links zum Teilen automatisch öffnen"
-auto_open_description = "Öffnet den Link in Ihrem Browser, wenn ein Upload abgeschlossen ist."
-title = "Teilen"
 
 [settings.options.studio_quality]
 balanced = "Ausgewogen"

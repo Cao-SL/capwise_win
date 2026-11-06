@@ -3,7 +3,9 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod ai_store;
 mod app_sounds;
+mod asr_cloud;
 mod app_windows;
 mod assets;
 mod auth;
@@ -90,7 +92,9 @@ mod screenshot_editor;
 mod screenshot_export;
 mod script_text;
 mod session;
+mod llm;
 mod settings_about;
+mod settings_ai;
 mod settings_pages;
 mod settings_window;
 mod sign_in;

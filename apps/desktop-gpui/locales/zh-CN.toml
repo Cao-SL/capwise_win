@@ -60,13 +60,7 @@ zoom = "缩放"
 title = "帮助"
 feedback = "提供反馈…"
 changelog = "更新日志"
-dashboard = "仪表盘"
 documentation = "文档"
-faq = "常见问题"
-self_hosting = "自托管"
-help_center = "帮助中心"
-system_status = "系统状态"
-discord = "加入 Discord 社区"
 
 [tray]
 import_media = "导入媒体..."
@@ -84,12 +78,9 @@ screenshot_display = "截取屏幕"
 screenshot_window = "截取窗口"
 select_mode = "选择模式"
 settings = "设置"
-take_screenshot = "截图"
 tooltip_recording = "灵录 - 停止录制"
-upload_logs = "上传日志"
 version = "灵录 v{version}"
 view_all_recordings = "查看所有录制"
-view_all_screenshots = "查看所有截图"
 
 [tray.mode]
 instant = "Instant"
@@ -110,7 +101,7 @@ quality = "录制质量"
 recordings = "录制"
 screenshots = "截图"
 shortcuts = "快捷键"
-transcription = "转写"
+transcription = "AI 模型"
 
 [settings.general.language]
 description = "选择灵录的显示语言。"
@@ -168,10 +159,6 @@ label = "窗口捕获方式"
 [settings.general.recording.post_deletion]
 description = "是否重新打开录制窗口。"
 label = "删除录制后"
-
-[settings.general.recording.delete_after_upload]
-description = "上传成功后，灵录会删除本地文件。"
-label = "上传后删除 Instant 录制"
 
 [settings.general.recording.crash_recovery]
 description = "分段录制，在崩溃或断电后仍可恢复。录制期间文件会稍大。"
@@ -346,11 +333,6 @@ res_1440p = "为高分辨率大屏幕提供更多细节。"
 res_4k = "细节最丰富。最适合高速网络。"
 res_720p = "上传体积最小，链接最快可用。"
 title = "Instant 录制"
-
-[settings.quality.sharing]
-auto_open = "自动打开分享链接"
-auto_open_description = "上传完成后在浏览器中打开链接。"
-title = "分享"
 
 [settings.options.studio_quality]
 balanced = "均衡"
@@ -2555,6 +2537,10 @@ source = "原始"
 square = "方形"
 
 [editor.tabs.captions]
+manage_models = "管理模型…"
+cloud_ready = "API Key 已保存在钥匙串"
+cloud_settings = "设置"
+cloud_setup = "配置云端识别"
 active_word_highlight = "高亮当前单词"
 animation_section = "动画"
 animation_style = "动画样式"
@@ -2633,14 +2619,14 @@ ur = "乌尔都语"
 zh = "中文"
 
 [editor.tabs.captions.model]
-high_accuracy = "高精度"
-high_accuracy_description = "下载更大，精度更高"
-medium = "中"
-medium_description = "较慢，更准确"
-recommended = "推荐"
-recommended_description = "适合大多数录制的最佳平衡"
-small = "小"
-small_description = "下载最小"
+high_accuracy = "Parakeet v3 完整版"
+high_accuracy_description = "最准的 Parakeet · 仅欧洲语言"
+medium = "Whisper Medium"
+medium_description = "较慢，更准确 · 支持中文"
+recommended = "Parakeet v3 量化版"
+recommended_description = "快而准 · 仅 25 种欧洲语言，不支持中文"
+small = "Whisper Small"
+small_description = "体积最小 · 支持中文"
 
 [editor.tabs.captions.preset]
 classic = "经典"
@@ -2738,6 +2724,9 @@ medium = "中等"
 normal = "常规"
 
 [editor.tabs.font]
+lxgw_wenkai = "霞鹜文楷"
+smiley_sans = "得意黑"
+source_han_sans = "思源黑体"
 system_sans_serif = "系统无衬线"
 system_serif = "系统衬线"
 system_monospace = "系统等宽"
@@ -3246,9 +3235,112 @@ reward_title = "请我喝杯咖啡"
 link_blog = "博客"
 link_picks = "乔木推荐"
 reward_hint = "微信扫码赞赏"
-privacy = "录制内容只保存在这台 Mac 上。只有在你下载转写模型时，灵录才会联网。"
+privacy = "录制内容只保存在这台 Mac 上。只有下载转写模型，或你选择用豆包生成字幕时，灵录才会联网。"
 license = "© {year} 向阳乔木 · AGPL-3.0 · 基于 Cap 修改"
 
 [brand]
 name = "灵录"
 alt_name = "Capwise"
+
+[asr]
+auth_failed = "{service} 拒绝了这个 API Key。请检查 Key 是否正确、服务是否已开通。"
+connection_failed = "无法连接{service}：{detail}"
+failed = "{service}请求失败（{code}）：{detail}"
+invalid_key = "API Key 里不能有空格。"
+keychain_failed = "无法把 Key 保存到钥匙串"
+no_key = "请先在 设置 → AI 模型 里配置{service}。"
+quota = "{service}额度不足或账户欠费：{detail}"
+unreadable = "{service}返回了灵录无法识别的内容。"
+
+[ai]
+address_invalid = "地址必须是 https，或本机的 http 地址。"
+model_missing = "请选择或填写模型名。"
+
+[ai.asr.doubao]
+name = "豆包语音"
+note = "速度最快，带逐字时间，时间轴最准。录音文件识别极速版。"
+
+[ai.asr.siliconflow]
+name = "硅基流动"
+note = "推荐 Qwen3-ASR：中文术语准确，5 分钟音频约 5 秒。"
+
+[ai.asr.glm]
+name = "智谱 GLM"
+note = "单次最长 30 秒，自动切块；速度很快。"
+
+[ai.asr.stepfun]
+name = "阶跃星辰"
+note = "5 分钟音频约 15–20 秒。"
+
+[ai.asr.mimo]
+name = "小米 MiMo"
+note = "支持粤语、吴语、闽南语、四川话。"
+
+[ai.asr.groq]
+name = "Groq（Whisper）"
+note = "返回句子级时间。尚未实测。"
+
+[ai.asr.openai]
+name = "OpenAI"
+note = "whisper-1 返回句子级时间。尚未实测。"
+
+[ai.asr.local_server]
+name = "本机服务（OpenAI 兼容）"
+note = "你在本机运行的识别服务，如 mlx-qwen3-asr，音频不离开这台电脑。"
+
+[ai.asr.custom]
+name = "自定义（OpenAI 兼容）"
+note = "任何兼容 /audio/transcriptions 的服务。"
+
+[ai.llm]
+doubao = "豆包（火山方舟）"
+hunyuan = "腾讯混元"
+mimo = "小米 MiMo"
+qianfan = "百度千帆"
+qwen = "通义千问"
+siliconflow = "硅基流动"
+stepfun = "阶跃星辰"
+tokendance = "词元跳动"
+zhipu = "智谱 GLM"
+
+[settings.ai]
+cloud_description = "音频会上传到服务商识别，按量计费。API Key 只保存在钥匙串里。"
+cloud_tag = "云端"
+cloud_title = "云端识别"
+common_models = "常用模型"
+configure = "配置"
+default_cloud_note = "音频会上传 · 按量计费"
+default_label = "默认方式"
+default_local_note = "免费 · 音频不离开这台 Mac"
+delete = "删除"
+download = "下载"
+downloaded = "已下载"
+downloading = "下载中 {percent}%"
+edit = "修改"
+field_address = "地址"
+field_key = "API Key"
+field_model = "模型"
+get_key = "获取 API Key"
+group_provider = "服务商"
+group_relay = "中转"
+key_optional = "本机服务通常不需要 Key"
+key_placeholder = "粘贴 API Key"
+key_saved = "已保存 {tail}，留空则不修改"
+llm_add = "添加服务商…"
+llm_default = "默认模型"
+llm_description = "用于字幕纠错、生成标题和章节（陆续接入）。可以添加多家，选一个作为默认。"
+llm_empty = "还没有添加大模型。"
+llm_title = "大模型"
+local_description = "在这台 Mac 上运行，第一次使用前需要下载。"
+local_tag = "本机"
+local_title = "本机模型"
+model_placeholder = "模型名"
+not_set = "未配置"
+ready = "已就绪"
+ready_ms = "已就绪 · {ms} 毫秒"
+recognizer_description = "编辑器生成字幕时默认使用的方式。本机免费，音频不离开电脑；云端更快更准，按量计费。"
+recognizer_title = "字幕识别"
+recommended = "推荐"
+remove = "移除"
+save = "测试并保存"
+testing = "正在测试…"

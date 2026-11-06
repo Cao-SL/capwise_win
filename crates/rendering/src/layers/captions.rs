@@ -445,6 +445,19 @@ struct ShapedCaptionText {
     colors: CaptionTextColors,
 }
 
+/// A font family name that lives as long as the text cache keyed on it. The
+/// names are the fonts a user picks, so the set stays small.
+fn interned_family_name(name: &str) -> &'static str {
+    static NAMES: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+    let mut names = NAMES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(found) = names.iter().find(|known| **known == name) {
+        return found;
+    }
+    let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+    names.push(leaked);
+    leaked
+}
+
 fn shape_caption_text(font_system: &mut FontSystem, shaped: &ShapedCaptionText) -> Buffer {
     let font_size = f32::from_bits(shaped.font_size);
     let mut buffer = Buffer::new(font_system, Metrics::new(font_size, font_size * 1.2));
@@ -739,10 +752,7 @@ impl CaptionsLayer {
         );
 
         let raw_caption_text = self.current_text.clone().unwrap_or_default();
-        let joined_caption_text = raw_caption_text
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
+        let joined_caption_text = cap_project::caption_display_text(&raw_caption_text);
         let uppercase = caption_data.settings.uppercase;
         let caption_text = if uppercase {
             joined_caption_text.to_uppercase()
@@ -845,7 +855,8 @@ impl CaptionsLayer {
         let font_family = match caption_data.settings.font.as_str() {
             "System Serif" => Family::Serif,
             "System Monospace" => Family::Monospace,
-            _ => Family::SansSerif,
+            "" | "System Sans-Serif" => Family::SansSerif,
+            name => Family::Name(interned_family_name(name)),
         };
 
         let weight = if caption_data.settings.font_weight >= 700 {

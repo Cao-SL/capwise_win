@@ -138,13 +138,7 @@ actions!(
         OpenFile,
         ImportMedia,
         Changelog,
-        HelpDashboard,
         HelpDocs,
-        HelpFaq,
-        HelpSelfHosting,
-        HelpCenter,
-        HelpStatus,
-        HelpDiscord,
         HelpFeedback,
         /// `PredefinedMenuItem::close_window` -- ⌘W. Present twice in the
         /// Tauri menu (File and Window), one action either way.
@@ -203,13 +197,7 @@ pub fn init(cx: &mut App) {
         crate::import::pick_and_import_media(cx);
     });
     cx.on_action(|_: &Changelog, cx: &mut App| cx.open_url(&format!("{REPO_URL}/releases")));
-    cx.on_action(|_: &HelpDashboard, cx: &mut App| cx.open_url("https://cap.so/dashboard"));
     cx.on_action(|_: &HelpDocs, cx: &mut App| cx.open_url(&format!("{REPO_URL}#readme")));
-    cx.on_action(|_: &HelpFaq, cx: &mut App| cx.open_url("https://cap.so/faq"));
-    cx.on_action(|_: &HelpSelfHosting, cx: &mut App| cx.open_url("https://cap.so/self-hosting"));
-    cx.on_action(|_: &HelpCenter, cx: &mut App| cx.open_url("https://help.cap.so/"));
-    cx.on_action(|_: &HelpStatus, cx: &mut App| cx.open_url("https://cap.openstatus.dev/"));
-    cx.on_action(|_: &HelpDiscord, cx: &mut App| cx.open_url("https://cap.link/discord"));
     cx.on_action(|_: &HelpFeedback, cx: &mut App| {
         cx.open_url(&format!("{REPO_URL}/issues/new"))
     });
@@ -1257,19 +1245,18 @@ mod tests {
             menus,
             vec![
                 (
-                    "Cap".to_string(),
+                    "Capwise".to_string(),
                     vec![
-                        "About Cap".to_string(),
-                        "Check for Update".into(),
+                        "About Capwise".to_string(),
                         "-".into(),
                         tr::menu::app::settings().into(),
                         "-".into(),
                         "Services".into(),
                         "-".into(),
-                        "Hide Cap".into(),
+                        "Hide Capwise".into(),
                         "Hide Others".into(),
                         "-".into(),
-                        "Quit Cap".into(),
+                        "Quit Capwise".into(),
                     ]
                 ),
                 ("File".into(), expected_file_items,),
@@ -1298,56 +1285,13 @@ mod tests {
                 (
                     "Help".into(),
                     vec![
-                        "Give Feedback…".into(),
-                        "-".into(),
+                        "Documentation".into(),
                         "Changelog".into(),
                         "-".into(),
-                        "Dashboard".into(),
-                        "Documentation".into(),
-                        "FAQ".into(),
-                        "Self-hosting".into(),
-                        "Help Center".into(),
-                        "System Status".into(),
-                        "Join Discord Community".into(),
+                        "Give Feedback…".into(),
                     ],
                 ),
             ]
-        );
-    }
-
-    /// The row is the second item of the App menu (`menu_bar_...` pins that
-    /// order); it greys out while a check or download is running so a second
-    /// click cannot fire another one.
-    #[test]
-    fn the_update_row_greys_out_while_busy() {
-        fn row(status: &updates::UpdateStatus) -> (String, bool) {
-            let menus = build_menus(status, true);
-            match &menus[0].items[1] {
-                MenuItem::Action { name, disabled, .. } => (name.to_string(), *disabled),
-                _ => panic!("the update row is an action"),
-            }
-        }
-
-        assert_eq!(
-            row(&updates::UpdateStatus::Idle),
-            ("Check for Update".to_string(), false)
-        );
-        assert_eq!(
-            row(&updates::UpdateStatus::Checking),
-            ("Checking for Update…".to_string(), true)
-        );
-        assert_eq!(
-            row(&updates::UpdateStatus::Downloading {
-                version: semver::Version::parse("0.4.0").unwrap(),
-                fraction: Some(0.42),
-            }),
-            ("Downloading update…".to_string(), true)
-        );
-        assert_eq!(
-            row(&updates::UpdateStatus::Installing {
-                version: semver::Version::parse("0.4.0").unwrap(),
-            }),
-            ("Downloading update…".to_string(), true)
         );
     }
 

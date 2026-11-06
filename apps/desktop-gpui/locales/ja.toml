@@ -60,13 +60,7 @@ zoom = "拡大/縮小"
 title = "ヘルプ"
 feedback = "フィードバックを送る…"
 changelog = "変更履歴"
-dashboard = "ダッシュボード"
 documentation = "ドキュメント"
-faq = "FAQ"
-self_hosting = "セルフホスティング"
-help_center = "ヘルプセンター"
-system_status = "システムステータス"
-discord = "Discordコミュニティに参加"
 
 [tray]
 import_media = "メディアを読み込む..."
@@ -84,12 +78,9 @@ screenshot_display = "ディスプレイのスクリーンショット"
 screenshot_window = "ウィンドウのスクリーンショット"
 select_mode = "モードを選択"
 settings = "設定"
-take_screenshot = "スクリーンショットを撮る"
 tooltip_recording = "Capwise - 録画を停止"
-upload_logs = "ログをアップロード"
 version = "Capwise v{version}"
 view_all_recordings = "すべての録画を表示"
-view_all_screenshots = "すべてのスクリーンショットを表示"
 
 [tray.mode]
 instant = "Instant"
@@ -167,10 +158,6 @@ label = "ウィンドウのキャプチャ方法"
 [settings.general.recording.post_deletion]
 description = "録画ウィンドウをもう一度開くかどうか。"
 label = "録画を削除した後"
-
-[settings.general.recording.delete_after_upload]
-description = "アップロードが完了すると、Capwiseはローカルのファイルを削除します。"
-label = "アップロード後にInstant録画を削除"
 
 [settings.general.recording.crash_recovery]
 description = "クラッシュや電源断の後でも復元できるよう、分割して録画します。録画中はファイルが少し大きくなります。"
@@ -345,11 +332,6 @@ res_1440p = "大きな高解像度画面向けのより細かいディテール�
 res_4k = "最も細かいディテール。高速な回線向きです。"
 res_720p = "アップロードが最も小さく、リンクが最も早く使えます。"
 title = "Instant録画"
-
-[settings.quality.sharing]
-auto_open = "共有リンクを自動で開く"
-auto_open_description = "アップロードが完了したらブラウザでリンクを開きます。"
-title = "共有"
 
 [settings.options.studio_quality]
 balanced = "バランス"

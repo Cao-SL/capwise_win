@@ -60,13 +60,7 @@ zoom = "Réduire/agrandir"
 title = "Aide"
 feedback = "Donner son avis…"
 changelog = "Nouveautés"
-dashboard = "Tableau de bord"
 documentation = "Documentation"
-faq = "FAQ"
-self_hosting = "Auto-hébergement"
-help_center = "Centre d'aide"
-system_status = "État du système"
-discord = "Rejoindre la communauté Discord"
 
 [tray]
 import_media = "Importer des médias..."
@@ -84,12 +78,9 @@ screenshot_display = "Capturer l'écran"
 screenshot_window = "Capturer une fenêtre"
 select_mode = "Choisir le mode"
 settings = "Paramètres"
-take_screenshot = "Prendre une capture d'écran"
 tooltip_recording = "Capwise - Arrêter l'enregistrement"
-upload_logs = "Envoyer les journaux"
 version = "Capwise v{version}"
 view_all_recordings = "Voir tous les enregistrements"
-view_all_screenshots = "Voir toutes les captures d'écran"
 
 [tray.mode]
 instant = "Instant"
@@ -167,10 +158,6 @@ label = "Capture de fenêtre"
 [settings.general.recording.post_deletion]
 description = "Indique si la fenêtre d'enregistrement doit se rouvrir."
 label = "Après la suppression d'un enregistrement"
-
-[settings.general.recording.delete_after_upload]
-description = "Capwise supprime le fichier local une fois la mise en ligne réussie."
-label = "Supprimer les enregistrements Instant après la mise en ligne"
 
 [settings.general.recording.crash_recovery]
 description = "Enregistrer par fragments récupérables après un plantage ou une coupure de courant. Fichiers légèrement plus volumineux pendant la capture."
@@ -345,11 +332,6 @@ res_1440p = "Plus de détails pour les grands écrans haute résolution."
 res_4k = "Le plus de détails. Idéal avec une connexion rapide."
 res_720p = "Mises en ligne les plus légères, les liens sont prêts plus vite."
 title = "Enregistrements Instant"
-
-[settings.quality.sharing]
-auto_open = "Ouvrir automatiquement les liens de partage"
-auto_open_description = "Ouvre le lien dans votre navigateur à la fin d'une mise en ligne."
-title = "Partage"
 
 [settings.options.studio_quality]
 balanced = "Équilibré"

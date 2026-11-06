@@ -196,7 +196,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::main::recording::starting(), "Starting..."),
         (
             tr::main::recording::paused_notice(),
-            "Recording paused. Cap will hide before resuming.",
+            "Recording paused. Capwise will hide before resuming.",
         ),
         (tr::main::recording::resume(), "Resume"),
         (tr::main::recording::cancel(), "Cancel Recording"),
@@ -237,7 +237,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::main::sign_in::pending_message(),
-            "Finish signing in to Cap in your browser. Cap comes back here and opens the recorder when you're done.",
+            "Finish signing in to Capwise in your browser. Capwise comes back here and opens the recorder when you're done.",
         ),
         (
             tr::main::sign_in::message(),
@@ -294,7 +294,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::controls::pause::pause(), "Pause recording"),
         (
             tr::controls::low_storage(),
-            "Low storage. Cap will stop soon to save your recording.",
+            "Low storage. Capwise will stop soon to save your recording.",
         ),
         (
             tr::controls::paused_for_sleep(),
@@ -307,7 +307,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::camera::issue::access_title(), "Camera access needed"),
         (
             tr::camera::issue::access_message(),
-            "Click to allow Cap to use your camera in System Settings.",
+            "Click to allow Capwise to use your camera in System Settings.",
         ),
         (tr::camera::issue::unavailable_title(), "Camera unavailable"),
         (
@@ -430,10 +430,10 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::onboarding::modes::screenshot::feature_4(),
             "Copy, save, or share",
         ),
-        (tr::onboarding::faq::free::question(), "Is Cap free to use?"),
+        (tr::onboarding::faq::free::question(), "Is Capwise free to use?"),
         (
             tr::onboarding::faq::free::answer(),
-            "Cap is free for personal use. For teams and commercial use, check out our pricing plans.",
+            "Capwise is free for personal use. For teams and commercial use, check out our pricing plans.",
         ),
         (
             tr::onboarding::faq::instant_vs_studio::question(),
@@ -449,7 +449,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::faq::storage::answer(),
-            "All recordings are stored locally on your computer. In Instant mode, they're also uploaded to Cap's cloud for easy sharing. You can manage storage in Settings.",
+            "All recordings are stored locally on your computer. In Instant mode, they're also uploaded to Capwise's cloud for easy sharing. You can manage storage in Settings.",
         ),
         (
             tr::onboarding::faq::shortcuts::question(),
@@ -465,7 +465,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::faq::sharing::answer(),
-            "In Instant mode, you get a shareable link automatically when you stop recording. In Studio mode, export your edited video and share via Cap's cloud or save locally.",
+            "In Instant mode, you get a shareable link automatically when you stop recording. In Studio mode, export your edited video and share via Capwise's cloud or save locally.",
         ),
         (
             tr::onboarding::error::save_progress(),
@@ -488,17 +488,17 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::onboarding::overview::title(), "One app, every workflow"),
         (
             tr::onboarding::overview::subtitle(),
-            "Whether you need speed, studio quality, or a quick screenshot — Cap has a mode for it.",
+            "Whether you need speed, studio quality, or a quick screenshot — Capwise has a mode for it.",
         ),
-        (tr::onboarding::customize::title(), "Make Cap yours"),
+        (tr::onboarding::customize::title(), "Make Capwise yours"),
         (
             tr::onboarding::customize::subtitle(),
-            "Customize everything from keyboard shortcuts to storage. Cap adapts to your workflow.",
+            "Customize everything from keyboard shortcuts to storage. Capwise adapts to your workflow.",
         ),
         (tr::onboarding::toggle::title(), "Switch modes anytime"),
         (
             tr::onboarding::toggle::subtitle(),
-            "Toggle between modes with a single click from the main Cap window.",
+            "Toggle between modes with a single click from the main Capwise window.",
         ),
         (tr::onboarding::faq::title(), "Frequently Asked Questions"),
         (
@@ -537,9 +537,9 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (tr::onboarding::faq::pricing(), "View pricing plans"),
         (tr::onboarding::faq::pricing_link(), "View pricing plans ↗"),
-        (tr::onboarding::nav::relaunch(), "Relaunch Cap"),
-        (tr::onboarding::nav::continue_to_cap(), "Continue to Cap"),
-        (tr::onboarding::nav::start(), "Start Using Cap"),
+        (tr::onboarding::nav::relaunch(), "Relaunch Capwise"),
+        (tr::onboarding::nav::continue_to_cap(), "Continue to Capwise"),
+        (tr::onboarding::nav::start(), "Start Using Capwise"),
         (tr::onboarding::nav::next(), "Continue"),
         (tr::onboarding::nav::back(), "←  Back"),
         (
@@ -556,7 +556,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::onboarding::demo::link_ready(), "Link ready to share!"),
         (tr::onboarding::demo::copied(), "Copied!"),
         (tr::onboarding::demo::copy(), "Copy"),
-        (tr::onboarding::demo::editor(), "Cap Editor"),
+        (tr::onboarding::demo::editor(), "Capwise Editor"),
         (tr::onboarding::demo::export(), "Export"),
         (tr::onboarding::demo::style(), "STYLE"),
         (tr::onboarding::demo::background(), "BACKGROUND"),
@@ -610,9 +610,9 @@ fn main_surfaces_match_the_literals_they_replaced() {
     let mut access = Vec::new();
     for noun in ["camera", "microphone"] {
         access.push(format!(
-            "Cap can't use your {noun}. Turn it on in System Settings."
+            "Capwise can't use your {noun}. Turn it on in System Settings."
         ));
-        access.push(format!("Cap needs your OK to use your {noun}."));
+        access.push(format!("Capwise needs your OK to use your {noun}."));
     }
     assert_eq!(
         [
@@ -651,7 +651,7 @@ fn recovery_errors_name_the_folder_and_say_nothing_was_deleted() {
     assert_eq!(
         tr::main::recovery::error::rebuild_failed("concat failed", path),
         format!(
-            "Cap could not rebuild this recording (concat failed). Nothing was deleted, and the original files are in {path}."
+            "Capwise could not rebuild this recording (concat failed). Nothing was deleted, and the original files are in {path}."
         )
     );
     assert_eq!(
@@ -707,7 +707,7 @@ fn main_surface_messages_format_like_the_code_they_replaced() {
         assert_eq!(
             tr::main::storage::can_start(&shown),
             format!(
-                "Only {available:.2} GB is available on your recording drive. Cap will stop automatically if storage gets too low, preserving your recording."
+                "Only {available:.2} GB is available on your recording drive. Capwise will stop automatically if storage gets too low, preserving your recording."
             )
         );
         assert_eq!(

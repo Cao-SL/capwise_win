@@ -275,9 +275,16 @@ pub struct CaptionsUiSnapshot {
 
 pub fn ui_snapshot(project_path: &Path) -> CaptionsUiSnapshot {
     let hub = hub();
+    let mut downloaded = hub.downloaded.clone().unwrap_or_default();
+    downloaded.extend(
+        crate::asr_cloud::SERVICES
+            .iter()
+            .filter(|service| service.ready())
+            .map(|service| service.id.to_string()),
+    );
     CaptionsUiSnapshot {
         download: hub.download.clone(),
-        downloaded: hub.downloaded.clone().unwrap_or_default(),
+        downloaded,
         deleting: hub.deleting.clone(),
         generating: hub.generating.contains(project_path),
         generation_error: hub.generation_errors.get(project_path).cloned(),
@@ -1532,6 +1539,21 @@ fn default_transcription_hints() -> Vec<String> {
 
 /// `general_settings.transcriptionHints`, with the Rust store's own default
 /// list when the key is absent (`general_settings.rs:286-293`).
+/// Only the terms the user set: the built-in example list is not worth sending
+/// to a cloud service.
+fn user_transcription_hints() -> Vec<String> {
+    store::store_section(store::GENERAL_SETTINGS)
+        .get("transcriptionHints")
+        .and_then(|v| v.as_array())
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn transcription_hints() -> Vec<String> {
     let section = store::store_section(store::GENERAL_SETTINGS);
     match section.get("transcriptionHints").and_then(|v| v.as_array()) {
@@ -2155,6 +2177,20 @@ pub fn transcribe_blocking(
     timeline: Option<&TimelineConfiguration>,
     recording_durations: &[f64],
 ) -> Result<Transcript, String> {
+    if crate::asr_cloud::is_cloud_model(model) {
+        let hints = user_transcription_hints();
+        let segments = transcribe_project_with(project_path, timeline, recording_durations, |audio_path| {
+            crate::asr_cloud::transcribe(model, &read_wav_16k_mono(audio_path)?, &hints)
+        })?;
+        return Ok(Transcript {
+            segments,
+            refinement: RefinementRequest::new(
+                model,
+                language,
+                &cap_project::transcription_source_ranges(timeline, recording_durations),
+            ),
+        });
+    }
     let requested = model;
     // A model being downloaded should not be selected as a fallback, even
     // if an older copy still exists at its final path.

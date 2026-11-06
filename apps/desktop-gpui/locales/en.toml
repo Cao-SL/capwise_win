@@ -60,13 +60,7 @@ zoom = "Zoom"
 title = "Help"
 feedback = "Give Feedback…"
 changelog = "Changelog"
-dashboard = "Dashboard"
 documentation = "Documentation"
-faq = "FAQ"
-self_hosting = "Self-hosting"
-help_center = "Help Center"
-system_status = "System Status"
-discord = "Join Discord Community"
 
 [tray]
 import_media = "Import Media..."
@@ -84,12 +78,9 @@ screenshot_display = "Screenshot Display"
 screenshot_window = "Screenshot Window"
 select_mode = "Select Mode"
 settings = "Settings"
-take_screenshot = "Take a Screenshot"
 tooltip_recording = { text = "Capwise - Stop Recording", context = "Windows tray tooltip while a recording runs; clicking the icon stops it." }
-upload_logs = "Upload Logs"
 version = { text = "Capwise v{version}", context = "Disabled row showing the app version, for example Capwise v0.6.1." }
 view_all_recordings = "View all recordings"
-view_all_screenshots = "View all screenshots"
 
 [tray.mode]
 instant = { text = "Instant", context = "Recording mode name." }
@@ -112,7 +103,7 @@ quality = { text = "Recording quality", max_px = 171, size = 13 }
 recordings = { text = "Recordings", max_px = 171, size = 13 }
 screenshots = { text = "Screenshots", max_px = 171, size = 13 }
 shortcuts = { text = "Shortcuts", max_px = 171, size = 13 }
-transcription = { text = "Transcription", max_px = 171, size = 13 }
+transcription = { text = "AI models", max_px = 171, size = 13 }
 
 [settings.general.language]
 description = "Choose the language Capwise is shown in."
@@ -170,10 +161,6 @@ label = "Window capture style"
 [settings.general.recording.post_deletion]
 description = "Whether the recording window should reopen."
 label = "After deleting a recording"
-
-[settings.general.recording.delete_after_upload]
-description = "Capwise removes the local file once it has uploaded successfully."
-label = "Delete Instant recordings after upload"
 
 [settings.general.recording.crash_recovery]
 description = "Record in fragments that can be recovered after a crash or power loss. Slightly larger files during capture."
@@ -348,11 +335,6 @@ res_1440p = "Extra detail for large, high-resolution screens."
 res_4k = "The most detail. Best on a fast connection."
 res_720p = "Smallest uploads, so links are ready fastest."
 title = "Instant recordings"
-
-[settings.quality.sharing]
-auto_open = "Open share links automatically"
-auto_open_description = "Open the link in your browser when an upload finishes."
-title = "Sharing"
 
 [settings.options.studio_quality]
 balanced = "Balanced"
@@ -2557,6 +2539,10 @@ source = { text = "Source", context = "Camera shape that keeps the camera's own 
 square = "Square"
 
 [editor.tabs.captions]
+manage_models = "Manage models…"
+cloud_ready = "API key saved in the keychain"
+cloud_settings = "Settings"
+cloud_setup = "Set up cloud recognition"
 active_word_highlight = "Active Word Highlight"
 animation_section = "Animation"
 animation_style = "Animation Style"
@@ -2635,14 +2621,14 @@ ur = "Urdu"
 zh = "Chinese"
 
 [editor.tabs.captions.model]
-high_accuracy = "High Accuracy"
-high_accuracy_description = "Larger download, higher accuracy"
-medium = { text = "Medium", context = "Caption model size." }
-medium_description = "Slower, more accurate"
-recommended = "Recommended"
-recommended_description = "Best balance for most recordings"
-small = { text = "Small", context = "Caption model size." }
-small_description = "Smallest download"
+high_accuracy = "Parakeet v3 (full)"
+high_accuracy_description = "Most accurate Parakeet · European languages only"
+medium = "Whisper Medium"
+medium_description = "Slower, more accurate · supports Chinese"
+recommended = "Parakeet v3 (quantized)"
+recommended_description = "Fast and accurate · 25 European languages, no Chinese"
+small = "Whisper Small"
+small_description = "Smallest download · supports Chinese"
 
 [editor.tabs.captions.preset]
 classic = "Classic"
@@ -2740,6 +2726,9 @@ medium = "Medium"
 normal = "Normal"
 
 [editor.tabs.font]
+lxgw_wenkai = "LXGW WenKai"
+smiley_sans = "Smiley Sans"
+source_han_sans = "Source Han Sans"
 system_sans_serif = { text = "System Sans-Serif", context = "Font option for captions and keyboard overlays. Match editor.panel.font." }
 system_serif = { text = "System Serif", context = "Font option for captions and keyboard overlays. Match editor.panel.font." }
 system_monospace = { text = "System Monospace", context = "Font option for captions and keyboard overlays. Match editor.panel.font." }
@@ -3248,9 +3237,112 @@ reward_title = "Buy me a coffee"
 link_blog = "Blog"
 link_picks = "Picks"
 reward_hint = "Scan with WeChat"
-privacy = "Recordings never leave this Mac. Capwise only goes online to download a transcription model you ask for."
+privacy = "Recordings stay on this Mac. Capwise only goes online to download a transcription model, or when you choose Doubao to generate captions."
 license = { text = "© {year} 向阳乔木 · AGPL-3.0 · Based on Cap", context = "{year} is the current year. Cap is the open-source project Capwise is built on; keep the name." }
 
 [brand]
 name = "Capwise"
 alt_name = "灵录"
+
+[asr]
+auth_failed = "{service} rejected the API key. Check the key and that the service is enabled for it."
+connection_failed = "Could not reach {service}: {detail}"
+failed = "{service} failed ({code}): {detail}"
+invalid_key = "The API key contains spaces."
+keychain_failed = "Could not save the key to the keychain"
+no_key = "Set up {service} in Settings → AI models first."
+quota = "{service} quota exhausted or account in arrears: {detail}"
+unreadable = "{service} returned a response Capwise could not read."
+
+[ai]
+address_invalid = "The address must be https, or http on this computer."
+model_missing = "Choose or type a model name."
+
+[ai.asr.doubao]
+name = "Doubao Speech"
+note = "Fastest, with per-word timing. Recorded-file flash recognition."
+
+[ai.asr.siliconflow]
+name = "SiliconFlow"
+note = "Qwen3-ASR: accurate with Chinese terms, about 5 s per 5 minutes."
+
+[ai.asr.glm]
+name = "Zhipu GLM"
+note = "30 seconds per request at most; cut automatically. Very fast."
+
+[ai.asr.stepfun]
+name = "StepFun"
+note = "About 15–20 seconds per 5 minutes of audio."
+
+[ai.asr.mimo]
+name = "Xiaomi MiMo"
+note = "Handles Cantonese, Wu, Hokkien and Sichuanese."
+
+[ai.asr.groq]
+name = "Groq (Whisper)"
+note = "Returns sentence timing. Not tested here yet."
+
+[ai.asr.openai]
+name = "OpenAI"
+note = "whisper-1 returns sentence timing. Not tested here yet."
+
+[ai.asr.local_server]
+name = "Local server (OpenAI-compatible)"
+note = "A recognition server you run on this Mac, such as mlx-qwen3-asr. Audio never leaves it."
+
+[ai.asr.custom]
+name = "Custom (OpenAI-compatible)"
+note = "Any service with /audio/transcriptions."
+
+[ai.llm]
+doubao = "Doubao (Ark)"
+hunyuan = "Tencent Hunyuan"
+mimo = "Xiaomi MiMo"
+qianfan = "Baidu Qianfan"
+qwen = "Qwen"
+siliconflow = "SiliconFlow"
+stepfun = "StepFun"
+tokendance = "Tokendance"
+zhipu = "Zhipu GLM"
+
+[settings.ai]
+cloud_description = "Audio is uploaded to the service and billed by usage. API keys stay in your keychain."
+cloud_tag = "Cloud"
+cloud_title = "Cloud recognition"
+common_models = "Models"
+configure = "Set up"
+default_cloud_note = "Audio is uploaded · billed by usage"
+default_label = "Default"
+default_local_note = "Free · audio stays on this Mac"
+delete = "Delete"
+download = "Download"
+downloaded = "Downloaded"
+downloading = "Downloading {percent}%"
+edit = "Edit"
+field_address = "Address"
+field_key = "API key"
+field_model = "Model"
+get_key = "Get an API key"
+group_provider = "Provider"
+group_relay = "Relay"
+key_optional = "Usually not needed for a local service"
+key_placeholder = "Paste the API key"
+key_saved = "Saved {tail} · leave empty to keep it"
+llm_add = "Add provider…"
+llm_default = "Default model"
+llm_description = "For caption correction, titles and chapters (coming next). Add several and pick a default."
+llm_empty = "No large language model yet."
+llm_title = "Large language models"
+local_description = "Run on this Mac. Download once before first use."
+local_tag = "Local"
+local_title = "Local models"
+model_placeholder = "Model name"
+not_set = "Not set up"
+ready = "Ready"
+ready_ms = "Ready · {ms} ms"
+recognizer_description = "What the editor uses to generate captions. Local models are free and keep audio on this Mac; cloud services are faster and more accurate, billed by usage."
+recognizer_title = "Captions"
+recommended = "Recommended"
+remove = "Remove"
+save = "Test and save"
+testing = "Testing…"

@@ -111,6 +111,36 @@ pub fn normalize_caption_words(words: Vec<CaptionWord>) -> Vec<CaptionWord> {
     normalized
 }
 
+/// Han, kana and Hangul syllables, and CJK punctuation: scripts written
+/// without spaces between words.
+pub fn is_unspaced_script(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x3000..=0x303f
+            | 0x3040..=0x30ff
+            | 0x3400..=0x4dbf
+            | 0x4e00..=0x9fff
+            | 0xac00..=0xd7af
+            | 0xf900..=0xfaff
+            | 0xff00..=0xffef
+    )
+}
+
+fn is_unspaced_punctuation(c: char) -> bool {
+    matches!(c as u32, 0x3000..=0x303f | 0xff00..=0xffef)
+}
+
+/// No space between two CJK characters or beside CJK punctuation; CJK next
+/// to Latin keeps its space ("豆包的 API key").
+fn joins_without_space(previous: &str, next: &str) -> bool {
+    let (Some(before), Some(after)) = (previous.chars().last(), next.chars().next()) else {
+        return false;
+    };
+    (is_unspaced_script(before) && is_unspaced_script(after))
+        || is_unspaced_punctuation(before)
+        || is_unspaced_punctuation(after)
+}
+
 pub fn caption_text_from_words<'a>(words: impl IntoIterator<Item = &'a CaptionWord>) -> String {
     let mut text = String::new();
 
@@ -120,13 +150,29 @@ pub fn caption_text_from_words<'a>(words: impl IntoIterator<Item = &'a CaptionWo
             continue;
         }
 
-        if !text.is_empty() && !caption_token_attaches_to_previous(word_text) {
+        if !text.is_empty()
+            && !caption_token_attaches_to_previous(word_text)
+            && !joins_without_space(&text, word_text)
+        {
             text.push(' ');
         }
         text.push_str(word_text);
     }
 
     text
+}
+
+/// Display text with single spaces, and none next to a CJK character, so
+/// captions saved with a space between every character read as written.
+pub fn caption_display_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for token in text.split_whitespace() {
+        if !out.is_empty() && !joins_without_space(&out, token) {
+            out.push(' ');
+        }
+        out.push_str(token);
+    }
+    out
 }
 
 /// Groups normalized words into caption segments aiming for
@@ -604,5 +650,21 @@ mod tests {
         let accented = words(&["the", "café"]);
         assert!(!reads_as_english(&accented));
         assert!(!reads_as_english(&[]));
+    }
+
+    #[test]
+    fn chinese_words_join_without_spaces() {
+        let words: Vec<CaptionWord> = ["然后", "用", "豆包", "的", "API", "key", "。"]
+            .iter()
+            .enumerate()
+            .map(|(index, text)| CaptionWord {
+                text: (*text).to_string(),
+                start: index as f32,
+                end: index as f32 + 0.5,
+            })
+            .collect();
+        assert_eq!(caption_text_from_words(&words), "然后用豆包的 API key。");
+        assert_eq!(caption_display_text("然 后 用  豆 包 的 API key ，好"), "然后用豆包的 API key，好");
+        assert_eq!(caption_display_text("Hello   world"), "Hello world");
     }
 }

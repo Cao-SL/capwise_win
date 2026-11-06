@@ -118,7 +118,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::canvas::text_item(), "Text"),
         (tr::editor::clips::append_error_title(), "Recording Error"),
         (tr::editor::clips::back(), "Back to editor"),
-        (tr::editor::clips::cap_filter(), "Cap Recording"),
+        (tr::editor::clips::cap_filter(), "Capwise Recording"),
         (
             tr::editor::clips::empty_description(),
             "Record or import a clip and it will show up here.",
@@ -143,19 +143,19 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::clips::error::not_a_project(),
-            "Select a Cap project folder",
+            "Select a Capwise project folder",
         ),
         (
             tr::editor::clips::error::source_empty(),
-            "Source Cap project has no recording segments",
+            "Source Capwise project has no recording segments",
         ),
         (
             tr::editor::clips::error::source_recording(),
-            "Source Cap project is still recording",
+            "Source Capwise project is still recording",
         ),
         (
             tr::editor::clips::error::source_unimportable(),
-            "Source Cap project has no importable recording segments",
+            "Source Capwise project has no importable recording segments",
         ),
         (
             tr::editor::clips::error::unfinished_target(),
@@ -226,7 +226,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::export::done::uploaded(),
-            "Your Cap has been uploaded successfully",
+            "Your Capwise has been uploaded successfully",
         ),
         (tr::editor::export::estimate::under_megabyte(), "< 1 MB"),
         (tr::editor::export::estimate::under_second(), "< 1s"),
@@ -495,7 +495,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::tabs::captions::highlight_note(),
-            "This is the first version of captions in Cap. Active word highlighting may be inaccurate in some situations. We're working on a fix for this and it will be released in upcoming versions.",
+            "This is the first version of captions in Capwise. Active word highlighting may be inaccurate in some situations. We're working on a fix for this and it will be released in upcoming versions.",
         ),
         (
             tr::editor::tabs::captions::highlight_style(),
@@ -511,7 +511,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::tabs::captions::keep_open(),
-            "Keep Cap open while the model downloads. Editor reloads will reconnect automatically.",
+            "Keep Capwise open while the model downloads. Editor reloads will reconnect automatically.",
         ),
         (tr::editor::tabs::captions::language::ar(), "Arabic"),
         (tr::editor::tabs::captions::language::auto(), "Auto Detect"),
@@ -542,29 +542,42 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::captions::language_label(), "Language"),
         (
             tr::editor::tabs::captions::model::high_accuracy(),
-            "High Accuracy",
+            "Parakeet v3 (full)",
         ),
         (
             tr::editor::tabs::captions::model::high_accuracy_description(),
-            "Larger download, higher accuracy",
+            "Most accurate Parakeet · European languages only",
         ),
-        (tr::editor::tabs::captions::model::medium(), "Medium"),
+        (tr::editor::tabs::captions::model::medium(), "Whisper Medium"),
         (
             tr::editor::tabs::captions::model::medium_description(),
-            "Slower, more accurate",
+            "Slower, more accurate · supports Chinese",
         ),
         (
+            tr::editor::tabs::captions::cloud_ready(),
+            "API key saved in the keychain",
+        ),
+        (tr::editor::tabs::captions::cloud_settings(), "Settings"),
+        (
+            tr::editor::tabs::captions::cloud_setup(),
+            "Set up cloud recognition",
+        ),
+        (tr::editor::tabs::captions::manage_models(), "Manage models…"),
+        (tr::editor::tabs::font::source_han_sans(), "Source Han Sans"),
+        (tr::editor::tabs::font::smiley_sans(), "Smiley Sans"),
+        (tr::editor::tabs::font::lxgw_wenkai(), "LXGW WenKai"),
+        (
             tr::editor::tabs::captions::model::recommended(),
-            "Recommended",
+            "Parakeet v3 (quantized)",
         ),
         (
             tr::editor::tabs::captions::model::recommended_description(),
-            "Best balance for most recordings",
+            "Fast and accurate · 25 European languages, no Chinese",
         ),
-        (tr::editor::tabs::captions::model::small(), "Small"),
+        (tr::editor::tabs::captions::model::small(), "Whisper Small"),
         (
             tr::editor::tabs::captions::model::small_description(),
-            "Smallest download",
+            "Smallest download · supports Chinese",
         ),
         (tr::editor::tabs::captions::model_label(), "Model"),
         (tr::editor::tabs::captions::position(), "Position"),
@@ -749,7 +762,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::position::top_right(), "Top Right"),
         (
             tr::editor::tabs::sync::auto_description(),
-            "Cap calculated these offsets automatically to keep audio in sync with the video. Adjust them if anything still sounds off.",
+            "Capwise calculated these offsets automatically to keep audio in sync with the video. Adjust them if anything still sounds off.",
         ),
         (tr::editor::tabs::sync::auto_synced(), "Auto-synced"),
         (tr::editor::tabs::sync::camera(), "Camera Offset"),
@@ -1423,7 +1436,7 @@ fn derived_track_copy_matches_the_sentences_it_replaced() {
 fn editor_shell_messages_format_like_the_code_they_replaced() {
     let error = "disk full".to_string();
     let path = std::path::Path::new("/tmp/Demo.cap");
-    let message = "Source Cap project is still recording".to_string();
+    let message = "Source Capwise project is still recording".to_string();
 
     for seconds in [0.25, 0.5, 1.0] {
         assert_eq!(
@@ -1476,7 +1489,7 @@ fn editor_shell_messages_format_like_the_code_they_replaced() {
     );
     assert_eq!(
         tr::editor::clips::error::source_failed(&error),
-        format!("Source Cap project failed: {error}")
+        format!("Source Capwise project failed: {error}")
     );
     assert_eq!(
         tr::editor::clips::error::unsupported_video(path.display()),

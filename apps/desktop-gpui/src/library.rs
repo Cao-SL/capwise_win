@@ -2987,7 +2987,7 @@ mod tests {
         }
         let message =
             recovery_failure_message(&RecoveryError::VideoConcat(RemuxError::NoFragments), path);
-        assert!(message.starts_with("Cap could not rebuild"), "{message}");
+        assert!(message.starts_with("Capwise could not rebuild"), "{message}");
     }
 
     #[test]

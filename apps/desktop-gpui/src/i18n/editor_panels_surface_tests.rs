@@ -164,7 +164,7 @@ fn editor_panels_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::panel::text_preset::sample::title(),
-            "Introducing Cap",
+            "Introducing Capwise",
         ),
         (
             tr::editor::panel::text_preset::sample::headline(),
@@ -184,7 +184,7 @@ fn editor_panels_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::panel::text_preset::sample::caption(),
-            "Recorded with Cap",
+            "Recorded with Capwise",
         ),
         (
             tr::editor::panel::text_preset::sample::kicker(),
@@ -868,7 +868,7 @@ fn editor_panels_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::panel::style_presets::save_failed(),
-            "Couldn't save presets. Cap can't write its settings file.",
+            "Couldn't save presets. Capwise can't write its settings file.",
         ),
         (
             tr::editor::panel::style_presets::set_default(),

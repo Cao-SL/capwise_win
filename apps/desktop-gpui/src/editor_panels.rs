@@ -8987,7 +8987,7 @@ mod tests {
         let mut segment = text_segment();
         assert_eq!(segment.content, "Text");
         apply_text_preset(&mut segment, preset("title"), &[]);
-        assert_eq!(segment.content, "Introducing Cap");
+        assert_eq!(segment.content, "Introducing Capwise");
 
         // An empty box counts as untouched too.
         let mut segment = text_segment();

@@ -60,13 +60,7 @@ zoom = "Zoom"
 title = "Ayuda"
 feedback = "Enviar comentarios…"
 changelog = "Registro de cambios"
-dashboard = "Panel"
 documentation = "Documentación"
-faq = "Preguntas frecuentes"
-self_hosting = "Alojamiento propio"
-help_center = "Centro de ayuda"
-system_status = "Estado del sistema"
-discord = "Unirse a la comunidad de Discord"
 
 [tray]
 import_media = "Importar contenido..."
@@ -84,12 +78,9 @@ screenshot_display = "Capturar pantalla"
 screenshot_window = "Capturar ventana"
 select_mode = "Seleccionar modo"
 settings = "Ajustes"
-take_screenshot = "Hacer una captura de pantalla"
 tooltip_recording = "Capwise - Detener grabación"
-upload_logs = "Subir registros"
 version = "Capwise v{version}"
 view_all_recordings = "Ver todas las grabaciones"
-view_all_screenshots = "Ver todas las capturas de pantalla"
 
 [tray.mode]
 instant = "Instant"
@@ -167,10 +158,6 @@ label = "Captura de ventanas"
 [settings.general.recording.post_deletion]
 description = "Si la ventana de grabación debe volver a abrirse."
 label = "Después de eliminar una grabación"
-
-[settings.general.recording.delete_after_upload]
-description = "Capwise elimina el archivo local cuando se ha subido correctamente."
-label = "Eliminar las grabaciones Instant después de subirlas"
 
 [settings.general.recording.crash_recovery]
 description = "Graba en fragmentos que se pueden recuperar tras un fallo o un corte de luz. Los archivos son algo más grandes durante la captura."
@@ -345,11 +332,6 @@ res_1440p = "Más detalle para pantallas grandes de alta resolución."
 res_4k = "El máximo detalle. Mejor con una conexión rápida."
 res_720p = "Subidas más pequeñas, así los enlaces están listos antes."
 title = "Grabaciones Instant"
-
-[settings.quality.sharing]
-auto_open = "Abrir automáticamente los enlaces para compartir"
-auto_open_description = "Abre el enlace en tu navegador cuando termine una subida."
-title = "Compartir"
 
 [settings.options.studio_quality]
 balanced = "Equilibrado"

@@ -178,7 +178,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::dialog::delete_recording::finishing_body(),
-            "Cap is waiting for recording cleanup to finish before completing this deletion.",
+            "Capwise is waiting for recording cleanup to finish before completing this deletion.",
         ),
         (
             tr::dialog::delete_recording::finishing_title(),
@@ -198,7 +198,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::dialog::capture::approve_shortcut(),
-            "Approve a recording shortcut, or activate the Cap Stop tray icon when it appears. Recording has not started.",
+            "Approve a recording shortcut, or activate the Capwise Stop tray icon when it appears. Recording has not started.",
         ),
         (
             tr::dialog::capture::area_unavailable(),
@@ -210,11 +210,11 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::dialog::capture::camera_notice(),
-            "Cap will hide its camera preview and recording controls. Any selected camera will keep recording as a separate editable track.",
+            "Capwise will hide its camera preview and recording controls. Any selected camera will keep recording as a separate editable track.",
         ),
         (
             tr::dialog::capture::camera_notice_instant(),
-            "Cap will hide its preview and controls. Any selected camera will appear at its preview position with the selected shape and effects. Keep the whole preview inside the capture area. Opening Cap will stop this Instant recording before showing its controls.",
+            "Capwise will hide its preview and controls. Any selected camera will appear at its preview position with the selected shape and effects. Keep the whole preview inside the capture area. Opening Capwise will stop this Instant recording before showing its controls.",
         ),
         (
             tr::dialog::capture::camera_outside_area(),
@@ -234,15 +234,15 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::dialog::capture::shortcut_conflict(),
-            "Ctrl+Shift+F9 is assigned to another Cap action. Change that shortcut before recording.",
+            "Ctrl+Shift+F9 is assigned to another Capwise action. Change that shortcut before recording.",
         ),
         (
             tr::dialog::capture::shortcut_description(),
-            "Start or stop this Cap recording",
+            "Start or stop this Capwise recording",
         ),
         (
             tr::dialog::capture::tray_stop_hint(),
-            "Activate the Cap Stop tray icon to start. Activate the same icon again to stop. Recording will not start until you use that control.",
+            "Activate the Capwise Stop tray icon to start. Activate the same icon again to stop. Recording will not start until you use that control.",
         ),
         (
             tr::dialog::capture::window_unavailable(),
@@ -277,7 +277,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::dialog::file::unconfirmed(),
-            "Cap could not confirm that the file dialog closed. Close any remaining file dialog and restart Cap before trying again.",
+            "Capwise could not confirm that the file dialog closed. Close any remaining file dialog and restart Capwise before trying again.",
         ),
         (
             tr::dialog::storage::stopped_kept(),
@@ -294,7 +294,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         (tr::dialog::teleprompter::cue_markers(), "Cue markers"),
         (
             tr::dialog::teleprompter::hidden(),
-            "This window is hidden from Cap recordings",
+            "This window is hidden from Capwise recordings",
         ),
         (tr::dialog::teleprompter::mirror(), "Mirror text"),
         (
@@ -388,7 +388,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::overlay::window::size_needs_accessibility_body(),
-            "Turn on Accessibility for Cap in System Settings to resize other apps' windows.",
+            "Turn on Accessibility for Capwise in System Settings to resize other apps' windows.",
         ),
         (
             tr::overlay::window::size_unavailable_title(),
@@ -485,7 +485,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         (tr::permission::onboarding::skip(), "Skip for now"),
         (
             tr::permission::onboarding::switch_on_title(),
-            "Switch Cap on in System Settings",
+            "Switch Capwise on in System Settings",
         ),
         (
             tr::permission::onboarding::accessibility::allow(),
@@ -493,7 +493,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::permission::onboarding::accessibility::body(),
-            "Accessibility lets Cap see your clicks and cursor, on this Mac only, so auto zoom knows where to look.",
+            "Accessibility lets Capwise see your clicks and cursor, on this Mac only, so auto zoom knows where to look.",
         ),
         (
             tr::permission::onboarding::accessibility::done_body(),
@@ -505,15 +505,15 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::permission::onboarding::accessibility::title(),
-            "Let Cap follow your cursor",
+            "Let Capwise follow your cursor",
         ),
         (
             tr::permission::onboarding::all_set::body(),
-            "Cap has everything it needs. Next, a quick look at what it can do.",
+            "Capwise has everything it needs. Next, a quick look at what it can do.",
         ),
         (
             tr::permission::onboarding::all_set::regained(),
-            "Thanks. Cap can record again.",
+            "Thanks. Capwise can record again.",
         ),
         (
             tr::permission::onboarding::all_set::title(),
@@ -534,7 +534,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::permission::onboarding::camera::title(),
-            "Let Cap see you",
+            "Let Capwise see you",
         ),
         (
             tr::permission::onboarding::checklist::lede(),
@@ -546,31 +546,31 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::permission::onboarding::checklist::regained_title(),
-            "Cap needs a permission back",
+            "Capwise needs a permission back",
         ),
         (
             tr::permission::onboarding::checklist::title(),
-            "Let's get Cap ready",
+            "Let's get Capwise ready",
         ),
         (
             tr::permission::onboarding::hint::drag_into_list(),
-            "Drag Cap from the panel under System Settings into the list. Already listed? Just switch it on.",
+            "Drag Capwise from the panel under System Settings into the list. Already listed? Just switch it on.",
         ),
         (
             tr::permission::onboarding::hint::find_in_list(),
-            "Find Cap in the list and switch it on. If macOS asked first, choose Open System Settings.",
+            "Find Capwise in the list and switch it on. If macOS asked first, choose Open System Settings.",
         ),
         (
             tr::permission::onboarding::hint::no_prompt(),
-            "No prompt showed up? Switch Cap on in System Settings.",
+            "No prompt showed up? Switch Capwise on in System Settings.",
         ),
         (
             tr::permission::onboarding::hint::open_settings(),
-            "Open System Settings, find Cap in the list and switch it on.",
+            "Open System Settings, find Capwise in the list and switch it on.",
         ),
         (
             tr::permission::onboarding::hint::turned_off(),
-            "It was turned off earlier, so switch Cap on in System Settings. Or skip it for now.",
+            "It was turned off earlier, so switch Capwise on in System Settings. Or skip it for now.",
         ),
         (
             tr::permission::onboarding::microphone::allow(),
@@ -590,20 +590,20 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::permission::onboarding::microphone::title(),
-            "Let Cap hear you",
+            "Let Capwise hear you",
         ),
         (
             tr::permission::onboarding::relaunch::body(),
-            "macOS turns on screen recording once Cap restarts. You'll pick up right here.",
+            "macOS turns on screen recording once Capwise restarts. You'll pick up right here.",
         ),
         (tr::permission::onboarding::relaunch::button(), "Relaunch"),
         (
             tr::permission::onboarding::relaunch::hint(),
-            "Switched on but still waiting? Restart Cap to apply it.",
+            "Switched on but still waiting? Restart Capwise to apply it.",
         ),
         (
             tr::permission::onboarding::relaunch::later(),
-            "macOS applies it after Cap restarts. You can do that once you're done here.",
+            "macOS applies it after Capwise restarts. You can do that once you're done here.",
         ),
         (
             tr::permission::onboarding::relaunch::title(),
@@ -615,11 +615,11 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::permission::onboarding::screen::body(),
-            "Screen Recording lets Cap capture your displays, windows and system audio.",
+            "Screen Recording lets Capwise capture your displays, windows and system audio.",
         ),
         (
             tr::permission::onboarding::screen::done_body(),
-            "Cap can capture your screen.",
+            "Capwise can capture your screen.",
         ),
         (
             tr::permission::onboarding::screen::done_title(),
@@ -627,7 +627,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::permission::onboarding::screen::title(),
-            "Let Cap see your screen",
+            "Let Capwise see your screen",
         ),
         (tr::permission::onboarding::status::allowed(), "Allowed"),
         (
@@ -656,7 +656,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
             tr::permission::guide::screen_body(),
             "Drop it on the Screen & System Audio Recording list above, then make sure its switch is on.",
         ),
-        (tr::permission::guide::title(), "Drag Cap into the list"),
+        (tr::permission::guide::title(), "Drag Capwise into the list"),
         (tr::permission::name::accessibility(), "Accessibility"),
         (tr::permission::name::camera(), "Camera"),
         (tr::permission::name::microphone(), "Microphone"),
@@ -728,7 +728,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::screenshot_editor::error::sign_in_to_share(),
-            "Sign in to Cap in your browser, then share again",
+            "Sign in to Capwise in your browser, then share again",
         ),
         (
             tr::screenshot_editor::error::upgrade_required(),
@@ -831,31 +831,31 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
             tr::transcription::error::unsupported_language(),
             "The Recommended and High Accuracy models only transcribe English and 24 other European languages. Download the Small or Medium model to caption this language",
         ),
-        (tr::dialog::quit::still_open(), "Cap is still open"),
+        (tr::dialog::quit::still_open(), "Capwise is still open"),
         (
             tr::dialog::quit::files_kept(),
             "Everything recorded so far stays in the recording's folder.",
         ),
-        (tr::dialog::quit::keep_open(), "Keep Cap Open"),
+        (tr::dialog::quit::keep_open(), "Keep Capwise Open"),
         (tr::dialog::quit::quit_anyway(), "Quit Anyway"),
         (
             tr::dialog::quit::pending(),
-            "Quit canceled because recording shutdown is still pending. Cap will stay open. Use Stop once available, then try Quit again.",
+            "Quit canceled because recording shutdown is still pending. Capwise will stay open. Use Stop once available, then try Quit again.",
         ),
         (
             tr::dialog::quit::unconfirmed(),
-            "Quit canceled because recording shutdown could not be confirmed. Cap will stay open. Use Stop, then try Quit again.",
+            "Quit canceled because recording shutdown could not be confirmed. Capwise will stay open. Use Stop, then try Quit again.",
         ),
-        (tr::dialog::update::title(), "Update Cap"),
-        (tr::dialog::update::busy_title(), "Cap is busy"),
+        (tr::dialog::update::title(), "Update Capwise"),
+        (tr::dialog::update::busy_title(), "Capwise is busy"),
         (
             tr::dialog::update::busy(),
-            "Finish your recording, export, upload, import, or transcription task before updating Cap.",
+            "Finish your recording, export, upload, import, or transcription task before updating Capwise.",
         ),
         (tr::dialog::update::no_update_title(), "No Update Available"),
         (
             tr::dialog::update::no_update(),
-            "You're already using the latest version of Cap.",
+            "You're already using the latest version of Capwise.",
         ),
         (tr::dialog::update::download(), "Download"),
         (tr::dialog::update::not_now(), "Not Now"),
@@ -863,7 +863,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         (tr::dialog::update::later(), "Later"),
         (
             tr::dialog::update::package_not_installed(),
-            "The package wasn't installed. Approve the system prompt, or install it from Cap.so/download.",
+            "The package wasn't installed. Approve the system prompt, or install it from Capwise.so/download.",
         ),
     ];
     for (translated, literal) in pairs {
@@ -1140,17 +1140,17 @@ fn update_and_quit_messages_format_like_the_code_they_replaced() {
         (
             tr::dialog::quit::canceled(error),
             format!(
-                "Quit canceled: {error}. Cap will stay open so you can finish or recover the recording."
+                "Quit canceled: {error}. Capwise will stay open so you can finish or recover the recording."
             ),
         ),
         (
             tr::dialog::update::already_getting(&version),
-            format!("Cap is already getting version {version} ready."),
+            format!("Capwise is already getting version {version} ready."),
         ),
         (
             tr::dialog::update::available(&version),
             format!(
-                "Version {version} of Cap is available. Cap will download it in the background and let you know when it's ready to install."
+                "Version {version} of Capwise is available. Capwise will download it in the background and let you know when it's ready to install."
             ),
         ),
         (
@@ -1167,11 +1167,11 @@ fn update_and_quit_messages_format_like_the_code_they_replaced() {
         ),
         (
             tr::dialog::update::ready(&version),
-            format!("Cap {version} is ready. Restart Cap to finish updating."),
+            format!("Capwise {version} is ready. Restart Capwise to finish updating."),
         ),
         (
             tr::dialog::update::failed(error),
-            format!("{error}\n\nYou can always download the latest version from Cap.so/download."),
+            format!("{error}\n\nYou can always download the latest version from Capwise.so/download."),
         ),
     ];
     for (translated, literal) in pairs {

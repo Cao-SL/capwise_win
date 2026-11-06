@@ -317,6 +317,7 @@ pub(crate) struct PagesState {
     hint_draft: String,
     hint_save: HintSave,
     hint_save_task: Option<gpui::Task<()>>,
+    pub(crate) ai: crate::settings_ai::AiState,
 
     // Feedback (feedback.tsx)
     feedback_input: Entity<ui::TextInputState>,
@@ -426,6 +427,7 @@ impl PagesState {
             hint_draft: String::new(),
             hint_save: HintSave::Idle,
             hint_save_task: None,
+            ai: crate::settings_ai::AiState::new(window, cx),
             feedback_input,
             feedback_draft: String::new(),
             feedback: FeedbackStatus::Idle,
@@ -503,6 +505,7 @@ impl SettingsWindow {
                 self.pages.hint_save_task = None;
                 let input = self.pages.hint_input.clone();
                 input.update(cx, |input, cx| input.set_text("", cx));
+                self.ai_page_shown(window, cx);
             }
             Page::Feedback => {
                 self.pages.feedback = FeedbackStatus::Idle;
@@ -566,6 +569,9 @@ impl SettingsWindow {
     /// Option lists for the [`MenuKind`] variants owned by these pages.
     pub(crate) fn pages_menu_items(&self, kind: MenuKind) -> Vec<ui::MenuItem> {
         match kind {
+            MenuKind::AiRecognizer | MenuKind::AiModel | MenuKind::AiLlmAdd | MenuKind::AiLlmDefault => {
+                self.ai_menu_items(kind)
+            }
             MenuKind::S3Provider => S3_PROVIDERS
                 .iter()
                 .map(|(value, label)| ui::MenuItem::new(label(), *value == self.pages.s3.provider))
@@ -719,6 +725,9 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) {
         match kind {
+            MenuKind::AiRecognizer | MenuKind::AiModel | MenuKind::AiLlmAdd | MenuKind::AiLlmDefault => {
+                self.ai_choose(kind, index, window, cx);
+            }
             MenuKind::S3Provider => {
                 if let Some((value, _)) = S3_PROVIDERS.get(index) {
                     self.pages.s3.provider = (*value).to_string();
@@ -858,7 +867,7 @@ impl SettingsWindow {
     /// Run a future on the tokio runtime (reqwest and file IO both live
     /// there), then apply its result to the window. `window.refresh()` because
     /// a background-driven update does not repaint an inactive window.
-    fn spawn_tokio<T, Fut>(
+    pub(crate) fn spawn_tokio<T, Fut>(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -916,7 +925,7 @@ impl SettingsWindow {
     }
 
     /// A page-owned single-line input on the settings surface.
-    fn pages_input(
+    pub(crate) fn pages_input(
         &self,
         id: impl Into<gpui::ElementId>,
         input: &Entity<ui::TextInputState>,
@@ -8426,7 +8435,7 @@ mod tests {
             "openRecordingPickerArea" => format!("select an area, then {picker}"),
             "openRecordingPickerWindow" => format!("choose a window, then {picker}"),
             "openRecordingPickerDisplay" => format!("choose a display, then {picker}"),
-            "openRecordingPicker" => "open Cap so you can choose what to record".into(),
+            "openRecordingPicker" => "open Capwise so you can choose what to record".into(),
             "cycleRecordingMode" => "switch between Studio, Instant and Screenshot mode".into(),
             "stopRecording" => "stop the current recording".into(),
             "togglePauseRecording" => "pause the current recording, or resume it".into(),

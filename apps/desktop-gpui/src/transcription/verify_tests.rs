@@ -28,8 +28,9 @@
 //!   last counted word, so a filler opens the next caption, and fillers after
 //!   the last counted word stay in the last.
 //! - A caption spans its first word's start to its last word's end; its text
-//!   joins the words with spaces, except before attaching punctuation; ids
-//!   are `segment-<n>`.
+//!   joins the words with spaces, except before attaching punctuation,
+//!   between two CJK characters and beside CJK punctuation; ids are
+//!   `segment-<n>`.
 
 use cap_verify::{
     audio_code::{self, AudioSource, MARKER_SECS},
@@ -103,13 +104,29 @@ fn reference_words(tokens: &[CaptionWord]) -> Vec<CaptionWord> {
     words
 }
 
+fn cjk(c: char) -> bool {
+    matches!(c as u32, 0x3040..=0x30ff | 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xac00..=0xd7af | 0xf900..=0xfaff)
+}
+
+fn cjk_punctuation(c: char) -> bool {
+    matches!(c as u32, 0x3000..=0x303f | 0xff00..=0xffef)
+}
+
 fn reference_text(words: &[CaptionWord]) -> String {
     let mut text = String::new();
     for word in words {
-        if !text.is_empty() && !attaches(&word.text) {
+        let word = word.text.trim();
+        let before = text.chars().last();
+        let after = word.chars().next();
+        let unspaced = before.zip(after).is_some_and(|(a, b)| {
+            (cjk(a) || cjk_punctuation(a)) && (cjk(b) || cjk_punctuation(b))
+                || cjk_punctuation(a)
+                || cjk_punctuation(b)
+        });
+        if !text.is_empty() && !attaches(word) && !unspaced {
             text.push(' ');
         }
-        text.push_str(word.text.trim());
+        text.push_str(word);
     }
     text
 }

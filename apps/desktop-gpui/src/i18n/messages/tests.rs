@@ -1,20 +1,38 @@
 use super::*;
 use crate::i18n::{KEYS, LOCALE_ENV, Locale, init};
 
+/// The source text with the product name Capwise shows instead of "Cap";
+/// paths and other words that merely contain it are left alone.
+fn rebranded(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut rest = text;
+    while let Some(index) = rest.find("Cap") {
+        let before = rest[..index].chars().last();
+        let after = rest[index + 3..].chars().next();
+        let word = !before.is_some_and(|c| c.is_alphanumeric() || "/.-_".contains(c))
+            && !after.is_some_and(|c| c.is_alphanumeric() || c == '_');
+        out.push_str(&rest[..index]);
+        out.push_str(if word { "Capwise" } else { "Cap" });
+        rest = &rest[index + 3..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[test]
 fn english_messages_read_exactly_as_before() {
     for (english, translate) in EXACT {
-        assert_eq!(translate(), *english);
-        assert_eq!(localize(english), *english);
+        assert_eq!(translate(), rebranded(english));
+        assert_eq!(localize(english), rebranded(english));
     }
     for wrapped in WRAPPED {
         let message = format!("{}disk full{}", wrapped.prefix, wrapped.suffix);
-        assert_eq!((wrapped.translate)("disk full".into()), message);
-        assert_eq!(localize(&message), message);
+        assert_eq!((wrapped.translate)("disk full".into()), rebranded(&message));
+        assert_eq!(localize(&message), rebranded(&message));
     }
     for permission in OSPermission::ALL {
         let message = permission.unavailable_message();
-        assert_eq!(localize(&message), message);
+        assert_eq!(localize(&message), rebranded(&message));
     }
 }
 
@@ -103,11 +121,11 @@ fn messages_follow_the_language() {
     );
     assert_eq!(
         localize(&OSPermission::Camera.unavailable_message()),
-        "カメラへのアクセスを利用できません。「システム設定」>「プライバシーとセキュリティ」>「カメラ」でCapを許可してから、デバイスをもう一度選択してください。"
+        "カメラへのアクセスを利用できません。「システム設定」>「プライバシーとセキュリティ」>「カメラ」でCapwiseを許可してから、デバイスをもう一度選択してください。"
     );
     assert_eq!(
         localize("Low storage. Your recording files are preserved at /Users/me/Cap/Stop task failed: x. Free up space, then recover the recording in Cap."),
-        "ストレージの空き容量が不足しています。録画ファイルは/Users/me/Cap/Stop task failed: xに保持されています。空き容量を確保してから、Capで録画を復元してください。"
+        "ストレージの空き容量が不足しています。録画ファイルは/Users/me/Cap/Stop task failed: xに保持されています。空き容量を確保してから、Capwiseで録画を復元してください。"
     );
 
     for (locale, shown) in [

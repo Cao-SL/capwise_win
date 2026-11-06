@@ -177,7 +177,7 @@ impl Page {
             Self::Recordings => "icons/square-play.svg",
             Self::Screenshots => "icons/image.svg",
             Self::Automations => "icons/zap.svg",
-            Self::Transcription => "icons/captions.svg",
+            Self::Transcription => "icons/sparkles.svg",
             Self::Integrations => "icons/unplug.svg",
             Self::License => "icons/gift.svg",
             Self::Feedback => "icons/message-square-plus.svg",
@@ -223,6 +223,10 @@ pub(crate) enum MenuKind {
     AutomationExportFps(usize, usize),
     AutomationExportCompression(usize, usize),
     AutomationPreset(usize, usize),
+    AiRecognizer,
+    AiModel,
+    AiLlmAdd,
+    AiLlmDefault,
 }
 
 struct OpenMenu {
@@ -2368,7 +2372,7 @@ impl SettingsWindow {
                         Page::Shortcuts => self.render_shortcuts(cx),
                         Page::Cli => self.render_cli(cx),
                         Page::Automations => self.render_automations(cx),
-                        Page::Transcription => self.render_transcription(cx),
+                        Page::Transcription => self.render_ai_models(cx),
                         Page::Integrations => self.render_integrations(cx),
                         Page::License => self.render_license(cx),
                         Page::Experimental => self.render_experimental(cx),
@@ -4949,39 +4953,16 @@ fn format_project_name(template: &str) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn profile_request_identity_changes_when_same_user_signs_in_again() {
-        let path =
-            std::env::temp_dir().join(format!("cap-profile-session-{}", store::new_uuid_v4()));
-        store::set_test_tauri_store_path(Some(path.clone()));
-        assert!(store::set_auth(Some(serde_json::json!({
-            "user_id": "user-1",
-            "secret": { "api_key": "old-token" }
-        }))));
-        let old_request = signed_in_profile_session();
-        assert!(store::set_auth(Some(serde_json::json!({
-            "user_id": "user-1",
-            "secret": { "api_key": "new-token" }
-        }))));
-        let new_request = signed_in_profile_session();
-        assert_ne!(old_request, new_request);
-        assert!(store::set_store_setting(
-            GENERAL_SETTINGS,
-            "serverUrl",
-            Value::String("https://other.example.com".into()),
-        ));
-        assert_ne!(new_request, signed_in_profile_session());
-        store::set_test_tauri_store_path(None);
-        std::fs::remove_file(path).unwrap();
-    }
-
     /// The sidebar list and its routes, which `showWindow({ Settings: { page } })`
     /// addresses by slug.
     #[test]
     fn every_page_round_trips_through_its_slug() {
-        assert_eq!(Page::ALL.len(), 13);
+        assert_eq!(Page::ALL.len(), 9);
         for page in Page::ALL {
             assert_eq!(Page::from_slug(page.slug()), Some(*page));
+        }
+        for removed in ["license", "integrations", "screenshots", "feedback", "changelog"] {
+            assert_eq!(Page::from_slug(removed), None);
         }
         assert_eq!(Page::Shortcuts.slug(), "hotkeys");
         assert_eq!(Page::from_slug("nope"), None);

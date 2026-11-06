@@ -780,7 +780,7 @@ impl PresetStyle for CaptionStyle {
         settings.export_with_subtitles = false;
         settings.show_filler_words = false;
         settings.filler_language = None;
-        if !crate::editor_tabs::FONT_OPTIONS.contains(&settings.font.as_str()) {
+        if !crate::editor_tabs::caption_font_options().contains(&settings.font) {
             settings.font = fallback.font.clone();
         }
         settings.size = settings.size.clamp(12, 100);

@@ -2153,69 +2153,35 @@ mod tests {
         let menu = build_onboarding_menu("0.1.0");
         assert_eq!(
             titles(&menu),
-            vec!["Request Permissions", "-", "Cap v0.1.0", "Quit Cap",]
+            vec!["Request Permissions", "-", "Capwise v0.1.0", "Quit Capwise",]
         );
     }
 
     #[test]
     fn menu_matches_build_tray_menu() {
         let menu = build_menu(Mode::Studio, &[], "0.1.0");
-        // macOS renders the group as a section header naming the current
-        // mode; the `mode_submenu` other platforms get keeps its group label.
-        let mode_label = if cfg!(target_os = "macos") {
-            "Studio"
-        } else {
-            "Select Mode"
-        };
-        let mut expected = vec!["Open Main Window", "-", mode_label, "-"];
-        expected.extend([
+        let mut expected = vec![
+            "Open Main Window",
+            "-",
             "Record Display",
             "Record Window",
             "Record Area",
-            "Take a Screenshot",
             "-",
             "Previous",
             "View all recordings",
-            "View all screenshots",
             "-",
             "Import Media...",
             "Settings",
-            "Upload Logs",
             "-",
-        ]);
+        ];
         // The version row is a section header below Quit on macOS and a
         // disabled row above it everywhere else.
         if cfg!(target_os = "macos") {
-            expected.extend(["Quit Cap", "Cap v0.1.0"]);
+            expected.extend(["Quit Capwise", "Capwise v0.1.0"]);
         } else {
-            expected.extend(["Cap v0.1.0", "Quit Cap"]);
+            expected.extend(["Capwise v0.1.0", "Quit Capwise"]);
         }
         assert_eq!(titles(&menu), expected);
-    }
-
-    /// Screenshot mode relabels the three target rows and drops "Take a
-    /// Screenshot" entirely.
-    #[test]
-    fn screenshot_mode_relabels_the_capture_rows() {
-        let menu = build_menu(Mode::Screenshot, &[], "0.1.0");
-        let titles = titles(&menu);
-        let mode_label = if cfg!(target_os = "macos") {
-            "Screenshot"
-        } else {
-            "Select Mode"
-        };
-        assert_eq!(
-            &titles[..6],
-            &[
-                "Open Main Window",
-                "-",
-                mode_label,
-                "-",
-                "Screenshot Display",
-                "Screenshot Window",
-            ]
-        );
-        assert!(!titles.iter().any(|title| title == "Take a Screenshot"));
     }
 
     #[test]
@@ -2308,9 +2274,9 @@ mod tests {
         assert_eq!(
             disabled,
             if cfg!(target_os = "macos") {
-                vec!["Upload Logs"]
+                Vec::<String>::new()
             } else {
-                vec!["Upload Logs", "Cap v0.1.0"]
+                vec!["Capwise v0.1.0".to_string()]
             }
         );
     }
@@ -2380,24 +2346,6 @@ mod tests {
                 ("Screenshot Area".to_string(), TrayItem::ScreenshotArea),
             ]
         );
-    }
-
-    #[test]
-    fn screenshot_mode_drops_take_a_screenshot_and_recording_mode_keeps_it() {
-        let has = |mode| {
-            build_menu(mode, &[], "0.1.0").iter().any(|entry| {
-                matches!(
-                    entry,
-                    Entry::Item {
-                        item: Some(TrayItem::TakeScreenshot),
-                        ..
-                    }
-                )
-            })
-        };
-        assert!(has(Mode::Studio));
-        assert!(has(Mode::Instant));
-        assert!(!has(Mode::Screenshot));
     }
 
     #[test]

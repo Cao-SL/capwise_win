@@ -7,6 +7,17 @@ fn english_is_the_default_locale() {
     assert_eq!(Locale::from_code("en"), Some(Locale::En));
 }
 
+/// Strings Capwise added rather than moved out of Cap's code: there is no
+/// literal they replaced.
+const CAPWISE_KEYS: &[&str] = &[
+    "ai.",
+    "asr.",
+    "brand.",
+    "settings.ai.",
+    "settings.about.",
+    "settings.nav.about",
+];
+
 #[test]
 fn english_matches_the_literals_it_replaced() {
     let app_name = crate::menus::APP_NAME;
@@ -54,13 +65,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (tr::menu::about::website(), "Website".into()),
         (tr::menu::about::commit(), "Commit".into()),
-        (tr::menu::help::dashboard(), "Dashboard".into()),
         (tr::menu::help::documentation(), "Documentation".into()),
-        (tr::menu::help::faq(), "FAQ".into()),
-        (tr::menu::help::self_hosting(), "Self-hosting".into()),
-        (tr::menu::help::help_center(), "Help Center".into()),
-        (tr::menu::help::system_status(), "System Status".into()),
-        (tr::menu::help::discord(), "Join Discord Community".into()),
         (tr::menu::update::check(), "Check for Update".into()),
         (tr::menu::update::download(), "Download update…".into()),
         (tr::menu::update::checking(), "Checking for Update…".into()),
@@ -74,7 +79,7 @@ fn english_matches_the_literals_it_replaced() {
         (tr::tray::recording_mode(), "Recording Mode".into()),
         (tr::tray::open_main_window(), "Open Main Window".into()),
         (tr::tray::previous(), "Previous".into()),
-        (tr::tray::quit(), "Quit Cap".into()),
+        (tr::tray::quit(), "Quit Capwise".into()),
         (tr::tray::record_area(), "Record Area".into()),
         (tr::tray::record_display(), "Record Display".into()),
         (tr::tray::record_window(), "Record Window".into()),
@@ -87,16 +92,10 @@ fn english_matches_the_literals_it_replaced() {
         (tr::tray::screenshot_window(), "Screenshot Window".into()),
         (tr::tray::select_mode(), "Select Mode".into()),
         (tr::tray::settings(), "Settings".into()),
-        (tr::tray::take_screenshot(), "Take a Screenshot".into()),
-        (tr::tray::tooltip_recording(), "Cap - Stop Recording".into()),
-        (tr::tray::upload_logs(), "Upload Logs".into()),
+        (tr::tray::tooltip_recording(), "Capwise - Stop Recording".into()),
         (
             tr::tray::view_all_recordings(),
             "View all recordings".into(),
-        ),
-        (
-            tr::tray::view_all_screenshots(),
-            "View all screenshots".into(),
         ),
         (tr::tray::mode::instant(), "Instant".into()),
         (tr::tray::mode::screenshot(), "Screenshot".into()),
@@ -113,10 +112,10 @@ fn english_matches_the_literals_it_replaced() {
         (tr::settings::nav::recordings(), "Recordings".into()),
         (tr::settings::nav::screenshots(), "Screenshots".into()),
         (tr::settings::nav::shortcuts(), "Shortcuts".into()),
-        (tr::settings::nav::transcription(), "Transcription".into()),
+        (tr::settings::nav::transcription(), "AI models".into()),
         (
             tr::settings::general::appearance::description(),
-            "Match Cap to your system theme or pick a fixed look.".into(),
+            "Match Capwise to your system theme or pick a fixed look.".into(),
         ),
         (
             tr::settings::general::appearance::title(),
@@ -127,12 +126,12 @@ fn english_matches_the_literals_it_replaced() {
         (tr::settings::general::appearance::dark(), "Dark".into()),
         (
             tr::settings::general::app::description(),
-            "Choose how Cap shows up on your system.".into(),
+            "Choose how Capwise shows up on your system.".into(),
         ),
         (tr::settings::general::app::title(), "App".into()),
         (
             tr::settings::general::app::dock_icon::description(),
-            "Keep Cap in the dock even when no windows are open.".into(),
+            "Keep Capwise in the dock even when no windows are open.".into(),
         ),
         (
             tr::settings::general::app::dock_icon::label(),
@@ -141,7 +140,7 @@ fn english_matches_the_literals_it_replaced() {
         (
             tr::settings::general::app::notifications::description(),
             "Show notifications for clipboard copies, saved files, and more. \
-                             You may need to allow Cap in your system's notification settings."
+                             You may need to allow Capwise in your system's notification settings."
                 .into(),
         ),
         (
@@ -226,14 +225,6 @@ fn english_matches_the_literals_it_replaced() {
         (
             tr::settings::general::recording::post_deletion::label(),
             "After deleting a recording".into(),
-        ),
-        (
-            tr::settings::general::recording::delete_after_upload::description(),
-            "Cap removes the local file once it has uploaded successfully.".into(),
-        ),
-        (
-            tr::settings::general::recording::delete_after_upload::label(),
-            "Delete Instant recordings after upload".into(),
         ),
         (
             tr::settings::general::recording::crash_recovery::description(),
@@ -347,7 +338,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::storage::description(),
-            "Where Cap saves your recordings.".into(),
+            "Where Capwise saves your recordings.".into(),
         ),
         (tr::settings::general::storage::title(), "Storage".into()),
         (
@@ -416,7 +407,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::excluded_windows::missing_title(),
-            "Recommended Cap windows are not excluded".into(),
+            "Recommended Capwise windows are not excluded".into(),
         ),
         (
             tr::settings::general::excluded_windows::restore(),
@@ -428,7 +419,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::updates::description(),
-            "Choose which Cap builds you receive.".into(),
+            "Choose which Capwise builds you receive.".into(),
         ),
         (
             tr::settings::general::updates::nightly_description(),
@@ -453,7 +444,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::updates::download_policy::description(),
-            "Choose whether Cap downloads updates automatically.".into(),
+            "Choose whether Capwise downloads updates automatically.".into(),
         ),
         (
             tr::settings::general::updates::download_policy::manual(),
@@ -469,7 +460,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::updates::channel::description(),
-            "Which release channel Cap updates from.".into(),
+            "Which release channel Capwise updates from.".into(),
         ),
         (
             tr::settings::general::updates::channel::label(),
@@ -477,11 +468,11 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::self_host::description(),
-            "Only change this if you are running your own instance of Cap Web.".into(),
+            "Only change this if you are running your own instance of Capwise Web.".into(),
         ),
         (
             tr::settings::general::self_host::server_url(),
-            "Cap Server URL".into(),
+            "Capwise Server URL".into(),
         ),
         (
             tr::settings::general::self_host::title(),
@@ -491,7 +482,7 @@ fn english_matches_the_literals_it_replaced() {
         (tr::settings::general::privacy::title(), "Privacy".into()),
         (
             tr::settings::general::privacy::telemetry::description(),
-            "Cap uses anonymous telemetry to improve reliability and fix bugs. We \
+            "Capwise uses anonymous telemetry to improve reliability and fix bugs. We \
                          never collect recording contents, window titles, file paths, or \
                          personal information."
                 .into(),
@@ -514,6 +505,7 @@ fn english_matches_the_literals_it_replaced() {
                 && !super::editor_panels_surface_tests::is_editor_panels_surface_key(key)
                 && !super::editor_shell_surface_tests::is_editor_shell_surface_key(key)
                 && !key.starts_with(super::messages::KEY_PREFIX)
+                && !CAPWISE_KEYS.iter().any(|prefix| key.starts_with(prefix))
         })
         .count()
         // `tray.version`, `excluded_windows.missing_body`, `self_host.confirm_change`,
@@ -581,7 +573,7 @@ fn language_picker_english() {
     assert_eq!(tr::settings::general::language::title(), "Language");
     assert_eq!(
         tr::settings::general::language::description(),
-        "Choose the language Cap is shown in."
+        "Choose the language Capwise is shown in."
     );
     assert_eq!(tr::settings::general::language::label(), "App language");
     assert_eq!(
@@ -814,7 +806,25 @@ fn translations_fit_their_width_budgets() {
 #[test]
 fn english_messages_format_like_the_literals_they_replaced() {
     let version = "0.6.1";
-    assert_eq!(tr::tray::version(version), format!("Cap v{version}"));
+    assert_eq!(tr::tray::version(version), format!("Capwise v{version}"));
+    assert_eq!(
+        tr::asr::quota("Doubao Speech", "overdue"),
+        "Doubao Speech quota exhausted or account in arrears: overdue"
+    );
+    assert_eq!(
+        tr::asr::failed("Groq", 429, "slow down"),
+        "Groq failed (429): slow down"
+    );
+    assert_eq!(
+        tr::asr::connection_failed("OpenAI", "timeout"),
+        "Could not reach OpenAI: timeout"
+    );
+    assert_eq!(
+        tr::settings::about::license(2026),
+        "© 2026 向阳乔木 · AGPL-3.0 · Based on Cap"
+    );
+    assert_eq!(tr::settings::ai::ready_ms(812), "Ready · 812 ms");
+    assert_eq!(tr::settings::ai::downloading(42), "Downloading 42%");
     let names = "Cap Camera, Cap Settings".to_string();
     assert_eq!(
         tr::settings::general::excluded_windows::missing_body(&names),

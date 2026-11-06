@@ -22,10 +22,14 @@ cargo_flags=()
 (cd "$HERE" && cargo build ${cargo_flags[@]+"${cargo_flags[@]}"})
 (cd "$ROOT" && cargo build -p cap ${cargo_flags[@]+"${cargo_flags[@]}"})
 
+"$HERE/scripts/fetch-caption-fonts.sh" >/dev/null
+
 rm -rf "$STAGE"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources/onnxruntime/lib" "$STAGE/Contents/Frameworks"
 cp "$HERE/packaging/macos/Info.plist" "$STAGE/Contents/Info.plist"
 cp "$HERE/packaging/macos/icon.icns" "$STAGE/Contents/Resources/icon.icns"
+mkdir -p "$STAGE/Contents/Resources/fonts"
+cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
 cp "$HERE/target/$PROFILE/cap-gpui" "$STAGE/Contents/MacOS/Capwise"
 cp "$ROOT/target/$PROFILE/cap" "$STAGE/Contents/MacOS/cap-cli"
 cp "$(ls -d "$ROOT"/target/onnxruntime-osx-*/lib/libonnxruntime.dylib | head -1)" \

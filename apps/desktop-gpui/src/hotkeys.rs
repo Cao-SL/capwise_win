@@ -1384,22 +1384,30 @@ mod tests {
     fn action_keys_match_the_tauri_serde_names() {
         for key in [
             "startStudioRecording",
-            "startInstantRecording",
             "stopRecording",
             "restartRecording",
             "togglePauseRecording",
-            "cycleRecordingMode",
             "openRecordingPicker",
             "openRecordingPickerDisplay",
             "openRecordingPickerWindow",
             "openRecordingPickerArea",
-            "screenshotDisplay",
-            "screenshotWindow",
-            "screenshotArea",
         ] {
             assert!(
                 HotkeyAction::from_store_key(key).is_some(),
                 "{key} should map to an action"
+            );
+        }
+        for key in [
+            "startInstantRecording",
+            "cycleRecordingMode",
+            "screenshotDisplay",
+            "screenshotWindow",
+            "screenshotArea",
+        ] {
+            assert_eq!(
+                HotkeyAction::from_store_key(key),
+                None,
+                "{key} is not offered in Capwise"
             );
         }
         assert_eq!(HotkeyAction::from_store_key("someFutureAction"), None);

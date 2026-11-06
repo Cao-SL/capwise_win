@@ -29,14 +29,86 @@ use std::sync::OnceLock;
 /// resulting font database (memory-mapped faces are reference counted) for each new
 /// `FontSystem`.
 pub fn new_font_system() -> glyphon::FontSystem {
-    static FONT_TEMPLATE: OnceLock<(String, glyphon::fontdb::Database)> = OnceLock::new();
-
     let font_phase = crate::readiness::Phase::start("font.instance");
     let template_phase = crate::readiness::Phase::start("font.template_lookup");
-    let (locale, db) = FONT_TEMPLATE.get_or_init(|| {
+    let (locale, db) = font_template();
+    template_phase.finish("returned");
+
+    let result = crate::readiness::measure("font.clone_and_index", || {
+        glyphon::FontSystem::new_with_locale_and_db(locale.clone(), db.clone())
+    });
+    font_phase.finish("returned");
+    result
+}
+
+/// Where the fonts the app ships live: `CAPWISE_FONTS_DIR`, or
+/// `Contents/Resources/fonts` next to the running executable.
+fn bundled_font_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = std::env::var_os("CAPWISE_FONTS_DIR") {
+        dirs.push(std::path::PathBuf::from(dir));
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(contents) = exe.parent().and_then(std::path::Path::parent)
+    {
+        dirs.push(contents.join("Resources").join("fonts"));
+    }
+    dirs.into_iter().filter(|dir| dir.is_dir()).collect()
+}
+
+/// A font family whose names include a Chinese one, for the caption font
+/// picker. `family` is the name the renderer matches on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChineseFontFamily {
+    pub family: String,
+    pub chinese_name: String,
+}
+
+/// Installed and bundled families that name themselves in Chinese, which
+/// in practice means they carry Chinese glyphs. Hidden system faces (a
+/// leading dot) are left out.
+pub fn chinese_font_families() -> Vec<ChineseFontFamily> {
+    use glyphon::fontdb::Language;
+    let (_, db) = font_template();
+    let mut families: Vec<ChineseFontFamily> = Vec::new();
+    for face in db.faces() {
+        let Some((family, _)) = face.families.first() else {
+            continue;
+        };
+        if family.starts_with('.') || families.iter().any(|known| &known.family == family) {
+            continue;
+        }
+        let chinese = face.families.iter().find(|(_, language)| {
+            matches!(
+                language,
+                Language::Chinese_PeoplesRepublicOfChina
+                    | Language::Chinese_Singapore
+                    | Language::Chinese_Taiwan
+                    | Language::Chinese_HongKongSAR
+                    | Language::Chinese_MacaoSAR
+            )
+        });
+        if let Some((chinese_name, _)) = chinese {
+            families.push(ChineseFontFamily {
+                family: family.clone(),
+                chinese_name: chinese_name.clone(),
+            });
+        }
+    }
+    families.sort_by(|a, b| a.family.cmp(&b.family));
+    families
+}
+
+fn font_template() -> &'static (String, glyphon::fontdb::Database) {
+    static FONT_TEMPLATE: OnceLock<(String, glyphon::fontdb::Database)> = OnceLock::new();
+
+    FONT_TEMPLATE.get_or_init(|| {
         let init_phase = crate::readiness::Phase::start("font.template_init");
         let font_system = crate::readiness::measure("font.system_scan", glyphon::FontSystem::new);
         let mut db = font_system.db().clone();
+        for dir in bundled_font_dirs() {
+            db.load_fonts_dir(dir);
+        }
         // Pin the generic families to the fonts the editor webview resolves
         // them to. fontdb's stock defaults (e.g. "Arial") often don't match
         // any installed face, in which case cosmic-text silently shapes with
@@ -67,14 +139,7 @@ pub fn new_font_system() -> glyphon::FontSystem {
         let template = (font_system.locale().to_string(), db);
         init_phase.finish("returned");
         template
-    });
-    template_phase.finish("returned");
-
-    let result = crate::readiness::measure("font.clone_and_index", || {
-        glyphon::FontSystem::new_with_locale_and_db(locale.clone(), db.clone())
-    });
-    font_phase.finish("returned");
-    result
+    })
 }
 
 /// Bind groups for full-frame passes that sample one of the render session's

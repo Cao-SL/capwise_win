@@ -151,7 +151,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
             tr::settings::quality::save_failed(),
             "Couldn't save your recording settings. Please try again.",
         ),
-        (tr::settings::quality::studio::title(), "Studio recordings"),
+        (tr::settings::quality::studio::title(), "Quality"),
         (
             tr::settings::quality::studio::description(),
             "Saved to your computer for editing. You choose the export size later, in the editor.",
@@ -189,7 +189,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::quality::instant::free_plan(),
-            "720p on the free plan. Cap Pro records up to 4K.",
+            "720p on the free plan. Capwise Pro records up to 4K.",
         ),
         (
             tr::settings::quality::instant::res_720p(),
@@ -206,15 +206,6 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (
             tr::settings::quality::instant::res_4k(),
             "The most detail. Best on a fast connection.",
-        ),
-        (tr::settings::quality::sharing::title(), "Sharing"),
-        (
-            tr::settings::quality::sharing::auto_open(),
-            "Open share links automatically",
-        ),
-        (
-            tr::settings::quality::sharing::auto_open_description(),
-            "Open the link in your browser when an upload finishes.",
         ),
         (
             tr::settings::options::studio_quality::compatibility(),
@@ -242,7 +233,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
             tr::settings::options::post_studio::open_editor(),
             "Open editor",
         ),
-        (tr::settings::options::post_studio::show_cap(), "Show Cap"),
+        (tr::settings::options::post_studio::show_cap(), "Show Capwise"),
         (
             tr::settings::options::post_studio::do_nothing(),
             "Do nothing",
@@ -282,7 +273,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::shortcuts::recording_title(), "Recording"),
         (
             tr::settings::shortcuts::recording_description(),
-            "Start a recording without opening Cap first.",
+            "Start a recording without opening Capwise first.",
         ),
         (tr::settings::shortcuts::cancelling_title(), "Cancelling"),
         (
@@ -299,7 +290,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::shortcuts::after_screenshot::hint(),
-            "For every screenshot, from a shortcut or from Cap",
+            "For every screenshot, from a shortcut or from Capwise",
         ),
         (
             tr::settings::shortcuts::after_studio::title(),
@@ -356,7 +347,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::shortcuts::outcome::studio_show_cap(),
-            "Show Cap",
+            "Show Capwise",
         ),
         (
             tr::settings::shortcuts::outcome::studio_show_cap_hint(),
@@ -376,7 +367,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::shortcuts::outcome::instant_show_cap(),
-            "Show Cap",
+            "Show Capwise",
         ),
         (
             tr::settings::shortcuts::outcome::instant_show_cap_hint(),
@@ -400,7 +391,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::shortcuts::outcome::cancel_show_cap(),
-            "Show Cap",
+            "Show Capwise",
         ),
         (
             tr::settings::shortcuts::outcome::cancel_show_cap_hint(),
@@ -412,7 +403,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::shortcuts::outcome::cancel_stay_hidden_hint(),
-            "Unless Cap was open",
+            "Unless Capwise was open",
         ),
         (
             tr::settings::shortcuts::label::screenshot_area(),
@@ -494,7 +485,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::cli::title(), "Command Line"),
         (
             tr::settings::cli::description(),
-            "Install the Cap command for terminals, agents, scripts, and local automation.",
+            "Install the Capwise command for terminals, agents, scripts, and local automation.",
         ),
         (tr::settings::cli::retry(), "Retry"),
         (tr::settings::cli::repairing(), "Repairing..."),
@@ -543,11 +534,11 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::feedback::title(), "Feedback"),
         (
             tr::settings::feedback::description(),
-            "Help us improve Cap by submitting feedback or reporting bugs. We'll get right on it.",
+            "Help us improve Capwise by submitting feedback or reporting bugs. We'll get right on it.",
         ),
         (
             tr::settings::feedback::placeholder(),
-            "Tell us what you think about Cap...",
+            "Tell us what you think about Capwise...",
         ),
         (
             tr::settings::feedback::submit_failed(),
@@ -565,13 +556,13 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::feedback::community_description(),
-            "Have questions, want to share ideas, or just hang out? Join the Cap Discord community.",
+            "Have questions, want to share ideas, or just hang out? Join the Capwise Discord community.",
         ),
         (tr::settings::feedback::join_discord(), "Join Discord"),
         (tr::settings::feedback::debug_title(), "Debug Information"),
         (
             tr::settings::feedback::debug_description(),
-            "Upload your logs to help us diagnose issues with Cap. No personal information is included.",
+            "Upload your logs to help us diagnose issues with Capwise. No personal information is included.",
         ),
         (tr::settings::feedback::uploading(), "Uploading..."),
         (tr::settings::feedback::upload_logs(), "Upload Logs"),
@@ -613,11 +604,11 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::feedback::diagnostic::run(), "Run Diagnostic"),
         (
             tr::settings::feedback::diagnostic::no_cli(),
-            "The Cap command-line tool was not found next to this build, so the report will cover your environment only.",
+            "The Capwise command-line tool was not found next to this build, so the report will cover your environment only.",
         ),
         (
             tr::settings::feedback::diagnostic::no_cli_sync(),
-            "The Cap command-line tool was not found next to this build, so the sync test could not run.",
+            "The Capwise command-line tool was not found next to this build, so the sync test could not run.",
         ),
         (
             tr::settings::feedback::diagnostic::warning_title(),
@@ -625,7 +616,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::feedback::diagnostic::warning_body(),
-            "A fullscreen window flashes black and white while 1kHz beeps play through your speakers, and Cap records it and measures how far the picture and the sound have drifted apart. Leave the machine alone while it runs. Both modes together take a couple of minutes.",
+            "A fullscreen window flashes black and white while 1kHz beeps play through your speakers, and Capwise records it and measures how far the picture and the sound have drifted apart. Leave the machine alone while it runs. Both modes together take a couple of minutes.",
         ),
         (
             tr::settings::feedback::diagnostic::mode_label(),
@@ -644,7 +635,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
             "Also record your microphone and check that it hears the beeps in time. Needs speakers the mic can actually hear.",
         ),
         (tr::settings::feedback::diagnostic::sending(), "Sending..."),
-        (tr::settings::feedback::diagnostic::send(), "Send to Cap"),
+        (tr::settings::feedback::diagnostic::send(), "Send to Capwise"),
         (tr::settings::feedback::diagnostic::show_file(), "Show File"),
         (tr::settings::feedback::diagnostic::run_again(), "Run Again"),
         (tr::settings::feedback::diagnostic::try_again(), "Try Again"),
@@ -673,7 +664,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::license::title(), "Plan & license"),
         (
             tr::settings::license::description(),
-            "Your Cap plan and desktop license, in one place.",
+            "Your Capwise plan and desktop license, in one place.",
         ),
         (tr::settings::license::plan_title(), "Your plan"),
         (
@@ -683,7 +674,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::license::desktop_name(), "Desktop License"),
         (
             tr::settings::license::desktop_description(),
-            "Your desktop license covers commercial recording and editing. Cap Pro adds cloud sharing and collaboration features.",
+            "Your desktop license covers commercial recording and editing. Capwise Pro adds cloud sharing and collaboration features.",
         ),
         (
             tr::settings::license::free_description(),
@@ -697,7 +688,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::license::sign_in_hint(),
-            "Already have Cap Pro? Sign in with your account from the sidebar.",
+            "Already have Capwise Pro? Sign in with your account from the sidebar.",
         ),
         (tr::settings::license::explore_title(), "Explore plans"),
         (
@@ -710,7 +701,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::license::explore_pro(),
-            "Cap Pro · A desktop license, plus cloud sharing, AI features and collaboration.",
+            "Capwise Pro · A desktop license, plus cloud sharing, AI features and collaboration.",
         ),
         (
             tr::settings::license::view_pricing(),
@@ -736,11 +727,11 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::integrations::title(), "Integrations"),
         (
             tr::settings::integrations::description(),
-            "Configure integrations to extend Cap's functionality and connect with third-party services.",
+            "Configure integrations to extend Capwise's functionality and connect with third-party services.",
         ),
         (
             tr::settings::integrations::google_drive_description(),
-            "Connect Google Drive for new shareable link uploads. Cap stores new videos in a private Cap folder in your Drive and continues serving them through Cap after normal access checks.",
+            "Connect Google Drive for new shareable link uploads. Capwise stores new videos in a private Capwise folder in your Drive and continues serving them through Capwise after normal access checks.",
         ),
         (tr::settings::integrations::s3_name(), "S3 Config"),
         (
@@ -827,7 +818,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::integrations::gdrive::connection_description(),
-            "Google Drive stores new uploads in a private Cap folder in your Drive. Existing Cap-hosted and S3 videos keep using their current storage.",
+            "Google Drive stores new uploads in a private Capwise folder in your Drive. Existing Capwise-hosted and S3 videos keep using their current storage.",
         ),
         (
             tr::settings::integrations::gdrive::active_for_uploads(),
@@ -902,7 +893,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::automations::title(), "Automations"),
         (
             tr::settings::automations::description(),
-            "Rules are shared with the Cap CLI. Cap saves these rules but does not run automations yet.",
+            "Rules are shared with the Capwise CLI. Capwise saves these rules but does not run automations yet.",
         ),
         (tr::settings::automations::templates_title(), "Templates"),
         (
@@ -956,11 +947,11 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::automations::delete(), "Delete"),
         (
             tr::settings::automations::dangerous(),
-            "In the Cap CLI, this automation runs commands or sends network requests with your permissions. Only use values you trust.",
+            "In the Capwise CLI, this automation runs commands or sends network requests with your permissions. Only use values you trust.",
         ),
         (
             tr::settings::automations::compatibility_checked(),
-            "Compatibility checked: this automation doesn't run in Cap yet. Saved rules remain available to the Cap CLI. No actions were run.",
+            "Compatibility checked: this automation doesn't run in Capwise yet. Saved rules remain available to the Capwise CLI. No actions were run.",
         ),
         (
             tr::settings::automations::condition_never_matches(),
@@ -1315,7 +1306,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::automations::template::ocr_screenshot::description(),
-            "Cap reads the text in your screenshot and copies it for you.",
+            "Capwise reads the text in your screenshot and copies it for you.",
         ),
         (
             tr::settings::automations::template::save_screenshot::name(),
@@ -1501,7 +1492,7 @@ fn settings_surface_messages_format_like_the_code_they_replaced() {
         guide.split_once(marker),
         Some((
             "It should take under 10 minutes to set up and connect your storage \
-             bucket to Cap. View the\u{a0}",
+             bucket to Capwise. View the\u{a0}",
             "\u{a0}to get started."
         ))
     );
@@ -1516,7 +1507,7 @@ fn settings_surface_messages_format_like_the_code_they_replaced() {
     assert_eq!(
         tr::settings::feedback::diagnostic::confirm_body(crate::diagnostics::DEFAULT_DURATION_SECS),
         format!(
-            "Cap will take over your screen with a flashing pattern and play loud beeps for \
+            "Capwise will take over your screen with a flashing pattern and play loud beeps for \
              about {} seconds per pipeline. Take your headphones off, leave the volume \
              audible, and leave the machine alone until it finishes.",
             crate::diagnostics::DEFAULT_DURATION_SECS

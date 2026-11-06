@@ -120,14 +120,76 @@ pub const CURSOR_STYLES: [(CursorAnimationStyle, Label, Label); 4] = [
 /// `FONT_OPTIONS` (`text-style.tsx:12-16`).
 pub const FONT_OPTIONS: [&str; 3] = ["System Sans-Serif", "System Serif", "System Monospace"];
 
-/// The project keeps the English `FONT_OPTIONS` value; menus show it translated.
+/// The open-source Chinese fonts Capwise ships (`scripts/fetch-caption-fonts.sh`),
+/// by the family name the renderer matches.
+const BUNDLED_CAPTION_FONTS: [(&str, Label); 3] = [
+    ("Noto Sans SC", tr::editor::tabs::font::source_han_sans),
+    ("Smiley Sans", tr::editor::tabs::font::smiley_sans),
+    ("LXGW WenKai Lite Medium", tr::editor::tabs::font::lxgw_wenkai),
+];
+
+fn chinese_font_families() -> &'static [cap_rendering::ChineseFontFamily] {
+    static FAMILIES: std::sync::OnceLock<Vec<cap_rendering::ChineseFontFamily>> =
+        std::sync::OnceLock::new();
+    FAMILIES.get_or_init(cap_rendering::chinese_font_families)
+}
+
+/// The caption font menu: the three generic families, the bundled Chinese
+/// fonts, then every other installed font that carries Chinese.
+pub fn caption_font_options() -> Vec<String> {
+    let installed = chinese_font_families();
+    FONT_OPTIONS
+        .iter()
+        .map(|font| font.to_string())
+        .chain(
+            BUNDLED_CAPTION_FONTS
+                .iter()
+                .filter(|(family, _)| installed.iter().any(|f| f.family == *family))
+                .map(|(family, _)| family.to_string()),
+        )
+        .chain(
+            installed
+                .iter()
+                .filter(|f| !BUNDLED_CAPTION_FONTS.iter().any(|(family, _)| *family == f.family))
+                .map(|f| f.family.clone()),
+        )
+        .collect()
+}
+
+/// The project keeps the English family name; menus show it translated, and
+/// a Chinese font by its Chinese name when the app speaks Chinese.
 fn font_option_label(font: &str) -> SharedString {
     match font {
         "System Sans-Serif" => tr::editor::tabs::font::system_sans_serif().into(),
         "System Serif" => tr::editor::tabs::font::system_serif().into(),
         "System Monospace" => tr::editor::tabs::font::system_monospace().into(),
-        other => SharedString::from(other.to_string()),
+        other => {
+            if let Some((_, label)) = BUNDLED_CAPTION_FONTS.iter().find(|(f, _)| *f == other) {
+                return label().into();
+            }
+            let chinese_ui = crate::i18n::current() == crate::i18n::Locale::ZhCn;
+            chinese_font_families()
+                .iter()
+                .find(|f| f.family == other && chinese_ui)
+                .map_or_else(
+                    || SharedString::from(other.to_string()),
+                    |f| SharedString::from(f.chinese_name.clone()),
+                )
+        }
     }
+}
+
+/// A Chinese transcript shown in the generic sans gets 思源黑体 instead of
+/// whatever the system falls back to.
+pub(crate) fn chinese_caption_font(font: &str, segments: &[cap_project::CaptionSegment]) -> Option<&'static str> {
+    let chinese = segments
+        .iter()
+        .any(|segment| segment.text.chars().any(cap_project::is_unspaced_script));
+    let bundled = BUNDLED_CAPTION_FONTS[0].0;
+    (chinese
+        && font == "System Sans-Serif"
+        && chinese_font_families().iter().any(|f| f.family == bundled))
+    .then_some(bundled)
 }
 
 /// `TEXT_WEIGHT_OPTIONS` (`text-style.tsx:36-40`).
@@ -212,16 +274,100 @@ pub static CAPTION_MODELS: &[CaptionModel] = &[
         size: "1.5GB",
         description: tr::editor::tabs::captions::model::medium_description,
     },
+    CaptionModel {
+        name: "doubao",
+        label: tr::ai::asr::doubao::name,
+        model_name: "doubao",
+        size: "",
+        description: tr::ai::asr::doubao::note,
+    },
+    CaptionModel {
+        name: "siliconflow",
+        label: tr::ai::asr::siliconflow::name,
+        model_name: "siliconflow",
+        size: "",
+        description: tr::ai::asr::siliconflow::note,
+    },
+    CaptionModel {
+        name: "glm",
+        label: tr::ai::asr::glm::name,
+        model_name: "glm",
+        size: "",
+        description: tr::ai::asr::glm::note,
+    },
+    CaptionModel {
+        name: "stepfun",
+        label: tr::ai::asr::stepfun::name,
+        model_name: "stepfun",
+        size: "",
+        description: tr::ai::asr::stepfun::note,
+    },
+    CaptionModel {
+        name: "mimo",
+        label: tr::ai::asr::mimo::name,
+        model_name: "mimo",
+        size: "",
+        description: tr::ai::asr::mimo::note,
+    },
+    CaptionModel {
+        name: "groq",
+        label: tr::ai::asr::groq::name,
+        model_name: "groq",
+        size: "",
+        description: tr::ai::asr::groq::note,
+    },
+    CaptionModel {
+        name: "openai",
+        label: tr::ai::asr::openai::name,
+        model_name: "openai",
+        size: "",
+        description: tr::ai::asr::openai::note,
+    },
+    CaptionModel {
+        name: "local-server",
+        label: tr::ai::asr::local_server::name,
+        model_name: "local-server",
+        size: "",
+        description: tr::ai::asr::local_server::note,
+    },
+    CaptionModel {
+        name: "custom",
+        label: tr::ai::asr::custom::name,
+        model_name: "custom",
+        size: "",
+        description: tr::ai::asr::custom::note,
+    },
 ];
 
-/// `availableModelOptions` (`CaptionsTab.tsx:416-420`): the two Parakeet
-/// entries are hidden on Intel macOS.
-pub fn available_caption_models() -> &'static [CaptionModel] {
-    if transcription::supports_parakeet() {
-        CAPTION_MODELS
-    } else {
-        &CAPTION_MODELS[2..]
-    }
+/// The local models this Mac can run: the two Parakeet entries are hidden on
+/// Intel macOS.
+pub fn local_caption_models() -> Vec<&'static CaptionModel> {
+    CAPTION_MODELS
+        .iter()
+        .filter(|model| !crate::asr_cloud::is_cloud_model(model.name))
+        .filter(|model| {
+            transcription::supports_parakeet() || !transcription::is_parakeet_model(model.name)
+        })
+        .collect()
+}
+
+/// What the captions picker offers: the local models, then the cloud services
+/// that are set up in Settings → AI models.
+pub fn available_caption_models() -> Vec<&'static CaptionModel> {
+    let mut models = local_caption_models();
+    models.extend(CAPTION_MODELS.iter().filter(|model| {
+        crate::asr_cloud::service(model.name).is_some_and(|service| service.ready())
+    }));
+    models
+}
+
+fn caption_model_summary(model: &CaptionModel) -> String {
+    let size = crate::i18n::decimal(model.size);
+    [(model.label)(), size.as_str(), (model.description)()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 /// `LANGUAGE_OPTIONS` (`CaptionsTab.tsx:118-148`), de-duplicated: the array
@@ -855,18 +1001,17 @@ impl EditorWindow {
             SidebarMenu::CaptionModel => {
                 let selected = self.selected_caption_model().name;
                 available_caption_models()
-                    .iter()
+                    .into_iter()
                     .map(|model| {
                         ui::MenuItem::new(
-                            SharedString::from(format!(
-                                "{} · {} · {}",
-                                (model.label)(),
-                                crate::i18n::decimal(model.size),
-                                (model.description)()
-                            )),
+                            SharedString::from(caption_model_summary(model)),
                             model.name == selected,
                         )
                     })
+                    .chain(std::iter::once(ui::MenuItem::new(
+                        tr::editor::tabs::captions::manage_models(),
+                        false,
+                    )))
                     .collect()
             }
             SidebarMenu::CaptionLanguage => CAPTION_LANGUAGES
@@ -875,7 +1020,7 @@ impl EditorWindow {
                     ui::MenuItem::new(label(), *code == self.sidebar.caption_language)
                 })
                 .collect(),
-            SidebarMenu::CaptionFont => FONT_OPTIONS
+            SidebarMenu::CaptionFont => caption_font_options()
                 .iter()
                 .map(|font| ui::MenuItem::new(font_option_label(font), *font == captions.font))
                 .collect(),
@@ -1060,7 +1205,16 @@ impl EditorWindow {
             // `CaptionsTab.tsx:622-641`), not project config; the store's
             // `gpui` section is this app's `localStorage`.
             SidebarMenu::CaptionModel => {
-                if let Some(model) = available_caption_models().get(index) {
+                let models = available_caption_models();
+                if index == models.len() {
+                    cx.defer(|cx| {
+                        crate::app_windows::open_settings(
+                            crate::settings_window::Page::Transcription,
+                            cx,
+                        )
+                    });
+                }
+                if let Some(model) = models.get(index) {
                     self.sidebar.caption_model = model.name;
                     if !store::set_store_setting(
                         transcription::GPUI_STORE_SECTION,
@@ -1086,10 +1240,9 @@ impl EditorWindow {
                 }
             }
             SidebarMenu::CaptionFont => {
-                let Some(font) = FONT_OPTIONS.get(index) else {
+                let Some(font) = caption_font_options().into_iter().nth(index) else {
                     return;
                 };
-                let font = font.to_string();
                 self.set_caption_setting("caption-font", window, cx, move |settings| {
                     settings.font = font
                 });
@@ -2793,6 +2946,7 @@ impl EditorWindow {
             .map_or(tr::editor::tabs::weight::bold(), |(_, label)| label());
 
         let model_downloaded = snapshot.downloaded.contains(model.name);
+        let cloud = crate::asr_cloud::is_cloud_model(model.name);
         let active_download = snapshot
             .download
             .as_ref()
@@ -2938,14 +3092,33 @@ impl EditorWindow {
                                     .text_size(px(12.))
                                     .text_color(Hsla::from(theme.gray_10))
                                     .truncate()
-                                    .child(SharedString::from(
+                                    .child(SharedString::from(if cloud {
+                                        tr::editor::tabs::captions::cloud_ready().to_string()
+                                    } else {
                                         tr::editor::tabs::captions::model_downloaded(
                                             (model.label)(),
-                                        ),
-                                    )),
+                                        )
+                                    })),
                             ),
                     )
-                    .child(
+                    .child(if cloud {
+                        ui::Button::plain(
+                            &theme,
+                            "caption-cloud-settings",
+                            ui::ButtonVariant::Gray,
+                            ui::ButtonSize::Sm,
+                        )
+                        .icon("icons/settings.svg")
+                        .label(tr::editor::tabs::captions::cloud_settings())
+                        .on_click(|_, _, cx| {
+                            cx.defer(|cx| {
+                                crate::app_windows::open_settings(
+                                    crate::settings_window::Page::Transcription,
+                                    cx,
+                                )
+                            });
+                        })
+                    } else {
                         ui::Button::plain(
                             &theme,
                             "caption-delete",
@@ -2961,8 +3134,8 @@ impl EditorWindow {
                         .disabled(generating || is_downloading || deleting)
                         .on_click(cx.listener(|this, _, _window, cx| {
                             this.delete_caption_model(cx);
-                        })),
-                    ),
+                        }))
+                    }),
             );
             if let Some(error) = snapshot.generation_error.clone() {
                 column = column.child(
@@ -2983,6 +3156,26 @@ impl EditorWindow {
                 );
             }
             column
+        } else if cloud {
+            div().flex().flex_col().gap(px(8.)).child(
+                ui::Button::plain(
+                    &theme,
+                    "caption-cloud-setup",
+                    ui::ButtonVariant::Primary,
+                    ui::ButtonSize::Md,
+                )
+                .full_width()
+                .icon("icons/settings.svg")
+                .label(tr::editor::tabs::captions::cloud_setup())
+                .on_click(|_, _, cx| {
+                    cx.defer(|cx| {
+                        crate::app_windows::open_settings(
+                            crate::settings_window::Page::Transcription,
+                            cx,
+                        )
+                    });
+                }),
+            )
         } else {
             let download_button = ui::Button::plain(
                 &theme,
@@ -3533,8 +3726,9 @@ impl EditorWindow {
         let models = available_caption_models();
         models
             .iter()
+            .copied()
             .find(|model| model.name == self.sidebar.caption_model)
-            .unwrap_or(&models[0])
+            .unwrap_or(models[0])
     }
 
     /// The Captions tab's `onMount` (`CaptionsTab.tsx:557-615`): scan the
@@ -3757,6 +3951,11 @@ impl EditorWindow {
         let Some(request) = transcription::refinement_request(&project_path) else {
             return;
         };
+        // Cloud services return their own word times; there is no local model to refine with.
+        if crate::asr_cloud::is_cloud_model(&request.model) {
+            transcription::clear_refinement_request(&project_path);
+            return;
+        }
         let Some(input) = self
             .project
             .captions
@@ -3875,6 +4074,11 @@ impl EditorWindow {
             );
             if !show_captions && let Some(captions) = project.captions.as_mut() {
                 captions.settings.enabled = shown;
+            }
+            if let Some(captions) = project.captions.as_mut()
+                && let Some(font) = chinese_caption_font(&captions.settings.font, &captions.segments)
+            {
+                captions.settings.font = font.to_string();
             }
             true
         });
@@ -4321,11 +4525,14 @@ mod tests {
         // `MODEL_OPTIONS` (`CaptionsTab.tsx:87-116`): two Parakeet entries in
         // front of the two Whisper ones, so the Intel-macOS slice keeps
         // exactly the Whisper pair.
-        assert_eq!(CAPTION_MODELS.len(), 4);
+        assert_eq!(CAPTION_MODELS.len(), 4 + crate::asr_cloud::SERVICES.len());
         assert_eq!(CAPTION_MODELS[0].name, "best");
         assert_eq!(CAPTION_MODELS[1].name, "best-max");
         assert_eq!(CAPTION_MODELS[2].name, "small");
         assert_eq!(CAPTION_MODELS[3].name, "medium");
+        for (model, service) in CAPTION_MODELS[4..].iter().zip(crate::asr_cloud::SERVICES) {
+            assert_eq!(model.name, service.id);
+        }
         assert!(
             CAPTION_MODELS[2..]
                 .iter()

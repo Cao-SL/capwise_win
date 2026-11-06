@@ -60,13 +60,7 @@ zoom = "ज़ूम करें"
 title = "सहायता"
 feedback = "फ़ीडबैक दें…"
 changelog = "चेंजलॉग"
-dashboard = "डैशबोर्ड"
 documentation = "दस्तावेज़ीकरण"
-faq = "सामान्य प्रश्न"
-self_hosting = "सेल्फ़-होस्टिंग"
-help_center = "सहायता केंद्र"
-system_status = "सिस्टम स्थिति"
-discord = "Discord समुदाय से जुड़ें"
 
 [tray]
 import_media = "मीडिया इम्पोर्ट करें..."
@@ -84,12 +78,9 @@ screenshot_display = "डिस्प्ले का स्क्रीनश�
 screenshot_window = "विंडो का स्क्रीनशॉट लें"
 select_mode = "मोड चुनें"
 settings = "सेटिंग्स"
-take_screenshot = "स्क्रीनशॉट लें"
 tooltip_recording = "Capwise - रिकॉर्डिंग रोकें"
-upload_logs = "लॉग अपलोड करें"
 version = "Capwise v{version}"
 view_all_recordings = "सभी रिकॉर्डिंग देखें"
-view_all_screenshots = "सभी स्क्रीनशॉट देखें"
 
 [tray.mode]
 instant = "Instant"
@@ -167,10 +158,6 @@ label = "विंडो कैप्चर शैली"
 [settings.general.recording.post_deletion]
 description = "क्या रिकॉर्डिंग विंडो फिर से खुलनी चाहिए।"
 label = "रिकॉर्डिंग हटाने के बाद"
-
-[settings.general.recording.delete_after_upload]
-description = "सफलतापूर्वक अपलोड होने के बाद Capwise लोकल फ़ाइल हटा देता है।"
-label = "अपलोड के बाद Instant रिकॉर्डिंग हटाएँ"
 
 [settings.general.recording.crash_recovery]
 description = "ऐसे हिस्सों में रिकॉर्ड करें जिन्हें क्रैश या बिजली जाने के बाद रिकवर किया जा सके। कैप्चर के दौरान फ़ाइलें थोड़ी बड़ी होती हैं।"
@@ -345,11 +332,6 @@ res_1440p = "बड़ी, हाई-रेज़ोल्यूशन स्क
 res_4k = "सबसे ज़्यादा डिटेल। तेज़ कनेक्शन पर सबसे अच्छा।"
 res_720p = "सबसे छोटे अपलोड, इसलिए लिंक सबसे जल्दी तैयार होते हैं।"
 title = "Instant रिकॉर्डिंग"
-
-[settings.quality.sharing]
-auto_open = "शेयर लिंक अपने आप खोलें"
-auto_open_description = "अपलोड पूरा होने पर लिंक आपके ब्राउज़र में खोलें।"
-title = "शेयरिंग"
 
 [settings.options.studio_quality]
 balanced = "संतुलित"

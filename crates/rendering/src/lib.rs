@@ -78,8 +78,8 @@ pub use frame_pipeline::{GpuOutputFormat, Nv12RenderedFrame, RenderedFrame, Shar
 pub use frame_pipeline::{PendingSurface, RgbaToBgraSurfaceConverter};
 pub use frame_windows::FrameWindows;
 pub use layers::{
-    BackgroundTextureCache, CaptionFrameBox, clean_background_path, last_caption_center,
-    new_font_system,
+    BackgroundTextureCache, CaptionFrameBox, ChineseFontFamily, chinese_font_families,
+    clean_background_path, last_caption_center, new_font_system,
 };
 pub use managed_segment::{
     ManagedRecordingSegmentDecoders, ManagedSegmentDecoderStatus, ManagedSegmentStopHandles,
