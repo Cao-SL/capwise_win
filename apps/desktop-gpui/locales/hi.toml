@@ -368,7 +368,6 @@ quarter = "एक-चौथाई"
 
 [settings.shortcuts]
 blocked_while_recording = "जब तक यह रिकॉर्डिंग अपनी स्टॉप कुंजी इस्तेमाल कर रही है, शॉर्टकट नहीं बदले जा सकते। पहले रिकॉर्डिंग रोकें।"
-cancelling_description = "शॉर्टकट या Capwise आइकन से शुरू किए गए स्क्रीनशॉट और रिकॉर्डिंग के लिए।"
 cancelling_title = "रद्द करना"
 needs_modifier_macos = "⌘, ⌃ या ⌥ शामिल करें ताकि शॉर्टकट टाइपिंग में बाधा न बने।"
 needs_modifier_other = "Ctrl, Alt या Win शामिल करें ताकि शॉर्टकट टाइपिंग में बाधा न बने।"
@@ -378,24 +377,14 @@ recording_hint = "जिन कीज़ का इस्तेमाल कर�
 recording_title = "रिकॉर्डिंग"
 saved = "सेव हो गया। किसी भी ऐप में {keys} दबाएँ और {effect}।"
 saved_moved = "सेव हो गया। किसी भी ऐप में {keys} दबाएँ और {effect}। “{shortcut}” से हटा दिया गया।"
-screenshots_description = "शॉर्टकट किसी भी ऐप में काम करते हैं। बदलने के लिए किसी पर क्लिक करें।"
-screenshots_title = "स्क्रीनशॉट"
 type_shortcut = "शॉर्टकट दबाएँ…"
 unavailable = "कोई दूसरा ऐप या सिस्टम पहले से यह शॉर्टकट इस्तेमाल कर रहा है। कोई दूसरा चुनने के लिए क्लिक करें।"
 unsupported_key = "यह कुंजी शॉर्टकट में इस्तेमाल नहीं हो सकती। कोई अक्षर, संख्या या F-कुंजी आज़माएँ।"
 while_recording_title = "रिकॉर्डिंग के दौरान"
 
-[settings.shortcuts.after_screenshot]
-hint = "हर स्क्रीनशॉट के लिए, शॉर्टकट से या Capwise से"
-title = "स्क्रीनशॉट के बाद"
-
 [settings.shortcuts.after_studio]
 hint = "रोकने पर"
 title = "Studio रिकॉर्डिंग के बाद"
-
-[settings.shortcuts.after_instant]
-hint = "शेयर लिंक हमेशा कॉपी होता है"
-title = "Instant रिकॉर्डिंग के बाद"
 
 [settings.shortcuts.on_cancel]
 hint = "Esc या पिकर बंद करना"
@@ -406,20 +395,7 @@ cancel_show_cap = "Capwise दिखाएँ"
 cancel_show_cap_hint = "रिकॉर्डर पर वापस"
 cancel_stay_hidden = "छिपा रहे"
 cancel_stay_hidden_hint = "जब तक Capwise पहले से खुला न हो"
-instant_copy_link = "सिर्फ़ लिंक कॉपी करें"
-instant_copy_link_hint = "कुछ नहीं खुलता"
-instant_open_link = "लिंक खोलें"
-instant_open_link_hint = "आपके ब्राउज़र में"
-instant_show_cap = "Capwise दिखाएँ"
-instant_show_cap_hint = "रिकॉर्डर पर वापस"
 saved_to_library = "लाइब्रेरी में सेव"
-screenshot_copy = "कॉपी करें"
-screenshot_copy_and_edit = "कॉपी और एडिट"
-screenshot_copy_and_edit_hint = "दोनों एक साथ"
-screenshot_copy_hint = "कहीं भी पेस्ट करें"
-screenshot_do_nothing = "कुछ न करें"
-screenshot_open_editor = "एडिटर खोलें"
-screenshot_open_editor_hint = "पहले एनोटेट करें"
 studio_do_nothing = "कुछ न करें"
 studio_open_editor = "एडिटर खोलें"
 studio_open_editor_hint = "तुरंत एडिट करें"
@@ -909,38 +885,9 @@ organization = "संगठन है"
 recording_mode = "रिकॉर्डिंग मोड है"
 window_title = "विंडो के शीर्षक में शामिल है"
 
-[settings.automations.template.copy_screenshot]
-description = "स्क्रीनशॉट लें और वह तुरंत पेस्ट करने के लिए तैयार है।"
-name = "नए स्क्रीनशॉट अपने आप क्लिपबोर्ड पर कॉपी करें"
-
-[settings.automations.template.ocr_screenshot]
-description = "Capwise आपके स्क्रीनशॉट का टेक्स्ट पढ़कर आपके लिए कॉपी कर देता है।"
-name = "स्क्रीनशॉट से टेक्स्ट निकालें"
-
-[settings.automations.template.save_screenshot]
-description = "हर नया स्क्रीनशॉट सीधे आपके चुने फ़ोल्डर में भेजें।"
-name = "स्क्रीनशॉट एक फ़ोल्डर में रखें"
-
-[settings.automations.template.reveal_screenshot]
-description = "स्क्रीनशॉट लेते ही उसे Finder में खोलें।"
-name = "हर नए स्क्रीनशॉट पर जाएँ"
-
 [settings.automations.template.export_studio]
 description = "Studio रिकॉर्डिंग खत्म होते ही MP4 रेंडर करें।"
 name = "रिकॉर्डिंग खत्म होते ही अपने आप एक्सपोर्ट करें"
-
-[settings.automations.template.upload_share]
-description = "रिकॉर्डिंग खत्म करें और लिंक आपके क्लिपबोर्ड पर तैयार मिलेगा।"
-name = "अपलोड करें और शेयर लिंक पाएँ"
-
-[settings.automations.template.notify_upload]
-body = "आपकी रिकॉर्डिंग शेयर करने के लिए तैयार है।"
-description = "रिकॉर्डिंग शेयर करने लायक होते ही डेस्कटॉप पर हल्का-सा संकेत पाएँ।"
-name = "अपलोड तैयार होने पर मुझे बताएँ"
-
-[settings.automations.template.webhook_share]
-description = "शेयर लिंक Slack, Discord या अपने वेबहुक पर भेजें।"
-name = "कुछ शेयर करने पर Slack को बताएँ"
 
 [main]
 delete_recording_confirm = "क्या आप वाकई यह रिकॉर्डिंग हटाना चाहते हैं?"
@@ -1181,20 +1128,11 @@ footer = "इनमें से कुछ भी आप कभी भी से
 subtitle = "कीबोर्ड शॉर्टकट से लेकर स्टोरेज तक, सब कुछ अपने हिसाब से बदलें। Capwise आपके काम करने के तरीके के अनुसार ढल जाता है।"
 title = "Capwise को अपना बनाएँ"
 
-[onboarding.customize.domain]
-description = "शेयर करने लायक लिंक के लिए cap.so की जगह अपना डोमेन इस्तेमाल करें"
-title = "कस्टम डोमेन"
-
 [onboarding.customize.preferences]
 description = "FPS, क्वालिटी, काउंटडाउन टाइमर, कर्सर इफ़ेक्ट और बहुत कुछ"
 title = "रिकॉर्डिंग की पसंद"
 
-[onboarding.customize.s3]
-description = "अपनी रिकॉर्डिंग पर पूरे नियंत्रण के लिए अपना S3-कम्पैटिबल बकेट जोड़ें"
-title = "कस्टम S3 स्टोरेज"
-
 [onboarding.customize.shortcuts]
-description = "रिकॉर्डिंग, स्क्रीनशॉट और मोड बदलने के लिए ग्लोबल हॉटकी"
 title = "कीबोर्ड शॉर्टकट"
 
 [onboarding.demo]
@@ -1206,7 +1144,6 @@ editor = "Capwise एडिटर"
 export = "एक्सपोर्ट करें"
 export_complete = "एक्सपोर्ट पूरा हुआ!"
 exporting = "एक्सपोर्ट हो रहा है..."
-link_ready = "लिंक शेयर करने के लिए तैयार है!"
 save = "सहेजें"
 start_recording = "रिकॉर्डिंग शुरू करें"
 stopped = "रुक गया"
@@ -1217,7 +1154,6 @@ beautify = "सजाएँ"
 edit = "एडिट करें"
 record = "रिकॉर्ड करें"
 select_area = "क्षेत्र चुनें"
-share_link = "लिंक शेयर करें"
 stop = "रोकें"
 
 [onboarding.error]
@@ -1225,21 +1161,12 @@ save_progress = "ऑनबोर्डिंग की प्रगति सह
 save_sound = "साउंड की पसंद सहेजी नहीं जा सकी।"
 
 [onboarding.faq]
-pricing = "प्राइसिंग प्लान देखें"
-pricing_link = "प्राइसिंग प्लान देखें ↗"
 subtitle = "शुरू करने के लिए जो कुछ जानना ज़रूरी है।"
 title = "अक्सर पूछे जाने वाले सवाल"
 
 [onboarding.faq.free]
-answer = "Capwise निजी इस्तेमाल के लिए मुफ़्त है। टीम और कमर्शियल इस्तेमाल के लिए हमारे प्राइसिंग प्लान देखें।"
-question = "क्या Capwise मुफ़्त है?"
-
-[onboarding.faq.instant_vs_studio]
-answer = "Instant मोड रिकॉर्ड करते-करते अपलोड करता है: रिकॉर्डिंग रोकते ही आपके पास शेयर करने लायक लिंक होगा। Studio मोड पूरी क्वालिटी में लोकल रिकॉर्ड करता है, ताकि शेयर करने से पहले आप बैकग्राउंड, इफ़ेक्ट और बहुत कुछ के साथ एडिट कर सकें।"
-question = "Instant और Studio में क्या अंतर है?"
 
 [onboarding.faq.sharing]
-answer = "Instant मोड में रिकॉर्डिंग रोकते ही आपको अपने-आप शेयर करने लायक लिंक मिल जाता है। Studio मोड में अपना एडिट किया हुआ वीडियो एक्सपोर्ट करें और Capwise के क्लाउड से शेयर करें या लोकल सहेजें।"
 question = "शेयर करना कैसे काम करता है?"
 
 [onboarding.faq.shortcuts]
@@ -1247,7 +1174,6 @@ answer = "अपने सभी कीबोर्ड शॉर्टकट ब
 question = "क्या मैं बाद में अपने शॉर्टकट बदल सकता हूँ?"
 
 [onboarding.faq.storage]
-answer = "सभी रिकॉर्डिंग आपके कंप्यूटर पर लोकल सहेजी जाती हैं। Instant मोड में आसानी से शेयर करने के लिए वे Capwise के क्लाउड पर भी अपलोड होती हैं। आप सेटिंग्स में स्टोरेज मैनेज कर सकते हैं।"
 question = "मेरी रिकॉर्डिंग कहाँ सहेजी जाती हैं?"
 
 [onboarding.modes.instant]
@@ -1287,19 +1213,10 @@ relaunch = "Capwise फिर से खोलें"
 skip = "टूर छोड़ें"
 start = "Capwise इस्तेमाल करना शुरू करें"
 
-[onboarding.overview]
-subtitle = "चाहे आपको रफ़्तार चाहिए, स्टूडियो जैसी क्वालिटी या झटपट स्क्रीनशॉट, Capwise में हर ज़रूरत के लिए एक मोड है।"
-title = "एक ऐप, हर काम के लिए"
-
-[onboarding.toggle]
-subtitle = "Capwise की मुख्य विंडो से एक क्लिक में मोड बदलें।"
-title = "कभी भी मोड बदलें"
-
 [onboarding.welcome]
 click_or_press = "यहाँ क्लिक करें, या दबाएँ"
 get_started = "शुरू करें"
 space_key = "स्पेस"
-tagline = "सबके लिए ओपन सोर्स स्क्रीन शेयरिंग ऐप।"
 
 [menu.update]
 badge_progress = "v{version} · {percent}%"

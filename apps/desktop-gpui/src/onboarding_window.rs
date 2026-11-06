@@ -112,11 +112,7 @@ const WELCOME_ENTRANCE_SECS: f32 = 3.4;
 #[repr(usize)]
 enum Step {
     Permissions,
-    Overview,
-    Instant,
     Studio,
-    Screenshot,
-    Toggle,
     Shortcuts,
     Faq,
 }
@@ -126,22 +122,13 @@ fn guided_permission(permission: OSPermission) -> bool {
 }
 
 impl Step {
-    const ALL: [Self; 8] = [
-        Self::Permissions,
-        Self::Overview,
-        Self::Instant,
-        Self::Studio,
-        Self::Screenshot,
-        Self::Toggle,
-        Self::Shortcuts,
-        Self::Faq,
-    ];
+    const ALL: [Self; 4] = [Self::Permissions, Self::Studio, Self::Shortcuts, Self::Faq];
 
     fn first(macos: bool, permissions_only: bool) -> Self {
         if macos || permissions_only {
             Self::Permissions
         } else {
-            Self::Overview
+            Self::Studio
         }
     }
 
@@ -161,15 +148,12 @@ impl Step {
 
     fn demo_timing(self) -> Option<(&'static [u64], u64)> {
         match self {
-            Self::Instant => Some((&[300, 2350, 3350, 4350, 5350, 6350, 7350, 8350], 9550)),
             Self::Studio => Some((
                 &[
                     300, 2350, 3350, 4350, 5350, 6350, 7350, 8150, 9150, 10150, 11150,
                 ],
                 12250,
             )),
-            Self::Screenshot => Some((&[200, 700, 1400, 2600, 3400, 3900, 4900, 5900, 6700], 8000)),
-            Self::Toggle => Some((&[2500, 5000], 7500)),
             _ => None,
         }
     }
@@ -240,8 +224,8 @@ const FAQ: [(fn() -> &'static str, fn() -> &'static str); 5] = [
         tr::onboarding::faq::free::answer,
     ),
     (
-        tr::onboarding::faq::instant_vs_studio::question,
-        tr::onboarding::faq::instant_vs_studio::answer,
+        tr::onboarding::faq::captions::question,
+        tr::onboarding::faq::captions::answer,
     ),
     (
         tr::onboarding::faq::storage::question,
@@ -1348,68 +1332,6 @@ impl OnboardingWindow {
             .into_any_element()
     }
 
-    fn render_overview(&self) -> AnyElement {
-        let theme = self.theme;
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .min_h_full()
-            .px(px(40.))
-            .gap(px(32.))
-            .child(self.heading(
-                tr::onboarding::overview::title(),
-                tr::onboarding::overview::subtitle(),
-            ))
-            .child(div().flex().gap(px(16.)).w_full().max_w(px(540.)).children(
-                MODES.iter().enumerate().map(|(index, mode)| {
-                    let paper = stage::Paper::new(&theme);
-                    let card = self
-                        .paper_card()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap(px(10.))
-                        .px(px(20.))
-                        .pt(px(22.))
-                        .pb(px(24.))
-                        .child(crate::doodle::doodle(
-                            mode_doodle(mode.mode),
-                            paper.palette(),
-                            self.step_at + Duration::from_millis(index as u64 * 180),
-                            !self.animated,
-                            96.,
-                            84.,
-                        ))
-                        .child(
-                            copy((mode.title)(), 15., paper.ink)
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_center()
-                                .mt(px(4.)),
-                        )
-                        .child(
-                            copy((mode.tagline)(), 12., paper.soft)
-                                .font_weight(FontWeight::NORMAL)
-                                .line_height(px(16.))
-                                .text_center(),
-                        );
-                    if !self.animated {
-                        return card.into_any_element();
-                    }
-                    card.with_animation(
-                        ("overview-card", index),
-                        Animation::new(Duration::from_millis(700 + index as u64 * 100)),
-                        |el, t| el.relative().top(px(16. * (1. - ease(t)))).opacity(ease(t)),
-                    )
-                    .into_any_element()
-                }),
-            ))
-            .into_any_element()
-    }
-
     fn render_detail(&self, index: usize) -> AnyElement {
         let paper = stage::Paper::new(&self.theme);
         let mode = &MODES[index];
@@ -1492,106 +1414,6 @@ impl OnboardingWindow {
             .into_any_element()
     }
 
-    fn choose_mode(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(mode) = MODES.get(index) else {
-            return;
-        };
-        self.chosen_mode = Some(index);
-        self.demo_task = None;
-        let mode = mode.mode;
-        cx.defer(move |cx| crate::app_windows::set_recording_mode(mode, cx));
-        cx.notify();
-    }
-
-    fn render_toggle(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme;
-        let active = self.chosen_mode.unwrap_or(self.demo_phase % MODES.len());
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .min_h_full()
-            .px(px(48.))
-            .gap(px(32.))
-            .child(self.heading(
-                tr::onboarding::toggle::title(),
-                tr::onboarding::toggle::subtitle(),
-            ))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap(px(20.))
-                    .child(
-                        self.paper_card()
-                            .rounded_full()
-                            .flex()
-                            .gap(px(24.))
-                            .p(px(16.))
-                            .children(MODES.iter().enumerate().map(|(index, mode)| {
-                                div()
-                                    .id(("onboarding-mode", index))
-                                    .tab_index(0)
-                                    .size(px(80.))
-                                    .rounded_full()
-                                    .border_2()
-                                    .border_color(if active == index {
-                                        theme.blue_9
-                                    } else {
-                                        theme.gray_5
-                                    })
-                                    .bg(if active == index {
-                                        theme.body_fill(7)
-                                    } else if theme.is_dark() {
-                                        theme.body_fill(3)
-                                    } else {
-                                        gpui::white()
-                                    })
-                                    .cursor_pointer()
-                                    .hover(|el| el.opacity(0.85))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.choose_mode(index, cx)
-                                    }))
-                                    .child(
-                                        glyph(
-                                            mode.icon,
-                                            if active == index { 35. } else { 32. },
-                                            theme.gray_12,
-                                        )
-                                        .opacity(if active == index { 1. } else { 0.5 }),
-                                    )
-                            })),
-                    )
-                    .child(div().flex().gap(px(24.)).px(px(16.)).children(
-                        MODES.iter().enumerate().map(|(index, mode)| {
-                            copy(
-                                (mode.title)(),
-                                14.,
-                                if active == index {
-                                    theme.gray_12
-                                } else {
-                                    theme.gray_9
-                                },
-                            )
-                            .w(px(80.))
-                            .text_center()
-                            .font_weight(FontWeight::MEDIUM)
-                            .id(("onboarding-mode-label", index))
-                            .cursor_pointer()
-                            .on_click(
-                                cx.listener(move |this, _, _, cx| this.choose_mode(index, cx)),
-                            )
-                        }),
-                    )),
-            )
-            .into_any_element()
-    }
-
     fn render_shortcuts(&self) -> AnyElement {
         let theme = self.theme;
         div()
@@ -1620,12 +1442,8 @@ impl OnboardingWindow {
                                 tr::onboarding::customize::shortcuts::description(),
                             ),
                             (
-                                tr::onboarding::customize::s3::title(),
-                                tr::onboarding::customize::s3::description(),
-                            ),
-                            (
-                                tr::onboarding::customize::domain::title(),
-                                tr::onboarding::customize::domain::description(),
+                                tr::onboarding::customize::captions::title(),
+                                tr::onboarding::customize::captions::description(),
                             ),
                             (
                                 tr::onboarding::customize::preferences::title(),
@@ -1718,27 +1536,21 @@ impl OnboardingWindow {
                                         .when(index == 0, |el| {
                                             el.child(
                                                 copy(
-                                                    tr::onboarding::faq::pricing(),
+                                                    tr::onboarding::faq::source(),
                                                     13.,
                                                     theme.blue_10,
                                                 )
-                                                .id("onboarding-faq-pricing")
+                                                .id("onboarding-faq-source")
                                                 .cursor_pointer()
                                                 .mt(px(8.))
                                                 .on_click(|_, _, cx| {
-                                                    cx.open_url(crate::auth::PRICING_URL)
+                                                    cx.open_url("https://github.com/joeseesun/capwise")
                                                 }),
                                             )
                                         }),
                                 )
                             })
                     })),
-            )
-            .child(
-                copy(tr::onboarding::faq::pricing_link(), 13., theme.blue_10)
-                    .id("onboarding-pricing")
-                    .cursor_pointer()
-                    .on_click(|_, _, cx| cx.open_url(crate::auth::PRICING_URL)),
             )
             .into_any_element()
     }
@@ -2775,11 +2587,7 @@ impl Render for OnboardingWindow {
         let width = f32::from(viewport.width);
         let content = match self.step {
             Step::Permissions => self.render_permissions(cx),
-            Step::Overview => self.render_overview(),
-            Step::Instant => self.render_detail(0),
             Step::Studio => self.render_detail(1),
-            Step::Screenshot => self.render_detail(2),
-            Step::Toggle => self.render_toggle(cx),
             Step::Shortcuts => self.render_shortcuts(),
             Step::Faq => self.render_faq(cx),
         };
@@ -2914,7 +2722,7 @@ mod tests {
 
     #[test]
     fn first_run_visits_every_platform_stage_and_back_never_opens_an_omitted_step() {
-        for (macos, expected) in [(true, 8), (false, 7)] {
+        for (macos, expected) in [(true, 4), (false, 3)] {
             let first = Step::first(macos, false);
             let mut visited = vec![first];
             while let Some(next) = visited.last().unwrap().next(false, true) {
@@ -2953,7 +2761,7 @@ mod tests {
             }));
             assert_eq!(
                 Step::Permissions.next(false, state.necessary_granted()),
-                (screen && accessibility).then_some(Step::Overview)
+                (screen && accessibility).then_some(Step::Studio)
             );
             assert!(!state.all_shown_granted());
         }
@@ -2970,7 +2778,7 @@ mod tests {
         let mut state = PermissionsState::from_raw(Some(raw));
         assert_eq!(
             Step::Permissions.next(false, state.necessary_granted()),
-            Some(Step::Overview)
+            Some(Step::Studio)
         );
         raw.screen_granted = false;
         assert!(state.apply_raw(Some(raw)));

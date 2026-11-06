@@ -369,7 +369,7 @@ quarter = "1/4"
 
 [settings.shortcuts]
 blocked_while_recording = "当前录制占用了停止键，无法更改快捷键。请先停止录制。"
-cancelling_description = "适用于通过快捷键或灵录图标开始的截图和录制。"
+cancelling_description = "适用于通过快捷键或菜单栏图标开始的录制。"
 cancelling_title = "取消"
 needs_modifier_macos = "请包含 ⌘、⌃ 或 ⌥，以免快捷键干扰输入。"
 needs_modifier_other = "请包含 Ctrl、Alt 或 Win，以免快捷键干扰输入。"
@@ -379,24 +379,14 @@ recording_hint = "按下你想使用的按键。按 Esc 取消，按 Delete 移�
 recording_title = "录制"
 saved = "已保存。在任意应用中按 {keys} 即可{effect}。"
 saved_moved = "已保存。在任意应用中按 {keys} 即可{effect}。已从“{shortcut}”中移除。"
-screenshots_description = "快捷键在任何应用中都可用。点击即可更改。"
-screenshots_title = "截图"
 type_shortcut = "输入快捷键…"
 unavailable = "其他应用或系统已在使用此快捷键。点击以选择其他快捷键。"
 unsupported_key = "该按键不能用于快捷键。请尝试字母、数字或功能键。"
 while_recording_title = "录制期间"
 
-[settings.shortcuts.after_screenshot]
-hint = "适用于每张截图，无论来自快捷键还是灵录"
-title = "截图之后"
-
 [settings.shortcuts.after_studio]
 hint = "停止录制时"
 title = "Studio 录制之后"
-
-[settings.shortcuts.after_instant]
-hint = "始终会复制分享链接"
-title = "Instant 录制之后"
 
 [settings.shortcuts.on_cancel]
 hint = "按 Esc 或关闭选择器"
@@ -407,20 +397,7 @@ cancel_show_cap = "显示灵录"
 cancel_show_cap_hint = "回到录制器"
 cancel_stay_hidden = "保持隐藏"
 cancel_stay_hidden_hint = "除非灵录原本已打开"
-instant_copy_link = "仅复制链接"
-instant_copy_link_hint = "不打开任何内容"
-instant_open_link = "打开链接"
-instant_open_link_hint = "在浏览器中"
-instant_show_cap = "显示灵录"
-instant_show_cap_hint = "回到录制器"
 saved_to_library = "仅保存到资料库"
-screenshot_copy = "复制"
-screenshot_copy_and_edit = "复制并编辑"
-screenshot_copy_and_edit_hint = "两者兼顾"
-screenshot_copy_hint = "随处粘贴"
-screenshot_do_nothing = "不执行任何操作"
-screenshot_open_editor = "打开编辑器"
-screenshot_open_editor_hint = "先添加标注"
 studio_do_nothing = "不执行任何操作"
 studio_open_editor = "打开编辑器"
 studio_open_editor_hint = "立即编辑"
@@ -910,38 +887,9 @@ organization = "组织为"
 recording_mode = "录制模式为"
 window_title = "窗口标题包含"
 
-[settings.automations.template.copy_screenshot]
-description = "截图后即可直接粘贴。"
-name = "自动将新截图复制到剪贴板"
-
-[settings.automations.template.ocr_screenshot]
-description = "灵录会识别截图中的文字并替你复制。"
-name = "从截图中提取文字"
-
-[settings.automations.template.save_screenshot]
-description = "将每张新截图直接保存到你选择的文件夹。"
-name = "把截图收进文件夹"
-
-[settings.automations.template.reveal_screenshot]
-description = "每张截图一拍下就在 Finder 中显示。"
-name = "跳转到每张新截图"
-
 [settings.automations.template.export_studio]
 description = "Studio 录制一结束就渲染出 MP4。"
 name = "录制结束后自动导出"
-
-[settings.automations.template.upload_share]
-description = "录制完成后，链接已在剪贴板中等你。"
-name = "上传并获取分享链接"
-
-[settings.automations.template.notify_upload]
-body = "你的录制已可以分享。"
-description = "录制可以分享时，桌面会轻轻提醒你。"
-name = "上传就绪时提醒我"
-
-[settings.automations.template.webhook_share]
-description = "将分享链接发送到 Slack、Discord 或你自己的 Webhook。"
-name = "分享内容时通知 Slack"
 
 [main]
 delete_recording_confirm = "确定要删除这段录制吗？"
@@ -1182,20 +1130,12 @@ footer = "以上内容都可以随时在设置中更改"
 subtitle = "从键盘快捷键到存储，一切皆可自定义。灵录会适应你的工作方式。"
 title = "打造你的专属灵录"
 
-[onboarding.customize.domain]
-description = "分享链接使用你自己的域名，而不是 cap.so"
-title = "自定义域名"
-
 [onboarding.customize.preferences]
 description = "帧率、画质、倒计时、光标特效等"
 title = "录制偏好"
 
-[onboarding.customize.s3]
-description = "连接你自己的 S3 兼容存储桶，完全掌控你的录制"
-title = "自定义 S3 存储"
-
 [onboarding.customize.shortcuts]
-description = "用于录制、截图和切换模式的全局快捷键"
+description = "开始、暂停、停止录制的全局快捷键"
 title = "键盘快捷键"
 
 [onboarding.demo]
@@ -1207,7 +1147,7 @@ editor = "灵录编辑器"
 export = "导出"
 export_complete = "导出完成！"
 exporting = "正在导出..."
-link_ready = "链接已可分享！"
+link_ready = "已保存到本机"
 save = "保存"
 start_recording = "开始录制"
 stopped = "已停止"
@@ -1218,7 +1158,7 @@ beautify = "美化"
 edit = "编辑"
 record = "录制"
 select_area = "选择区域"
-share_link = "分享链接"
+share_link = "导出"
 stop = "停止"
 
 [onboarding.error]
@@ -1226,21 +1166,16 @@ save_progress = "无法保存引导进度。请重试。"
 save_sound = "无法保存声音偏好设置。"
 
 [onboarding.faq]
-pricing = "查看套餐价格"
-pricing_link = "查看套餐价格 ↗"
+source = "在 GitHub 查看源代码 ↗"
 subtitle = "开始使用前需要了解的一切。"
 title = "常见问题"
 
 [onboarding.faq.free]
-answer = "灵录个人使用免费。团队和商业用途请查看我们的付费套餐。"
-question = "灵录可以免费使用吗？"
-
-[onboarding.faq.instant_vs_studio]
-answer = "Instant 模式边录边上传，停止录制后就能立即拿到分享链接。Studio 模式在本地以完整画质录制，分享前可以添加背景、特效等进行编辑。"
-question = "Instant 和 Studio 有什么区别？"
+answer = "免费且开源（AGPL-3.0），不需要账号，也没有付费套餐。"
+question = "灵录免费吗？"
 
 [onboarding.faq.sharing]
-answer = "在 Instant 模式下，停止录制时会自动生成分享链接。在 Studio 模式下，导出编辑好的视频，然后通过灵录云分享或保存在本地。"
+answer = "在编辑器里导出 MP4 或 GIF，或直接复制到剪贴板，然后发到任何地方。"
 question = "如何分享？"
 
 [onboarding.faq.shortcuts]
@@ -1248,7 +1183,7 @@ answer = "随时前往“设置 → 快捷键”，自定义所有键盘快捷�
 question = "以后可以更改快捷键吗？"
 
 [onboarding.faq.storage]
-answer = "所有录制都保存在你电脑本地。在 Instant 模式下，它们还会上传到灵录云以便分享。你可以在设置中管理存储。"
+answer = "所有录制都只保存在你的 Mac 上，灵录不会上传任何内容。可以在 设置 → 通用 里更改存储位置。"
 question = "我的录制保存在哪里？"
 
 [onboarding.modes.instant]
@@ -1288,19 +1223,11 @@ relaunch = "重新启动灵录"
 skip = "跳过导览"
 start = "开始使用灵录"
 
-[onboarding.overview]
-subtitle = "无论你需要速度、专业画质，还是快速截图，灵录都有对应的模式。"
-title = "一个应用，满足所有工作流"
-
-[onboarding.toggle]
-subtitle = "在灵录主窗口中单击即可切换模式。"
-title = "随时切换模式"
-
 [onboarding.welcome]
 click_or_press = "点击此处，或按下"
 get_started = "开始使用"
 space_key = "空格"
-tagline = "人人可用的开源屏幕分享应用。"
+tagline = "好看的录屏，只留在你的 Mac 上。"
 
 [menu.update]
 badge_progress = "v{version} · {percent}%"
@@ -3351,3 +3278,15 @@ testing = "正在测试…"
 qwen_missing_server = "灵录缺少 llama-server 组件，请重新安装灵录。"
 qwen_name = "Qwen3-ASR（本机）"
 qwen_not_installed = "请先在 设置 → AI 模型 里下载 Qwen3-ASR。"
+
+[settings.automations.template.reveal_recording]
+description = "Studio 录制结束后，在访达中显示录制文件。"
+name = "录完在访达中显示"
+
+[onboarding.customize.captions]
+description = "本机 Qwen3-ASR 免费离线，也可以接豆包等云端识别"
+title = "AI 字幕"
+
+[onboarding.faq.captions]
+answer = "在编辑器的「字幕」里一键生成。默认用本机的 Qwen3-ASR，免费且音频不离开电脑；也可以在 设置 → AI 模型 里配置豆包等云端识别。"
+question = "字幕怎么生成？"

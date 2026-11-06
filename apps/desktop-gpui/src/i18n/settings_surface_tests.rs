@@ -265,11 +265,6 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::options::preview_quality::quarter(), "Quarter"),
         (tr::settings::options::preview_quality::half(), "Half"),
         (tr::settings::options::preview_quality::full(), "Full"),
-        (tr::settings::shortcuts::screenshots_title(), "Screenshots"),
-        (
-            tr::settings::shortcuts::screenshots_description(),
-            "Shortcuts work from any app. Click one to change it.",
-        ),
         (tr::settings::shortcuts::recording_title(), "Recording"),
         (
             tr::settings::shortcuts::recording_description(),
@@ -278,19 +273,11 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (tr::settings::shortcuts::cancelling_title(), "Cancelling"),
         (
             tr::settings::shortcuts::cancelling_description(),
-            "For screenshots and recordings started from a shortcut or the tray.",
+            "Applies to recordings started from a shortcut or the Capwise menu bar icon.",
         ),
         (
             tr::settings::shortcuts::while_recording_title(),
             "While recording",
-        ),
-        (
-            tr::settings::shortcuts::after_screenshot::title(),
-            "After a screenshot",
-        ),
-        (
-            tr::settings::shortcuts::after_screenshot::hint(),
-            "For every screenshot, from a shortcut or from Capwise",
         ),
         (
             tr::settings::shortcuts::after_studio::title(),
@@ -299,39 +286,6 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (
             tr::settings::shortcuts::after_studio::hint(),
             "When you stop",
-        ),
-        (
-            tr::settings::shortcuts::after_instant::title(),
-            "After an Instant recording",
-        ),
-        (
-            tr::settings::shortcuts::after_instant::hint(),
-            "The share link is always copied",
-        ),
-        (
-            tr::settings::shortcuts::outcome::screenshot_open_editor(),
-            "Open editor",
-        ),
-        (
-            tr::settings::shortcuts::outcome::screenshot_open_editor_hint(),
-            "Annotate first",
-        ),
-        (tr::settings::shortcuts::outcome::screenshot_copy(), "Copy"),
-        (
-            tr::settings::shortcuts::outcome::screenshot_copy_hint(),
-            "Paste anywhere",
-        ),
-        (
-            tr::settings::shortcuts::outcome::screenshot_copy_and_edit(),
-            "Copy and edit",
-        ),
-        (
-            tr::settings::shortcuts::outcome::screenshot_copy_and_edit_hint(),
-            "Both at once",
-        ),
-        (
-            tr::settings::shortcuts::outcome::screenshot_do_nothing(),
-            "Do nothing",
         ),
         (
             tr::settings::shortcuts::outcome::saved_to_library(),
@@ -356,30 +310,6 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (
             tr::settings::shortcuts::outcome::studio_do_nothing(),
             "Do nothing",
-        ),
-        (
-            tr::settings::shortcuts::outcome::instant_open_link(),
-            "Open link",
-        ),
-        (
-            tr::settings::shortcuts::outcome::instant_open_link_hint(),
-            "In your browser",
-        ),
-        (
-            tr::settings::shortcuts::outcome::instant_show_cap(),
-            "Show Capwise",
-        ),
-        (
-            tr::settings::shortcuts::outcome::instant_show_cap_hint(),
-            "Back to the recorder",
-        ),
-        (
-            tr::settings::shortcuts::outcome::instant_copy_link(),
-            "Copy link only",
-        ),
-        (
-            tr::settings::shortcuts::outcome::instant_copy_link_hint(),
-            "Nothing opens",
         ),
         (
             tr::settings::shortcuts::on_cancel::title(),
@@ -1293,36 +1223,12 @@ fn settings_surfaces_match_the_literals_they_replaced() {
             "Organization is",
         ),
         (
-            tr::settings::automations::template::copy_screenshot::name(),
-            "Auto-copy new screenshots to clipboard",
+            tr::settings::automations::template::reveal_recording::name(),
+            "Reveal finished recordings",
         ),
         (
-            tr::settings::automations::template::copy_screenshot::description(),
-            "Snap a screenshot and it's right there, ready to paste.",
-        ),
-        (
-            tr::settings::automations::template::ocr_screenshot::name(),
-            "Pull the text out of screenshots",
-        ),
-        (
-            tr::settings::automations::template::ocr_screenshot::description(),
-            "Capwise reads the text in your screenshot and copies it for you.",
-        ),
-        (
-            tr::settings::automations::template::save_screenshot::name(),
-            "Tuck screenshots into a folder",
-        ),
-        (
-            tr::settings::automations::template::save_screenshot::description(),
-            "Send every new screenshot straight to a folder you pick.",
-        ),
-        (
-            tr::settings::automations::template::reveal_screenshot::name(),
-            "Jump to each new screenshot",
-        ),
-        (
-            tr::settings::automations::template::reveal_screenshot::description(),
-            "Pop open every screenshot in Finder the moment you take it.",
+            tr::settings::automations::template::reveal_recording::description(),
+            "Show the recording in Finder when a Studio recording ends.",
         ),
         (
             tr::settings::automations::template::export_studio::name(),
@@ -1331,34 +1237,6 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         (
             tr::settings::automations::template::export_studio::description(),
             "Render an MP4 the second a Studio recording wraps up.",
-        ),
-        (
-            tr::settings::automations::template::upload_share::name(),
-            "Upload and grab the share link",
-        ),
-        (
-            tr::settings::automations::template::upload_share::description(),
-            "Finish a recording and the link is waiting on your clipboard.",
-        ),
-        (
-            tr::settings::automations::template::notify_upload::name(),
-            "Ping me when an upload is ready",
-        ),
-        (
-            tr::settings::automations::template::notify_upload::description(),
-            "Get a gentle desktop nudge once your recording is shareable.",
-        ),
-        (
-            tr::settings::automations::template::notify_upload::body(),
-            "Your recording is ready to share.",
-        ),
-        (
-            tr::settings::automations::template::webhook_share::name(),
-            "Tell Slack when you share something",
-        ),
-        (
-            tr::settings::automations::template::webhook_share::description(),
-            "Send the share link to Slack, Discord, or your own webhook.",
         ),
     ];
     for (translated, literal) in pairs {

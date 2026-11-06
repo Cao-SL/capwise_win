@@ -430,18 +430,10 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::onboarding::modes::screenshot::feature_4(),
             "Copy, save, or share",
         ),
-        (tr::onboarding::faq::free::question(), "Is Capwise free to use?"),
+        (tr::onboarding::faq::free::question(), "Is Capwise free?"),
         (
             tr::onboarding::faq::free::answer(),
-            "Capwise is free for personal use. For teams and commercial use, check out our pricing plans.",
-        ),
-        (
-            tr::onboarding::faq::instant_vs_studio::question(),
-            "What's the difference between Instant and Studio?",
-        ),
-        (
-            tr::onboarding::faq::instant_vs_studio::answer(),
-            "Instant mode uploads as you record — stop recording and you'll have a shareable link immediately. Studio mode records locally in full quality, letting you edit with backgrounds, effects, and more before sharing.",
+            "Yes. It is free and open source (AGPL-3.0), with no account and no paid plans.",
         ),
         (
             tr::onboarding::faq::storage::question(),
@@ -449,7 +441,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::faq::storage::answer(),
-            "All recordings are stored locally on your computer. In Instant mode, they're also uploaded to Capwise's cloud for easy sharing. You can manage storage in Settings.",
+            "Every recording stays on your Mac; Capwise uploads nothing. Change where recordings are kept in Settings → General.",
         ),
         (
             tr::onboarding::faq::shortcuts::question(),
@@ -465,7 +457,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::faq::sharing::answer(),
-            "In Instant mode, you get a shareable link automatically when you stop recording. In Studio mode, export your edited video and share via Capwise's cloud or save locally.",
+            "Export an MP4 or GIF from the editor, or copy it to the clipboard, then send it anywhere.",
         ),
         (
             tr::onboarding::error::save_progress(),
@@ -483,22 +475,12 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::onboarding::welcome::space_key(), "Space"),
         (
             tr::onboarding::welcome::tagline(),
-            "The open source screen sharing app for everyone.",
-        ),
-        (tr::onboarding::overview::title(), "One app, every workflow"),
-        (
-            tr::onboarding::overview::subtitle(),
-            "Whether you need speed, studio quality, or a quick screenshot — Capwise has a mode for it.",
+            "Beautiful screen recordings that stay on your Mac.",
         ),
         (tr::onboarding::customize::title(), "Make Capwise yours"),
         (
             tr::onboarding::customize::subtitle(),
             "Customize everything from keyboard shortcuts to storage. Capwise adapts to your workflow.",
-        ),
-        (tr::onboarding::toggle::title(), "Switch modes anytime"),
-        (
-            tr::onboarding::toggle::subtitle(),
-            "Toggle between modes with a single click from the main Capwise window.",
         ),
         (tr::onboarding::faq::title(), "Frequently Asked Questions"),
         (
@@ -511,17 +493,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::customize::shortcuts::description(),
-            "Global hotkeys for recording, screenshots, and switching modes",
-        ),
-        (tr::onboarding::customize::s3::title(), "Custom S3 Storage"),
-        (
-            tr::onboarding::customize::s3::description(),
-            "Connect your own S3-compatible bucket for full control over your recordings",
-        ),
-        (tr::onboarding::customize::domain::title(), "Custom Domain"),
-        (
-            tr::onboarding::customize::domain::description(),
-            "Use your own domain for shareable links instead of cap.so",
+            "Global shortcuts to start, pause and stop recording",
         ),
         (
             tr::onboarding::customize::preferences::title(),
@@ -535,8 +507,17 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::onboarding::customize::footer(),
             "Change any of these at any time in Settings",
         ),
-        (tr::onboarding::faq::pricing(), "View pricing plans"),
-        (tr::onboarding::faq::pricing_link(), "View pricing plans ↗"),
+        (tr::onboarding::customize::captions::title(), "AI captions"),
+        (
+            tr::onboarding::customize::captions::description(),
+            "Free, offline Qwen3-ASR on your Mac, or Doubao and other cloud services",
+        ),
+        (tr::onboarding::faq::source(), "View the source on GitHub ↗"),
+        (tr::onboarding::faq::captions::question(), "How are captions made?"),
+        (
+            tr::onboarding::faq::captions::answer(),
+            "Generate them from the editor's Captions tab. By default Qwen3-ASR runs on your Mac for free and the audio never leaves it; cloud services such as Doubao can be set up in Settings → AI models.",
+        ),
         (tr::onboarding::nav::relaunch(), "Relaunch Capwise"),
         (tr::onboarding::nav::continue_to_cap(), "Continue to Capwise"),
         (tr::onboarding::nav::start(), "Start Using Capwise"),
@@ -553,7 +534,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::onboarding::nav::skip(), "Skip the tour"),
         (tr::onboarding::demo::start_recording(), "Start Recording"),
         (tr::onboarding::demo::stopped(), "Stopped"),
-        (tr::onboarding::demo::link_ready(), "Link ready to share!"),
+        (tr::onboarding::demo::link_ready(), "Saved to your Mac"),
         (tr::onboarding::demo::copied(), "Copied!"),
         (tr::onboarding::demo::copy(), "Copy"),
         (tr::onboarding::demo::editor(), "Capwise Editor"),
@@ -569,7 +550,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (tr::onboarding::demo::steps::record(), "Record"),
         (tr::onboarding::demo::steps::stop(), "Stop"),
-        (tr::onboarding::demo::steps::share_link(), "Share link"),
+        (tr::onboarding::demo::steps::share_link(), "Export"),
         (tr::onboarding::demo::steps::edit(), "Edit"),
         (tr::onboarding::demo::steps::select_area(), "Select area"),
         (tr::onboarding::demo::steps::beautify(), "Beautify"),

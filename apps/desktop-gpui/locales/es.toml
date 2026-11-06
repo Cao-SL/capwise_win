@@ -368,7 +368,6 @@ quarter = "Un cuarto"
 
 [settings.shortcuts]
 blocked_while_recording = "No se pueden cambiar los atajos mientras esta grabación usa su tecla de detener. Detén la grabación primero."
-cancelling_description = "Para capturas y grabaciones iniciadas desde un atajo o el icono de Capwise."
 cancelling_title = "Cancelación"
 needs_modifier_macos = "Incluye ⌘, ⌃ o ⌥ para que el atajo no interfiera al escribir."
 needs_modifier_other = "Incluye Ctrl, Alt o Win para que el atajo no interfiera al escribir."
@@ -378,24 +377,14 @@ recording_hint = "Pulsa las teclas que quieras usar. Esc cancela y Supr lo quita
 recording_title = "Grabación"
 saved = "Guardado. Pulsa {keys} en cualquier app para {effect}."
 saved_moved = "Guardado. Pulsa {keys} en cualquier app para {effect}. Se quitó de «{shortcut}»."
-screenshots_description = "Los atajos funcionan desde cualquier app. Haz clic en uno para cambiarlo."
-screenshots_title = "Capturas de pantalla"
 type_shortcut = "Escribe el atajo…"
 unavailable = "Otra app o el sistema ya usa este atajo. Haz clic para elegir otro."
 unsupported_key = "Esa tecla no se puede usar en un atajo. Prueba con una letra, un número o una tecla F."
 while_recording_title = "Durante la grabación"
 
-[settings.shortcuts.after_screenshot]
-hint = "Para cada captura, desde un atajo o desde Capwise"
-title = "Después de una captura"
-
 [settings.shortcuts.after_studio]
 hint = "Al detenerla"
 title = "Después de una grabación Studio"
-
-[settings.shortcuts.after_instant]
-hint = "El enlace para compartir siempre se copia"
-title = "Después de una grabación Instant"
 
 [settings.shortcuts.on_cancel]
 hint = "Esc o cerrar el selector"
@@ -406,20 +395,7 @@ cancel_show_cap = "Mostrar Capwise"
 cancel_show_cap_hint = "Volver a la grabadora"
 cancel_stay_hidden = "Seguir oculto"
 cancel_stay_hidden_hint = "Salvo que Capwise estuviera abierto"
-instant_copy_link = "Solo copiar el enlace"
-instant_copy_link_hint = "No se abre nada"
-instant_open_link = "Abrir el enlace"
-instant_open_link_hint = "En tu navegador"
-instant_show_cap = "Mostrar Capwise"
-instant_show_cap_hint = "Volver a la grabadora"
 saved_to_library = "Se guarda en la biblioteca"
-screenshot_copy = "Copiar"
-screenshot_copy_and_edit = "Copiar y editar"
-screenshot_copy_and_edit_hint = "Las dos cosas a la vez"
-screenshot_copy_hint = "Pega donde quieras"
-screenshot_do_nothing = "No hacer nada"
-screenshot_open_editor = "Abrir el editor"
-screenshot_open_editor_hint = "Anotar primero"
 studio_do_nothing = "No hacer nada"
 studio_open_editor = "Abrir el editor"
 studio_open_editor_hint = "Editar enseguida"
@@ -909,38 +885,9 @@ organization = "La organización es"
 recording_mode = "El modo de grabación es"
 window_title = "El título de la ventana contiene"
 
-[settings.automations.template.copy_screenshot]
-description = "Haz una captura y la tendrás lista para pegar."
-name = "Copiar automáticamente las nuevas capturas"
-
-[settings.automations.template.ocr_screenshot]
-description = "Capwise lee el texto de tu captura y lo copia por ti."
-name = "Sacar el texto de las capturas"
-
-[settings.automations.template.save_screenshot]
-description = "Envía cada captura nueva directamente a la carpeta que elijas."
-name = "Guardar las capturas en una carpeta"
-
-[settings.automations.template.reveal_screenshot]
-description = "Muestra cada captura en el Finder en cuanto la hagas."
-name = "Ir a cada captura nueva"
-
 [settings.automations.template.export_studio]
 description = "Renderiza un MP4 en cuanto termina una grabación Studio."
 name = "Exportar automáticamente al terminar de grabar"
-
-[settings.automations.template.upload_share]
-description = "Termina una grabación y el enlace te espera en el portapapeles."
-name = "Subir y obtener el enlace para compartir"
-
-[settings.automations.template.notify_upload]
-body = "Tu grabación está lista para compartir."
-description = "Recibe un aviso discreto en el escritorio cuando tu grabación se pueda compartir."
-name = "Avisarme cuando una subida esté lista"
-
-[settings.automations.template.webhook_share]
-description = "Envía el enlace para compartir a Slack, Discord o tu propio webhook."
-name = "Avisar a Slack cuando compartas algo"
 
 [main]
 delete_recording_confirm = "¿Seguro que quieres eliminar esta grabación?"
@@ -1181,20 +1128,11 @@ footer = "Puedes cambiar todo esto en cualquier momento en Ajustes"
 subtitle = "Personaliza todo, desde los atajos de teclado hasta el almacenamiento. Capwise se adapta a tu forma de trabajar."
 title = "Haz que Capwise sea tuyo"
 
-[onboarding.customize.domain]
-description = "Usa tu propio dominio en los enlaces para compartir en lugar de cap.so"
-title = "Dominio personalizado"
-
 [onboarding.customize.preferences]
 description = "FPS, calidad, cuenta atrás, efectos del cursor y más"
 title = "Preferencias de grabación"
 
-[onboarding.customize.s3]
-description = "Conecta tu propio bucket compatible con S3 para tener control total sobre tus grabaciones"
-title = "Almacenamiento S3 propio"
-
 [onboarding.customize.shortcuts]
-description = "Atajos globales para grabar, hacer capturas y cambiar de modo"
 title = "Atajos de teclado"
 
 [onboarding.demo]
@@ -1206,7 +1144,6 @@ editor = "Editor de Capwise"
 export = "Exportar"
 export_complete = "¡Exportación completada!"
 exporting = "Exportando..."
-link_ready = "¡Enlace listo para compartir!"
 save = "Guardar"
 start_recording = "Empezar a grabar"
 stopped = "Detenido"
@@ -1217,7 +1154,6 @@ beautify = "Embellecer"
 edit = "Editar"
 record = "Grabar"
 select_area = "Elegir área"
-share_link = "Compartir enlace"
 stop = "Detener"
 
 [onboarding.error]
@@ -1225,21 +1161,12 @@ save_progress = "No se pudo guardar tu progreso. Inténtalo de nuevo."
 save_sound = "No se pudo guardar la preferencia de sonido."
 
 [onboarding.faq]
-pricing = "Ver planes y precios"
-pricing_link = "Ver planes y precios ↗"
 subtitle = "Todo lo que necesitas saber para empezar."
 title = "Preguntas frecuentes"
 
 [onboarding.faq.free]
-answer = "Capwise es gratis para uso personal. Para equipos y uso comercial, consulta nuestros planes."
-question = "¿Capwise es gratis?"
-
-[onboarding.faq.instant_vs_studio]
-answer = "Con el modo Instant, la grabación se sube mientras grabas: detén la grabación y tendrás un enlace para compartir al momento. El modo Studio graba localmente con calidad completa para que puedas editar con fondos, efectos y más antes de compartir."
-question = "¿Qué diferencia hay entre Instant y Studio?"
 
 [onboarding.faq.sharing]
-answer = "En el modo Instant obtienes un enlace para compartir automáticamente al detener la grabación. En el modo Studio, exporta tu vídeo editado y compártelo a través de la nube de Capwise o guárdalo localmente."
 question = "¿Cómo funciona el uso compartido?"
 
 [onboarding.faq.shortcuts]
@@ -1247,7 +1174,6 @@ answer = "Ve a Ajustes → Atajos en cualquier momento para personalizar todos t
 question = "¿Puedo cambiar mis atajos más adelante?"
 
 [onboarding.faq.storage]
-answer = "Todas las grabaciones se guardan localmente en tu ordenador. En el modo Instant también se suben a la nube de Capwise para compartirlas fácilmente. Puedes gestionar el almacenamiento en Ajustes."
 question = "¿Dónde se guardan mis grabaciones?"
 
 [onboarding.modes.instant]
@@ -1287,19 +1213,10 @@ relaunch = "Reiniciar Capwise"
 skip = "Omitir el recorrido"
 start = "Empezar a usar Capwise"
 
-[onboarding.overview]
-subtitle = "Ya busques rapidez, calidad de estudio o una captura rápida, Capwise tiene un modo para ello."
-title = "Una app para cada forma de trabajar"
-
-[onboarding.toggle]
-subtitle = "Cambia de modo con un solo clic desde la ventana principal de Capwise."
-title = "Cambia de modo cuando quieras"
-
 [onboarding.welcome]
 click_or_press = "Haz clic aquí o pulsa"
 get_started = "Empezar"
 space_key = "Espacio"
-tagline = "La app de código abierto para compartir pantalla, para todo el mundo."
 
 [menu.update]
 badge_progress = "v{version} · {percent} %"

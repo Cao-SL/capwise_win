@@ -368,7 +368,6 @@ quarter = "1/4"
 
 [settings.shortcuts]
 blocked_while_recording = "録画が停止キーを使用している間はショートカットを変更できません。先に録画を停止してください。"
-cancelling_description = "ショートカットまたはCapwiseのアイコンから開始したスクリーンショットと録画に適用されます。"
 cancelling_title = "キャンセル"
 needs_modifier_macos = "入力の邪魔にならないよう、⌘、⌃、⌥のいずれかを含めてください。"
 needs_modifier_other = "入力の邪魔にならないよう、Ctrl、Alt、Winのいずれかを含めてください。"
@@ -378,24 +377,14 @@ recording_hint = "使いたいキーを押してください。Escでキャン�
 recording_title = "録画"
 saved = "保存しました。どのアプリでも{keys}を押すと{effect}。"
 saved_moved = "保存しました。どのアプリでも{keys}を押すと{effect}。「{shortcut}」からは削除しました。"
-screenshots_description = "ショートカットはどのアプリからでも使えます。クリックすると変更できます。"
-screenshots_title = "スクリーンショット"
 type_shortcut = "ショートカットを入力…"
 unavailable = "このショートカットは別のアプリまたはシステムがすでに使用しています。クリックして別のものを選んでください。"
 unsupported_key = "このキーはショートカットに使えません。文字、数字、ファンクションキーを試してください。"
 while_recording_title = "録画中"
 
-[settings.shortcuts.after_screenshot]
-hint = "ショートカットでもCapwiseからでも、すべてのスクリーンショットに適用"
-title = "スクリーンショットの後"
-
 [settings.shortcuts.after_studio]
 hint = "停止したとき"
 title = "Studio録画の後"
-
-[settings.shortcuts.after_instant]
-hint = "共有リンクは常にコピーされます"
-title = "Instant録画の後"
 
 [settings.shortcuts.on_cancel]
 hint = "Escまたはピッカーを閉じる"
@@ -406,20 +395,7 @@ cancel_show_cap = "Capwiseを表示"
 cancel_show_cap_hint = "レコーダーに戻る"
 cancel_stay_hidden = "非表示のまま"
 cancel_stay_hidden_hint = "Capwiseが開いていた場合を除く"
-instant_copy_link = "リンクのコピーのみ"
-instant_copy_link_hint = "何も開きません"
-instant_open_link = "リンクを開く"
-instant_open_link_hint = "ブラウザで"
-instant_show_cap = "Capwiseを表示"
-instant_show_cap_hint = "レコーダーに戻る"
 saved_to_library = "ライブラリに保存"
-screenshot_copy = "コピー"
-screenshot_copy_and_edit = "コピーして編集"
-screenshot_copy_and_edit_hint = "両方を同時に"
-screenshot_copy_hint = "どこにでも貼り付け"
-screenshot_do_nothing = "何もしない"
-screenshot_open_editor = "エディタを開く"
-screenshot_open_editor_hint = "先に注釈を付ける"
 studio_do_nothing = "何もしない"
 studio_open_editor = "エディタを開く"
 studio_open_editor_hint = "すぐに編集"
@@ -909,38 +885,9 @@ organization = "組織が次と一致"
 recording_mode = "録画モードが次と一致"
 window_title = "ウィンドウタイトルに次を含む"
 
-[settings.automations.template.copy_screenshot]
-description = "スクリーンショットを撮ったら、すぐに貼り付けられます。"
-name = "新しいスクリーンショットを自動でクリップボードにコピー"
-
-[settings.automations.template.ocr_screenshot]
-description = "Capwiseがスクリーンショット内の文字を読み取り、コピーします。"
-name = "スクリーンショットから文字を取り出す"
-
-[settings.automations.template.save_screenshot]
-description = "新しいスクリーンショットを、選んだフォルダに直接送ります。"
-name = "スクリーンショットをフォルダにまとめる"
-
-[settings.automations.template.reveal_screenshot]
-description = "スクリーンショットを撮った瞬間にFinderで表示します。"
-name = "新しいスクリーンショットをすぐに表示"
-
 [settings.automations.template.export_studio]
 description = "Studio録画が終わった瞬間にMP4を書き出します。"
 name = "録画終了時に自動で書き出す"
-
-[settings.automations.template.upload_share]
-description = "録画を終えると、リンクがクリップボードに入っています。"
-name = "アップロードして共有リンクを取得"
-
-[settings.automations.template.notify_upload]
-body = "録画を共有できるようになりました。"
-description = "録画を共有できるようになったら、デスクトップでそっとお知らせします。"
-name = "アップロードの準備ができたら通知"
-
-[settings.automations.template.webhook_share]
-description = "共有リンクをSlack、Discord、または独自のWebhookに送ります。"
-name = "共有したらSlackに知らせる"
 
 [main]
 delete_recording_confirm = "この録画を削除してもよろしいですか？"
@@ -1181,20 +1128,11 @@ footer = "これらはすべて、いつでも設定で変更できます"
 subtitle = "キーボードショートカットから保存先まで、すべてをカスタマイズ。Capwiseはあなたの作業スタイルに合わせます。"
 title = "Capwiseを自分仕様に"
 
-[onboarding.customize.domain]
-description = "共有リンクにcap.soではなく独自ドメインを使えます"
-title = "カスタムドメイン"
-
 [onboarding.customize.preferences]
 description = "FPS、画質、カウントダウン、カーソルエフェクトなど"
 title = "録画の設定"
 
-[onboarding.customize.s3]
-description = "S3互換のバケットを接続して、録画を完全に管理できます"
-title = "カスタムS3ストレージ"
-
 [onboarding.customize.shortcuts]
-description = "録画、スクリーンショット、モード切り替えのためのグローバルショートカット"
 title = "キーボードショートカット"
 
 [onboarding.demo]
@@ -1206,7 +1144,6 @@ editor = "Capwiseエディタ"
 export = "書き出す"
 export_complete = "書き出しが完了しました！"
 exporting = "書き出し中..."
-link_ready = "共有リンクの準備ができました！"
 save = "保存"
 start_recording = "録画を開始"
 stopped = "停止"
@@ -1217,7 +1154,6 @@ beautify = "仕上げる"
 edit = "編集"
 record = "録画"
 select_area = "範囲を選択"
-share_link = "リンクを共有"
 stop = "停止"
 
 [onboarding.error]
@@ -1225,21 +1161,12 @@ save_progress = "進行状況を保存できませんでした。もう一度お
 save_sound = "サウンドの設定を保存できませんでした。"
 
 [onboarding.faq]
-pricing = "料金プランを見る"
-pricing_link = "料金プランを見る ↗"
 subtitle = "使い始めるために知っておきたいことをまとめました。"
 title = "よくある質問"
 
 [onboarding.faq.free]
-answer = "Capwiseは個人利用なら無料です。チームや商用での利用については料金プランをご覧ください。"
-question = "Capwiseは無料で使えますか？"
-
-[onboarding.faq.instant_vs_studio]
-answer = "Instantモードは録画しながらアップロードするので、停止するとすぐに共有リンクが手に入ります。Studioモードはフル画質でローカルに録画し、共有前に背景やエフェクトなどを加えて編集できます。"
-question = "InstantとStudioの違いは何ですか？"
 
 [onboarding.faq.sharing]
-answer = "Instantモードでは、録画を停止すると自動的に共有リンクが作成されます。Studioモードでは、編集した動画を書き出して、Capwiseのクラウドで共有するかローカルに保存します。"
 question = "共有はどのように行いますか？"
 
 [onboarding.faq.shortcuts]
@@ -1247,7 +1174,6 @@ answer = "いつでも「設定」→「ショートカット」から、すべ�
 question = "ショートカットはあとで変更できますか？"
 
 [onboarding.faq.storage]
-answer = "録画はすべてコンピュータにローカル保存されます。Instantモードでは、簡単に共有できるようにCapwiseのクラウドにもアップロードされます。保存先の管理は設定から行えます。"
 question = "録画はどこに保存されますか？"
 
 [onboarding.modes.instant]
@@ -1287,19 +1213,10 @@ relaunch = "Capwiseを再起動"
 skip = "ツアーをスキップ"
 start = "Capwiseを使い始める"
 
-[onboarding.overview]
-subtitle = "スピード重視でも、スタジオ品質でも、手早いスクリーンショットでも。Capwiseにはそれぞれに合ったモードがあります。"
-title = "ひとつのアプリで、あらゆる作業に"
-
-[onboarding.toggle]
-subtitle = "Capwiseのメインウィンドウから、ワンクリックでモードを切り替えられます。"
-title = "モードはいつでも切り替え可能"
-
 [onboarding.welcome]
 click_or_press = "ここをクリックするか、次のキーを押す："
 get_started = "はじめる"
 space_key = "スペース"
-tagline = "誰もが使えるオープンソースの画面共有アプリ。"
 
 [menu.update]
 badge_progress = "v{version} · {percent}%"

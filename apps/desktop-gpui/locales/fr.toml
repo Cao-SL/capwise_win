@@ -368,7 +368,6 @@ quarter = "Quart"
 
 [settings.shortcuts]
 blocked_while_recording = "Impossible de modifier les raccourcis tant que cet enregistrement utilise sa touche d'arrêt. Arrêtez d'abord l'enregistrement."
-cancelling_description = "Pour les captures et les enregistrements lancés depuis un raccourci ou l'icône de Capwise."
 cancelling_title = "Annulation"
 needs_modifier_macos = "Incluez ⌘, ⌃ ou ⌥ pour que le raccourci ne gêne pas la saisie."
 needs_modifier_other = "Incluez Ctrl, Alt ou Win pour que le raccourci ne gêne pas la saisie."
@@ -378,24 +377,14 @@ recording_hint = "Appuyez sur les touches à utiliser. Échap annule, Suppr reti
 recording_title = "Enregistrement"
 saved = "Enregistré. Appuyez sur {keys} dans n'importe quelle app pour {effect}."
 saved_moved = "Enregistré. Appuyez sur {keys} dans n'importe quelle app pour {effect}. Retiré de « {shortcut} »."
-screenshots_description = "Les raccourcis fonctionnent depuis n'importe quelle app. Cliquez sur un raccourci pour le modifier."
-screenshots_title = "Captures d'écran"
 type_shortcut = "Saisissez un raccourci…"
 unavailable = "Une autre app ou le système utilise déjà ce raccourci. Cliquez pour en choisir un autre."
 unsupported_key = "Cette touche ne peut pas être utilisée dans un raccourci. Essayez une lettre, un chiffre ou une touche F."
 while_recording_title = "Pendant l'enregistrement"
 
-[settings.shortcuts.after_screenshot]
-hint = "Pour chaque capture, depuis un raccourci ou depuis Capwise"
-title = "Après une capture d'écran"
-
 [settings.shortcuts.after_studio]
 hint = "À l'arrêt"
 title = "Après un enregistrement Studio"
-
-[settings.shortcuts.after_instant]
-hint = "Le lien de partage est toujours copié"
-title = "Après un enregistrement Instant"
 
 [settings.shortcuts.on_cancel]
 hint = "Esc ou fermeture du sélecteur"
@@ -406,20 +395,7 @@ cancel_show_cap = "Afficher Capwise"
 cancel_show_cap_hint = "Retour à l'enregistreur"
 cancel_stay_hidden = "Rester masqué"
 cancel_stay_hidden_hint = "Sauf si Capwise était ouvert"
-instant_copy_link = "Copier le lien seulement"
-instant_copy_link_hint = "Rien ne s'ouvre"
-instant_open_link = "Ouvrir le lien"
-instant_open_link_hint = "Dans votre navigateur"
-instant_show_cap = "Afficher Capwise"
-instant_show_cap_hint = "Retour à l'enregistreur"
 saved_to_library = "Enregistré dans la bibliothèque"
-screenshot_copy = "Copier"
-screenshot_copy_and_edit = "Copier et modifier"
-screenshot_copy_and_edit_hint = "Les deux à la fois"
-screenshot_copy_hint = "Coller n'importe où"
-screenshot_do_nothing = "Ne rien faire"
-screenshot_open_editor = "Ouvrir l'éditeur"
-screenshot_open_editor_hint = "Annoter d'abord"
 studio_do_nothing = "Ne rien faire"
 studio_open_editor = "Ouvrir l'éditeur"
 studio_open_editor_hint = "Modifier tout de suite"
@@ -909,38 +885,9 @@ organization = "L'organisation est"
 recording_mode = "Le mode d'enregistrement est"
 window_title = "Le titre de la fenêtre contient"
 
-[settings.automations.template.copy_screenshot]
-description = "Prenez une capture, elle est aussitôt prête à coller."
-name = "Copier automatiquement les nouvelles captures"
-
-[settings.automations.template.ocr_screenshot]
-description = "Capwise lit le texte de votre capture et le copie pour vous."
-name = "Extraire le texte des captures"
-
-[settings.automations.template.save_screenshot]
-description = "Envoyez chaque nouvelle capture directement dans le dossier de votre choix."
-name = "Ranger les captures dans un dossier"
-
-[settings.automations.template.reveal_screenshot]
-description = "Affichez chaque capture dans le Finder dès que vous la prenez."
-name = "Afficher chaque nouvelle capture"
-
 [settings.automations.template.export_studio]
 description = "Générez un MP4 dès la fin d'un enregistrement Studio."
 name = "Exporter automatiquement en fin d'enregistrement"
-
-[settings.automations.template.upload_share]
-description = "Terminez un enregistrement et le lien vous attend dans le presse-papiers."
-name = "Mettre en ligne et récupérer le lien"
-
-[settings.automations.template.notify_upload]
-body = "Votre enregistrement est prêt à être partagé."
-description = "Recevez une discrète notification dès que votre enregistrement peut être partagé."
-name = "Me prévenir quand une mise en ligne est prête"
-
-[settings.automations.template.webhook_share]
-description = "Envoyez le lien de partage à Slack, Discord ou votre propre webhook."
-name = "Prévenir Slack quand vous partagez"
 
 [main]
 delete_recording_confirm = "Voulez-vous vraiment supprimer cet enregistrement ?"
@@ -1181,20 +1128,11 @@ footer = "Vous pouvez modifier tout cela à tout moment dans les paramètres"
 subtitle = "Personnalisez tout, des raccourcis clavier au stockage. Capwise s'adapte à votre façon de travailler."
 title = "Faites de Capwise le vôtre"
 
-[onboarding.customize.domain]
-description = "Utilisez votre propre domaine pour les liens de partage au lieu de cap.so"
-title = "Domaine personnalisé"
-
 [onboarding.customize.preferences]
 description = "FPS, qualité, compte à rebours, effets de curseur, etc."
 title = "Préférences d'enregistrement"
 
-[onboarding.customize.s3]
-description = "Connectez votre propre bucket compatible S3 pour garder le contrôle total de vos enregistrements"
-title = "Stockage S3 personnalisé"
-
 [onboarding.customize.shortcuts]
-description = "Raccourcis globaux pour enregistrer, faire des captures et changer de mode"
 title = "Raccourcis clavier"
 
 [onboarding.demo]
@@ -1206,7 +1144,6 @@ editor = "Éditeur Capwise"
 export = "Exporter"
 export_complete = "Exportation terminée !"
 exporting = "Exportation..."
-link_ready = "Lien prêt à partager !"
 save = "Enregistrer"
 start_recording = "Lancer l'enregistrement"
 stopped = "Arrêté"
@@ -1217,7 +1154,6 @@ beautify = "Embellir"
 edit = "Monter"
 record = "Enregistrer"
 select_area = "Choisir une zone"
-share_link = "Partager le lien"
 stop = "Arrêter"
 
 [onboarding.error]
@@ -1225,21 +1161,12 @@ save_progress = "Impossible d'enregistrer votre progression. Veuillez réessayer
 save_sound = "Impossible d'enregistrer la préférence de son."
 
 [onboarding.faq]
-pricing = "Voir les offres"
-pricing_link = "Voir les offres ↗"
 subtitle = "Tout ce qu'il faut savoir pour bien démarrer."
 title = "Questions fréquentes"
 
 [onboarding.faq.free]
-answer = "Capwise est gratuit pour un usage personnel. Pour les équipes et un usage commercial, consultez nos offres."
-question = "Capwise est-il gratuit ?"
-
-[onboarding.faq.instant_vs_studio]
-answer = "Le mode Instant met en ligne pendant l'enregistrement : arrêtez et votre lien de partage est prêt immédiatement. Le mode Studio enregistre localement en pleine qualité pour que vous puissiez ajouter arrière-plans, effets et plus encore avant de partager."
-question = "Quelle est la différence entre Instant et Studio ?"
 
 [onboarding.faq.sharing]
-answer = "En mode Instant, vous obtenez automatiquement un lien de partage à l'arrêt de l'enregistrement. En mode Studio, exportez votre vidéo montée puis partagez-la via le cloud de Capwise ou enregistrez-la localement."
 question = "Comment fonctionne le partage ?"
 
 [onboarding.faq.shortcuts]
@@ -1247,7 +1174,6 @@ answer = "Rendez-vous dans Paramètres → Raccourcis à tout moment pour person
 question = "Puis-je modifier mes raccourcis plus tard ?"
 
 [onboarding.faq.storage]
-answer = "Tous les enregistrements sont stockés localement sur votre ordinateur. En mode Instant, ils sont aussi mis en ligne sur le cloud de Capwise pour faciliter le partage. Vous pouvez gérer le stockage dans les paramètres."
 question = "Où sont stockés mes enregistrements ?"
 
 [onboarding.modes.instant]
@@ -1287,19 +1213,10 @@ relaunch = "Relancer Capwise"
 skip = "Passer la visite"
 start = "Commencer à utiliser Capwise"
 
-[onboarding.overview]
-subtitle = "Que vous ayez besoin de rapidité, de qualité studio ou d'une capture rapide, Capwise a un mode pour cela."
-title = "Une app, tous les usages"
-
-[onboarding.toggle]
-subtitle = "Passez d'un mode à l'autre en un clic depuis la fenêtre principale de Capwise."
-title = "Changez de mode à tout moment"
-
 [onboarding.welcome]
 click_or_press = "Cliquez ici ou appuyez sur"
 get_started = "Commencer"
 space_key = "Espace"
-tagline = "L'app open source de partage d'écran pour tout le monde."
 
 [menu.update]
 badge_progress = "v{version} · {percent} %"

@@ -940,14 +940,12 @@ impl SettingsWindow {
 
 const SCREENSHOT_SHORTCUTS: [&str; 3] = ["screenshotArea", "screenshotWindow", "screenshotDisplay"];
 
-const RECORDING_SHORTCUTS: [&str; 7] = [
+const RECORDING_SHORTCUTS: [&str; 5] = [
     "startStudioRecording",
-    "startInstantRecording",
     "openRecordingPickerArea",
     "openRecordingPickerWindow",
     "openRecordingPickerDisplay",
     "openRecordingPicker",
-    "cycleRecordingMode",
 ];
 
 const WHILE_RECORDING_SHORTCUTS: [&str; 4] = [
@@ -966,40 +964,6 @@ struct OutcomeOption {
     hint: fn() -> &'static str,
 }
 
-const SCREENSHOT_OUTCOMES: [(store::PostScreenshotBehaviour, OutcomeOption); 4] = [
-    (
-        store::PostScreenshotBehaviour::OpenEditor,
-        OutcomeOption {
-            icon: "icons/edit.svg",
-            label: tr::settings::shortcuts::outcome::screenshot_open_editor,
-            hint: tr::settings::shortcuts::outcome::screenshot_open_editor_hint,
-        },
-    ),
-    (
-        store::PostScreenshotBehaviour::Copy,
-        OutcomeOption {
-            icon: "icons/copy.svg",
-            label: tr::settings::shortcuts::outcome::screenshot_copy,
-            hint: tr::settings::shortcuts::outcome::screenshot_copy_hint,
-        },
-    ),
-    (
-        store::PostScreenshotBehaviour::CopyAndOpenEditor,
-        OutcomeOption {
-            icon: "icons/layers.svg",
-            label: tr::settings::shortcuts::outcome::screenshot_copy_and_edit,
-            hint: tr::settings::shortcuts::outcome::screenshot_copy_and_edit_hint,
-        },
-    ),
-    (
-        store::PostScreenshotBehaviour::Save,
-        OutcomeOption {
-            icon: "icons/folder-down.svg",
-            label: tr::settings::shortcuts::outcome::screenshot_do_nothing,
-            hint: tr::settings::shortcuts::outcome::saved_to_library,
-        },
-    ),
-];
 
 const STUDIO_OUTCOMES: [(store::PostStudioBehaviour, OutcomeOption); 3] = [
     (
@@ -1028,33 +992,6 @@ const STUDIO_OUTCOMES: [(store::PostStudioBehaviour, OutcomeOption); 3] = [
     ),
 ];
 
-/// [`store::PostInstantBehaviour`], phrased as what an Instant recording does.
-const INSTANT_OUTCOMES: [(store::PostInstantBehaviour, OutcomeOption); 3] = [
-    (
-        store::PostInstantBehaviour::OpenLink,
-        OutcomeOption {
-            icon: "icons/globe.svg",
-            label: tr::settings::shortcuts::outcome::instant_open_link,
-            hint: tr::settings::shortcuts::outcome::instant_open_link_hint,
-        },
-    ),
-    (
-        store::PostInstantBehaviour::ShowCap,
-        OutcomeOption {
-            icon: "icons/app-window.svg",
-            label: tr::settings::shortcuts::outcome::instant_show_cap,
-            hint: tr::settings::shortcuts::outcome::instant_show_cap_hint,
-        },
-    ),
-    (
-        store::PostInstantBehaviour::CopyLink,
-        OutcomeOption {
-            icon: "icons/link.svg",
-            label: tr::settings::shortcuts::outcome::instant_copy_link,
-            hint: tr::settings::shortcuts::outcome::instant_copy_link_hint,
-        },
-    ),
-];
 
 const CANCEL_OUTCOMES: [(bool, OutcomeOption); 2] = [
     (
@@ -1646,28 +1583,6 @@ impl SettingsWindow {
                 .collect::<Vec<_>>()
         };
 
-        let mut screenshots = rows_for(&SCREENSHOT_SHORTCUTS, cx);
-        screenshots.push(
-            self.render_outcome_panel(
-                "outcome-screenshot",
-                tr::settings::shortcuts::after_screenshot::title(),
-                tr::settings::shortcuts::after_screenshot::hint(),
-                &SCREENSHOT_OUTCOMES
-                    .iter()
-                    .map(|(value, option)| {
-                        (*option, *value == self.settings.post_screenshot_behaviour)
-                    })
-                    .collect::<Vec<_>>(),
-                |this, index, cx| {
-                    if let Some((value, _)) = SCREENSHOT_OUTCOMES.get(index) {
-                        this.settings.post_screenshot_behaviour = *value;
-                        this.write_enum("postScreenshotBehaviour", *value, cx);
-                    }
-                },
-                cx,
-            ),
-        );
-
         let mut recording = rows_for(&RECORDING_SHORTCUTS, cx);
         recording.push(
             self.render_outcome_panel(
@@ -1692,30 +1607,6 @@ impl SettingsWindow {
                 cx,
             ),
         );
-        recording.push(
-            self.render_outcome_panel(
-                "outcome-instant",
-                tr::settings::shortcuts::after_instant::title(),
-                tr::settings::shortcuts::after_instant::hint(),
-                &INSTANT_OUTCOMES
-                    .iter()
-                    .map(|(value, option)| {
-                        (*option, *value == self.settings.post_instant_behaviour())
-                    })
-                    .collect::<Vec<_>>(),
-                |this, index, cx| {
-                    if let Some((value, _)) = INSTANT_OUTCOMES.get(index) {
-                        let (disable_open, show_main) = value.store_values();
-                        this.settings.disable_auto_open_links = disable_open;
-                        this.settings.show_main_window_after_instant = Some(show_main);
-                        this.write_bool("disableAutoOpenLinks", disable_open, cx);
-                        this.write_bool(store::SHOW_MAIN_WINDOW_AFTER_INSTANT_KEY, show_main, cx);
-                    }
-                },
-                cx,
-            ),
-        );
-
         let cancel = vec![
             self.render_outcome_panel(
                 "outcome-cancel",
@@ -1756,13 +1647,6 @@ impl SettingsWindow {
         };
 
         let mut sections = vec![
-            self.section(
-                tr::settings::shortcuts::screenshots_title(),
-                Some(tr::settings::shortcuts::screenshots_description()),
-                None,
-                vec![card("shortcuts-screenshots", screenshots, cx)],
-            )
-            .into_any_element(),
             self.section(
                 tr::settings::shortcuts::recording_title(),
                 Some(tr::settings::shortcuts::recording_description()),
@@ -5618,12 +5502,10 @@ fn format_timestamp(value: &str) -> Option<String> {
 // Automations (automations.tsx)
 // ---------------------------------------------------------------------------
 
-const ALL_TRIGGERS: [Trigger; 7] = [
-    Trigger::ScreenshotTaken,
+/// Capwise records Studio only, takes no screenshots and uploads nothing.
+const ALL_TRIGGERS: [Trigger; 4] = [
     Trigger::StudioRecordingFinished,
-    Trigger::InstantRecordingFinished,
     Trigger::RecordingStarted,
-    Trigger::UploadCompleted,
     Trigger::VideoImported,
     Trigger::RecordingDeleted,
 ];
@@ -5648,14 +5530,12 @@ enum ActionType {
 }
 
 /// `ALL_ACTION_TYPES` order in automations.tsx.
-const ALL_ACTION_TYPES: [ActionType; 14] = [
+const ALL_ACTION_TYPES: [ActionType; 12] = [
     ActionType::CopyToClipboard,
     ActionType::SaveToLocation,
     ActionType::Export,
-    ActionType::Upload,
     ActionType::RevealInFileManager,
     ActionType::OpenFile,
-    ActionType::RecognizeTextToClipboard,
     ActionType::Notify,
     ActionType::OpenEditor,
     ActionType::SkipEditor,
@@ -6198,61 +6078,7 @@ fn template_rule(name: &str, trigger: Trigger, actions: Vec<Action>) -> Automati
     }
 }
 
-const TEMPLATES: [Template; 8] = [
-    Template {
-        id: "copy-screenshot",
-        name: tr::settings::automations::template::copy_screenshot::name,
-        description: tr::settings::automations::template::copy_screenshot::description,
-        icon: "icons/copy.svg",
-        build: || {
-            template_rule(
-                tr::settings::automations::template::copy_screenshot::name(),
-                Trigger::ScreenshotTaken,
-                vec![Action::CopyToClipboard {
-                    source: ClipboardSource::Raw,
-                }],
-            )
-        },
-    },
-    Template {
-        id: "ocr-screenshot",
-        name: tr::settings::automations::template::ocr_screenshot::name,
-        description: tr::settings::automations::template::ocr_screenshot::description,
-        icon: "icons/scan-text.svg",
-        build: || {
-            template_rule(
-                tr::settings::automations::template::ocr_screenshot::name(),
-                Trigger::ScreenshotTaken,
-                vec![Action::RecognizeTextToClipboard],
-            )
-        },
-    },
-    Template {
-        id: "save-screenshot",
-        name: tr::settings::automations::template::save_screenshot::name,
-        description: tr::settings::automations::template::save_screenshot::description,
-        icon: "icons/folder-down.svg",
-        build: || {
-            template_rule(
-                tr::settings::automations::template::save_screenshot::name(),
-                Trigger::ScreenshotTaken,
-                vec![default_action(ActionType::SaveToLocation)],
-            )
-        },
-    },
-    Template {
-        id: "reveal-screenshot",
-        name: tr::settings::automations::template::reveal_screenshot::name,
-        description: tr::settings::automations::template::reveal_screenshot::description,
-        icon: "icons/folder-open.svg",
-        build: || {
-            template_rule(
-                tr::settings::automations::template::reveal_screenshot::name(),
-                Trigger::ScreenshotTaken,
-                vec![Action::RevealInFileManager],
-            )
-        },
-    },
+const TEMPLATES: [Template; 2] = [
     Template {
         id: "export-studio",
         name: tr::settings::automations::template::export_studio::name,
@@ -6267,50 +6093,15 @@ const TEMPLATES: [Template; 8] = [
         },
     },
     Template {
-        id: "upload-share",
-        name: tr::settings::automations::template::upload_share::name,
-        description: tr::settings::automations::template::upload_share::description,
-        icon: "icons/link.svg",
+        id: "reveal-recording",
+        name: tr::settings::automations::template::reveal_recording::name,
+        description: tr::settings::automations::template::reveal_recording::description,
+        icon: "icons/folder-open.svg",
         build: || {
             template_rule(
-                tr::settings::automations::template::upload_share::name(),
+                tr::settings::automations::template::reveal_recording::name(),
                 Trigger::StudioRecordingFinished,
-                vec![default_action(ActionType::Upload)],
-            )
-        },
-    },
-    Template {
-        id: "notify-upload",
-        name: tr::settings::automations::template::notify_upload::name,
-        description: tr::settings::automations::template::notify_upload::description,
-        icon: "icons/bell.svg",
-        build: || {
-            template_rule(
-                tr::settings::automations::template::notify_upload::name(),
-                Trigger::UploadCompleted,
-                vec![Action::Notify {
-                    title_template: "Cap".to_string(),
-                    body_template: tr::settings::automations::template::notify_upload::body()
-                        .to_string(),
-                }],
-            )
-        },
-    },
-    Template {
-        id: "webhook-share",
-        name: tr::settings::automations::template::webhook_share::name,
-        description: tr::settings::automations::template::webhook_share::description,
-        icon: "icons/webhook.svg",
-        build: || {
-            template_rule(
-                tr::settings::automations::template::webhook_share::name(),
-                Trigger::InstantRecordingFinished,
-                vec![Action::Webhook {
-                    url: String::new(),
-                    method: "POST".to_string(),
-                    headers: HashMap::new(),
-                    body_template: Some(r#"{"text":"{share_link}"}"#.to_string()),
-                }],
+                vec![Action::RevealInFileManager],
             )
         },
     },
@@ -8254,7 +8045,7 @@ mod tests {
             .chain(WHILE_RECORDING_SHORTCUTS.iter())
             .copied()
             .collect();
-        assert_eq!(shown.len(), 14);
+        assert_eq!(shown.len(), 12);
         let settings = store::GeneralSettings::default();
         for action in &shown {
             assert_eq!(shown.iter().filter(|other| *other == action).count(), 1);
@@ -8308,28 +8099,9 @@ mod tests {
     #[test]
     fn every_after_capture_value_has_exactly_one_card() {
         use store::SettingsEnum as _;
-        for value in store::PostScreenshotBehaviour::ALL {
-            assert_eq!(
-                SCREENSHOT_OUTCOMES
-                    .iter()
-                    .filter(|(v, _)| v == value)
-                    .count(),
-                1
-            );
-        }
         for value in store::PostStudioBehaviour::ALL {
             assert_eq!(
                 STUDIO_OUTCOMES.iter().filter(|(v, _)| v == value).count(),
-                1
-            );
-        }
-        for value in [
-            store::PostInstantBehaviour::OpenLink,
-            store::PostInstantBehaviour::ShowCap,
-            store::PostInstantBehaviour::CopyLink,
-        ] {
-            assert_eq!(
-                INSTANT_OUTCOMES.iter().filter(|(v, _)| *v == value).count(),
                 1
             );
         }
@@ -8485,7 +8257,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(checked.len(), 31, "every effect message is reachable");
+        assert_eq!(checked.len(), 28, "every effect message is reachable");
         assert!(shortcut_effect("nope", &settings, Mode::Studio).is_none());
     }
 
@@ -8747,29 +8519,12 @@ mod tests {
     }
 
     #[test]
-    fn the_eight_templates_build_the_web_rules() {
-        assert_eq!(TEMPLATES.len(), 8);
+    fn the_templates_are_recording_rules() {
         let ids: Vec<&str> = TEMPLATES.iter().map(|template| template.id).collect();
-        assert_eq!(
-            ids,
-            [
-                "copy-screenshot",
-                "ocr-screenshot",
-                "save-screenshot",
-                "reveal-screenshot",
-                "export-studio",
-                "upload-share",
-                "notify-upload",
-                "webhook-share"
-            ]
-        );
-        let webhook = (TEMPLATES[7].build)();
-        assert_eq!(webhook.trigger, Trigger::InstantRecordingFinished);
-        assert!(matches!(
-            &webhook.actions[0],
-            Action::Webhook { body_template: Some(body), method, .. }
-                if body == r#"{"text":"{share_link}"}"# && method == "POST"
-        ));
+        assert_eq!(ids, ["export-studio", "reveal-recording"]);
+        for template in &TEMPLATES {
+            assert_eq!((template.build)().trigger, Trigger::StudioRecordingFinished);
+        }
         // Every template rule gets a fresh id and starts enabled.
         let a = (TEMPLATES[0].build)();
         let b = (TEMPLATES[0].build)();

@@ -229,7 +229,6 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "folder-open.svg",
     "folder-down.svg",
     "cloud-upload.svg",
-    "webhook.svg",
     "database.svg",
     "google-drive.svg",
 );

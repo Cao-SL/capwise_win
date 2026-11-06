@@ -1047,6 +1047,7 @@ pub enum PostInstantBehaviour {
 
 impl PostInstantBehaviour {
     /// `(disableAutoOpenLinks, showMainWindowAfterInstantRecording)`.
+    #[cfg(test)]
     pub fn store_values(self) -> (bool, bool) {
         match self {
             Self::OpenLink => (false, false),
@@ -1298,6 +1299,7 @@ pub fn set_recording_microphone_name(name: Option<&str>) -> bool {
 /// `#[serde(rename_all = "camelCase")]` -- one lowercase word per variant
 /// (`studio`, `instant`, `screenshot`). `None` when the key is absent, which
 /// `get_current_mode` turns into `RecordingMode::default()` (Instant).
+#[cfg(test)]
 pub fn recording_mode_slug() -> Option<String> {
     store_section(RECORDING_SETTINGS)
         .get("mode")
