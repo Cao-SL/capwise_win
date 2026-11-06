@@ -28,7 +28,9 @@ cargo_flags=()
 rm -rf "$STAGE"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources/onnxruntime/lib" "$STAGE/Contents/Frameworks"
 cp "$HERE/packaging/macos/Info.plist" "$STAGE/Contents/Info.plist"
-cp "$HERE/packaging/macos/icon.icns" "$STAGE/Contents/Resources/icon.icns"
+xcrun actool "$HERE/packaging/macos/AppIcon.icon" --compile "$STAGE/Contents/Resources" \
+  --platform macosx --minimum-deployment-target 13.0 --app-icon AppIcon --target-device mac \
+  --output-partial-info-plist "$HERE/target/icon-partial.plist" >/dev/null
 mkdir -p "$STAGE/Contents/Helpers/llama-server" "$STAGE/Contents/Resources/licenses"
 cp -a "$HERE/target/llama-server/llama-server" "$HERE"/target/llama-server/*.dylib "$STAGE/Contents/Helpers/llama-server/"
 cp "$HERE/target/llama-server/LICENSE" "$STAGE/Contents/Resources/licenses/llama.cpp-LICENSE.txt"

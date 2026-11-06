@@ -3239,7 +3239,7 @@ reward_title = "Buy me a coffee"
 link_blog = "Blog"
 link_picks = "Picks"
 reward_hint = "Scan with WeChat"
-privacy = "Recordings stay on this Mac. Capwise only goes online to download a transcription model, or when you choose Doubao to generate captions."
+privacy = "Recordings stay on this Mac. Capwise goes online only to download models or use cloud recognition."
 license = { text = "© {year} 向阳乔木 · AGPL-3.0 · Based on Cap", context = "{year} is the current year. Cap is the open-source project Capwise is built on; keep the name." }
 
 [brand]

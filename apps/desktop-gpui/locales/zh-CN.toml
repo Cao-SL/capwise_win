@@ -3237,7 +3237,7 @@ reward_title = "请我喝杯咖啡"
 link_blog = "博客"
 link_picks = "乔木推荐"
 reward_hint = "微信扫码赞赏"
-privacy = "录制内容只保存在这台 Mac 上。只有下载转写模型，或你选择用豆包生成字幕时，灵录才会联网。"
+privacy = "录制只保存在本机。仅在下载模型或使用云端识别时联网。"
 license = "© {year} 向阳乔木 · AGPL-3.0 · 基于 Cap 修改"
 
 [brand]

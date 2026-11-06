@@ -224,7 +224,7 @@ impl SettingsWindow {
             )
             .child(
                 div()
-                    .max_w(px(400.))
+                    .max_w(px(480.))
                     .text_center()
                     .text_size(px(11.))
                     .line_height(px(17.))

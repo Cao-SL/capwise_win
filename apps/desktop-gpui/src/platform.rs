@@ -2125,7 +2125,7 @@ mod mac {
         unsafe {
             let mut image: Option<Retained<AnyObject>> = None;
 
-            let cap_app = NSString::from_str("/Applications/Cap.app");
+            let cap_app = NSString::from_str("/Applications/Capwise.app");
             let exists: bool = {
                 let manager: *mut AnyObject = msg_send![class!(NSFileManager), defaultManager];
                 !manager.is_null() && msg_send![manager, fileExistsAtPath: &*cap_app]

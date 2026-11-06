@@ -384,9 +384,13 @@ fn main() {
     app.run(move |cx: &mut App| {
         gpui_tokio::init_from_handle(cx, runtime_handle);
         gpui_tokio::Tokio::spawn(cx, cap_utils::operation_diagnostics::run_checkpoints()).detach();
-        // The dock icon: an unbundled dev binary shows the generic terminal
-        // document without it. The bytes are the shipping app's icon.png.
-        platform::set_dock_icon(include_bytes!("../assets/dock-icon.png"));
+        // Only an unbundled dev binary needs this: inside Capwise.app the
+        // system draws the bundle's own Icon Composer icon.
+        let bundled = std::env::current_exe()
+            .is_ok_and(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS/"));
+        if !bundled {
+            platform::set_dock_icon(include_bytes!("../assets/dock-icon.png"));
+        }
 
         if let Err(error) = Assets.load_fonts(cx) {
             tracing::error!("failed to load embedded fonts: {error:#}");
