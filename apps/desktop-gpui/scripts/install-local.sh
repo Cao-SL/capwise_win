@@ -34,6 +34,8 @@ xcrun actool "$HERE/packaging/macos/AppIcon.icon" --compile "$STAGE/Contents/Res
 mkdir -p "$STAGE/Contents/Helpers/llama-server" "$STAGE/Contents/Resources/licenses"
 cp -a "$HERE/target/llama-server/llama-server" "$HERE"/target/llama-server/*.dylib "$STAGE/Contents/Helpers/llama-server/"
 cp "$HERE/target/llama-server/LICENSE" "$STAGE/Contents/Resources/licenses/llama.cpp-LICENSE.txt"
+mkdir -p "$STAGE/Contents/Resources/assets"
+cp -R "$HERE/assets/music" "$STAGE/Contents/Resources/assets/music"
 mkdir -p "$STAGE/Contents/Resources/fonts"
 cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
 cp "$HERE/target/$PROFILE/cap-gpui" "$STAGE/Contents/MacOS/Capwise"
