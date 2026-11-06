@@ -956,7 +956,7 @@ title = "出了点问题"
 [main.header]
 changelog = "更新日志"
 help = "帮助与导览"
-recordings = "录制"
+recordings = "最近录制"
 screenshots = "截图"
 settings = "设置"
 teleprompter = "提词器"

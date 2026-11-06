@@ -191,6 +191,7 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "message-circle.svg",
     "circle-info.svg",
     "sparkles.svg",
+    "history.svg",
     // The settings Recordings page. `link` is Cap's own
     // (`packages/ui-solid/icons/link.svg`, which is Lucide's glyph); `import`
     // and `edit` are the Lucide 24x24 originals `~icons/lucide/*` resolves to;

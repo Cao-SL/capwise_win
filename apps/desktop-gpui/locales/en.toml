@@ -958,7 +958,7 @@ title = "Something went wrong"
 [main.header]
 changelog = "Changelog"
 help = "Help & Tour"
-recordings = "Recordings"
+recordings = "Recent recordings"
 screenshots = "Screenshots"
 settings = "Settings"
 teleprompter = "Teleprompter"

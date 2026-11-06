@@ -3831,7 +3831,7 @@ impl MainWindow {
                     .gap(px(4.))
                     .flex_shrink_0()
                     .child(
-                        icon_button("recordings", "icons/play-circle.svg", 16.).on_click(
+                        icon_button("recordings", "icons/history.svg", 16.).on_click(
                             cx.listener(|this, _, window, cx| {
                                 this.open_panel(
                                     Panel::Library(LibraryKind::Recordings),

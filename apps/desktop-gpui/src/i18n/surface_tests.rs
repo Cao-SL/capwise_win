@@ -183,7 +183,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         (tr::main::header::help(), "Help & Tour"),
         (tr::main::header::settings(), "Settings"),
         (tr::main::header::screenshots(), "Screenshots"),
-        (tr::main::header::recordings(), "Recordings"),
+        (tr::main::header::recordings(), "Recent recordings"),
         (tr::main::header::teleprompter(), "Teleprompter"),
         (tr::main::header::changelog(), "Changelog"),
         (tr::main::plan::personal(), "Personal"),
