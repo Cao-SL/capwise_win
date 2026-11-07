@@ -102,6 +102,7 @@ mod picker_ui_benchmark;
 mod platform;
 mod power;
 mod presets;
+mod publish_plan;
 mod project_save;
 mod recording;
 mod recording_autocaptions;
