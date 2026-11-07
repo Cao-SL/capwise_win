@@ -3020,7 +3020,6 @@ set_default = "设为默认"
 [editor.window.preview]
 full = "全尺寸"
 half = "1/2"
-label = "预览"
 quarter = "1/4"
 
 [editor.window.text_menu]

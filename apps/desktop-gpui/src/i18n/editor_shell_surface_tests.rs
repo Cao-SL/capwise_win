@@ -1331,7 +1331,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::window::presets::set_default(), "Set as default"),
         (tr::editor::window::preview::full(), "Full"),
         (tr::editor::window::preview::half(), "Half"),
-        (tr::editor::window::preview::label(), "Preview"),
         (tr::editor::window::preview::quarter(), "Quarter"),
         (tr::editor::window::redo(), "Redo"),
         (tr::editor::window::text_menu::copy_style(), "Copy style"),

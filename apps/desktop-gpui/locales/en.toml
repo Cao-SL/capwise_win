@@ -3022,7 +3022,6 @@ set_default = "Set as default"
 [editor.window.preview]
 full = { text = "Full", context = "Preview quality option." }
 half = { text = "Half", context = "Preview quality option." }
-label = { text = "Preview", context = "Label in front of the preview quality picker." }
 quarter = { text = "Quarter", context = "Preview quality option." }
 
 [editor.window.text_menu]

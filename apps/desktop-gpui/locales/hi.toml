@@ -2999,7 +2999,6 @@ set_default = "डिफ़ॉल्ट बनाएँ"
 [editor.window.preview]
 full = "पूरा"
 half = "आधा"
-label = "प्रीव्यू"
 quarter = "एक-चौथाई"
 
 [editor.window.text_menu]

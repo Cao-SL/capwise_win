@@ -2999,7 +2999,6 @@ set_default = "Définir par défaut"
 [editor.window.preview]
 full = "Pleine"
 half = "Moitié"
-label = "Aperçu"
 quarter = "Quart"
 
 [editor.window.text_menu]
