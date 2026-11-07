@@ -1,0 +1,115 @@
+name: capwise-release
+
+# Builds, signs, notarizes and drafts a Capwise release on GitHub. The draft is
+# only published by hand, which is also what makes latest.json reach users.
+# Setup and secrets: apps/desktop-gpui/docs/release.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version already committed in apps/desktop-gpui/Cargo.toml, e.g. 0.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capwise-release
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      VERSION: ${{ inputs.version }}
+      CAPWISE_NOTARY_PROFILE: capwise-notary
+      CAPWISE_UPDATER_KEY_PASSWORD: ${{ secrets.CAPWISE_UPDATER_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the version
+        working-directory: apps/desktop-gpui
+        run: |
+          committed="$(sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [[ "$committed" != "$VERSION" ]]; then
+            echo "::error::Cargo.toml is at $committed; commit the bump to $VERSION first"
+            exit 1
+          fi
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::release v$VERSION already exists"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install tools and native dependencies
+        run: |
+          brew install minisign
+          bun install --frozen-lockfile
+          bun run cap-setup
+
+      - name: Import signing certificate and notary key
+        env:
+          CERT_P12: ${{ secrets.CAPWISE_DEVELOPER_ID_P12 }}
+          CERT_PASSWORD: ${{ secrets.CAPWISE_DEVELOPER_ID_P12_PASSWORD }}
+          API_KEY_P8: ${{ secrets.CAPWISE_NOTARY_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.CAPWISE_NOTARY_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.CAPWISE_NOTARY_API_ISSUER }}
+          UPDATER_KEY: ${{ secrets.CAPWISE_UPDATER_KEY }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          echo "$CERT_P12" | base64 --decode >"$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$keychain"
+
+          echo "$API_KEY_P8" | base64 --decode >"$RUNNER_TEMP/notary.p8"
+          xcrun notarytool store-credentials "$CAPWISE_NOTARY_PROFILE" \
+            --key "$RUNNER_TEMP/notary.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER"
+          rm "$RUNNER_TEMP/notary.p8"
+
+          updater_key="$RUNNER_TEMP/updater.key"
+          printf '%s\n' "$UPDATER_KEY" >"$updater_key"
+          chmod 600 "$updater_key"
+          echo "CAPWISE_UPDATER_KEY=$updater_key" >>"$GITHUB_ENV"
+
+      - name: Build, sign and notarize
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          if [[ -f "apps/desktop-gpui/release-notes/$VERSION.md" ]]; then
+            cp "apps/desktop-gpui/release-notes/$VERSION.md" "$notes"
+          else
+            echo "Capwise $VERSION" >"$notes"
+          fi
+          CAPWISE_RELEASE_NOTES="$notes" apps/desktop-gpui/scripts/release.sh "$VERSION"
+
+      - name: Draft the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dist="apps/desktop-gpui/dist/$VERSION"
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft \
+            --target "$GITHUB_SHA" --title "灵录 Capwise $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "$dist"/*.dmg "$dist"/*.app.tar.gz "$dist/latest.json" "$dist/SHA256SUMS.txt"
+
+      - name: Clean up secrets
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/updater.key"
+          security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
