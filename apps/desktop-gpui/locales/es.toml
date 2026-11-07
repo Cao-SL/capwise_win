@@ -3476,6 +3476,10 @@ link_picks = "Recomendaciones"
 reward_hint = "Escanea con WeChat"
 privacy = "Las grabaciones y el procesamiento con modelos locales permanecen en tu ordenador. Al activar el reconocimiento en la nube o el procesamiento con IA, el contenido pertinente se envía al servicio elegido. La búsqueda de recursos necesita conexión."
 license = "© {year} 向阳乔木 · AGPL-3.0 · Basado en Cap"
+advanced = "Mostrar ajustes avanzados"
+advanced_hint = "Añade la página CLI y más opciones de grabación en General."
+advanced_recording = "Más opciones de grabación"
+advanced_recording_hint = "Los valores predeterminados sirven para la mayoría de las grabaciones. Cámbialos solo si lo necesitas."
 
 [settings.ai]
 key_unverified = "Clave sin verificar"

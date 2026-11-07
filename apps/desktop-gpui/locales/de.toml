@@ -3476,6 +3476,10 @@ link_picks = "Empfehlungen"
 reward_hint = "Mit WeChat scannen"
 privacy = "Aufnahmen werden auf diesem Mac gespeichert, lokale Modelle laufen hier. Wenn du Cloud-Erkennung oder KI-Verarbeitung aktivierst, werden die jeweiligen Inhalte an den gewählten Dienst gesendet. Die Mediensuche benötigt Internet."
 license = "© {year} 向阳乔木 · AGPL-3.0 · Basierend auf Cap"
+advanced = "Erweiterte Einstellungen anzeigen"
+advanced_hint = "Zeigt die CLI-Seite und weitere Aufnahmeoptionen unter „Allgemein“."
+advanced_recording = "Weitere Aufnahmeoptionen"
+advanced_recording_hint = "Die Standardwerte passen für die meisten Aufnahmen. Ändere sie nur bei Bedarf."
 
 [settings.ai]
 key_unverified = "Schlüssel nicht geprüft"

@@ -106,8 +106,10 @@ pub enum Page {
 }
 
 impl Page {
-    /// Capwise's sidebar, in groups split at [`Self::GROUP_BREAKS`]. The
-    /// cloud, screenshot and Cap-account pages are left out.
+    /// Capwise's sidebar, in groups split at [`Self::starts_group`]. The
+    /// cloud, screenshot and Cap-account pages are left out, and so is
+    /// Automations: the app never ran its rules, and the rule engine stays
+    /// with the CLI.
     pub const ALL: &'static [Page] = &[
         Page::General,
         Page::Quality,
@@ -115,14 +117,40 @@ impl Page {
         Page::Recordings,
         Page::Transcription,
         Page::Assets,
-        Page::Automations,
         Page::Cli,
         Page::Experimental,
         Page::About,
     ];
 
-    /// Pages that start a new sidebar group.
-    const GROUP_BREAKS: &'static [Page] = &[Page::Recordings, Page::Experimental];
+    /// Whether the sidebar lists the page. CLI and Experimental wait for the
+    /// About page's advanced switch, and Experimental also for something to
+    /// show.
+    pub fn in_sidebar(self, advanced: bool) -> bool {
+        match self {
+            Self::Cli => advanced,
+            Self::Experimental => advanced && crate::settings_pages::experimental_has_items(),
+            _ => true,
+        }
+    }
+
+    /// The sidebar pages in order, given the advanced switch.
+    pub fn sidebar(advanced: bool) -> Vec<Page> {
+        Self::ALL
+            .iter()
+            .copied()
+            .filter(|page| page.in_sidebar(advanced))
+            .collect()
+    }
+
+    /// Pages that start a new sidebar group: Recordings, and whichever of the
+    /// trailing CLI / Experimental / About group comes first.
+    fn starts_group(self, visible: &[Page]) -> bool {
+        self == Page::Recordings
+            || visible
+                .iter()
+                .find(|page| matches!(page, Page::Cli | Page::Experimental | Page::About))
+                == Some(&self)
+    }
 
     /// The `name` field. Note "Shortcuts" for the `hotkeys` route -- the label
     /// and the route disagree in the shipping app.
@@ -2058,6 +2086,7 @@ impl SettingsWindow {
 
     fn render_nav(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
+        let visible = Page::sidebar(self.settings.show_advanced_settings);
 
         div()
             .id("settings-nav")
@@ -2072,10 +2101,10 @@ impl SettingsWindow {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .children(Page::ALL.iter().copied().map(|page| {
+            .children(visible.iter().copied().map(|page| {
                 let selected = page == self.page;
                 div()
-                    .when(Page::GROUP_BREAKS.contains(&page), |this| this.mt(px(14.)))
+                    .when(page.starts_group(&visible), |this| this.mt(px(14.)))
                     .id(SharedString::from(page.slug()))
                     .when(self.keyboard_nav, ui::keyboard_nav::stop)
                     .role(gpui::Role::Tab)
@@ -3222,18 +3251,26 @@ impl SettingsWindow {
 
     // -- The General page --------------------------------------------------
 
+    /// Appearance, language, countdown with what follows a recording, and
+    /// where recordings go. Everything else waits for the About page's
+    /// advanced switch.
     fn render_general(&self, window: &Window, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let mut sections = Vec::with_capacity(10);
         sections.push(self.render_appearance(cx).into_any_element());
         sections.push(self.render_language(cx).into_any_element());
         sections.extend([
-            self.render_app_section(cx).into_any_element(),
             self.render_recording(cx).into_any_element(),
-            self.render_workflow_presets(cx).into_any_element(),
             self.render_storage(cx).into_any_element(),
-            self.render_project_name(window, cx).into_any_element(),
-            self.render_excluded_windows(cx).into_any_element(),
         ]);
+        if self.settings.show_advanced_settings {
+            sections.extend([
+                self.render_recording_advanced(cx).into_any_element(),
+                self.render_app_section(cx).into_any_element(),
+                self.render_workflow_presets(cx).into_any_element(),
+                self.render_project_name(window, cx).into_any_element(),
+                self.render_excluded_windows(cx).into_any_element(),
+            ]);
+        }
         sections
     }
 
@@ -3869,9 +3906,8 @@ impl SettingsWindow {
         )
     }
 
-    /// The Recording card: thirteen rows, in TSX order.
+    /// Countdown, then what follows a stopped recording.
     fn render_recording(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
         let settings = &self.settings;
 
         let countdown_label = COUNTDOWN_OPTIONS
@@ -3879,12 +3915,6 @@ impl SettingsWindow {
             .find(|(value, _)| *value == settings.recording_countdown.unwrap_or(0))
             .map(|(_, label)| label().to_string())
             .unwrap_or_else(|| settings.recording_countdown.unwrap_or(0).to_string());
-        let fps_label = MAX_FPS_OPTIONS
-            .iter()
-            .find(|(value, _)| *value == settings.max_fps)
-            .map(|(_, label)| label().to_string())
-            .unwrap_or_else(|| settings.max_fps.to_string());
-        let zoom = settings.default_zoom_amount.unwrap_or(1.5);
 
         self.section(
             tr::settings::general::recording::title(),
@@ -3898,6 +3928,31 @@ impl SettingsWindow {
                         self.select("countdown", countdown_label, MenuKind::Countdown, cx)
                             .into_any_element(),
                     ),
+                    self.render_post_studio_panel(cx),
+                ])
+                .into_any_element(),
+            ],
+        )
+    }
+
+    /// The recording rows that keep a choice but no longer need one up front.
+    fn render_recording_advanced(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let settings = &self.settings;
+
+        let fps_label = MAX_FPS_OPTIONS
+            .iter()
+            .find(|(value, _)| *value == settings.max_fps)
+            .map(|(_, label)| label().to_string())
+            .unwrap_or_else(|| settings.max_fps.to_string());
+        let zoom = settings.default_zoom_amount.unwrap_or(1.5);
+
+        self.section(
+            tr::settings::about::advanced_recording(),
+            Some(tr::settings::about::advanced_recording_hint()),
+            None,
+            vec![
+                self.rows(vec![
                     self.setting_row(
                         tr::settings::general::recording::confirm_without_mic::label(),
                         Some(tr::settings::general::recording::confirm_without_mic::description()),
@@ -3962,11 +4017,6 @@ impl SettingsWindow {
                         )
                         .into_any_element(),
                     ),
-                    // "After a Studio recording" lives on the Shortcuts page,
-                    // next to the shortcuts it shapes. There is no
-                    // post-capture overlay in this app, so a stored
-                    // `showOverlay` means "reshow the main window"
-                    // (`app_windows.rs`) and is labelled "Show Cap".
                     self.setting_row(
                         tr::settings::general::recording::post_deletion::label(),
                         Some(tr::settings::general::recording::post_deletion::description()),
@@ -3975,40 +4025,6 @@ impl SettingsWindow {
                             settings.post_deletion_behaviour.label(),
                             MenuKind::PostDeletion,
                             cx,
-                        )
-                        .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::recording::crash_recovery::label(),
-                        Some(tr::settings::general::recording::crash_recovery::description()),
-                        self.toggle(
-                            "crash-recovery",
-                            tr::settings::general::recording::crash_recovery::label(),
-                            settings.crash_recovery_recording,
-                            cx,
-                            |this, cx| {
-                                this.settings.crash_recovery_recording =
-                                    !this.settings.crash_recovery_recording;
-                                let value = this.settings.crash_recovery_recording;
-                                this.write_bool("crashRecoveryRecording", value, cx);
-                            },
-                        )
-                        .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::recording::custom_cursor::label(),
-                        Some(tr::settings::general::recording::custom_cursor::description()),
-                        self.toggle(
-                            "custom-cursor",
-                            tr::settings::general::recording::custom_cursor::label(),
-                            settings.custom_cursor_capture,
-                            cx,
-                            |this, cx| {
-                                this.settings.custom_cursor_capture =
-                                    !this.settings.custom_cursor_capture;
-                                let value = this.settings.custom_cursor_capture;
-                                this.write_bool("custom_cursor_capture2", value, cx);
-                            },
                         )
                         .into_any_element(),
                     ),
@@ -4025,23 +4041,6 @@ impl SettingsWindow {
                                     !this.settings.auto_captions_after_recording;
                                 let value = this.settings.auto_captions_after_recording;
                                 this.write_bool("autoCaptionsAfterRecording", value, cx);
-                            },
-                        )
-                        .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::recording::auto_zoom::label(),
-                        Some(tr::settings::general::recording::auto_zoom::description()),
-                        self.toggle(
-                            "auto-zoom",
-                            tr::settings::general::recording::auto_zoom::label(),
-                            settings.auto_zoom_on_clicks,
-                            cx,
-                            |this, cx| {
-                                this.settings.auto_zoom_on_clicks =
-                                    !this.settings.auto_zoom_on_clicks;
-                                let value = this.settings.auto_zoom_on_clicks;
-                                this.write_bool("autoZoomOnClicks", value, cx);
                             },
                         )
                         .into_any_element(),
@@ -4066,23 +4065,6 @@ impl SettingsWindow {
                                     .child(format!("{zoom:.1}x")),
                             )
                             .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::recording::capture_keyboard::label(),
-                        Some(tr::settings::general::recording::capture_keyboard::description()),
-                        self.toggle(
-                            "capture-keyboard",
-                            tr::settings::general::recording::capture_keyboard::label(),
-                            settings.capture_keyboard_events,
-                            cx,
-                            |this, cx| {
-                                this.settings.capture_keyboard_events =
-                                    !this.settings.capture_keyboard_events;
-                                let value = this.settings.capture_keyboard_events;
-                                this.write_bool("captureKeyboardEvents", value, cx);
-                            },
-                        )
-                        .into_any_element(),
                     ),
                     self.setting_row(
                         tr::settings::general::recording::marker_sound::label(),
@@ -4132,6 +4114,81 @@ impl SettingsWindow {
                 .into_any_element(),
             ],
         )
+    }
+
+    /// Switches Capwise pinned on in `GeneralSettings::load`. No page renders
+    /// them; they stay so merges from Cap's General page keep applying.
+    #[allow(dead_code)]
+    fn render_pinned_recording_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let settings = &self.settings;
+        vec![
+            self.setting_row(
+                tr::settings::general::recording::crash_recovery::label(),
+                Some(tr::settings::general::recording::crash_recovery::description()),
+                self.toggle(
+                    "crash-recovery",
+                    tr::settings::general::recording::crash_recovery::label(),
+                    settings.crash_recovery_recording,
+                    cx,
+                    |this, cx| {
+                        this.settings.crash_recovery_recording =
+                            !this.settings.crash_recovery_recording;
+                        let value = this.settings.crash_recovery_recording;
+                        this.write_bool("crashRecoveryRecording", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                tr::settings::general::recording::custom_cursor::label(),
+                Some(tr::settings::general::recording::custom_cursor::description()),
+                self.toggle(
+                    "custom-cursor",
+                    tr::settings::general::recording::custom_cursor::label(),
+                    settings.custom_cursor_capture,
+                    cx,
+                    |this, cx| {
+                        this.settings.custom_cursor_capture = !this.settings.custom_cursor_capture;
+                        let value = this.settings.custom_cursor_capture;
+                        this.write_bool("custom_cursor_capture2", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                tr::settings::general::recording::auto_zoom::label(),
+                Some(tr::settings::general::recording::auto_zoom::description()),
+                self.toggle(
+                    "auto-zoom",
+                    tr::settings::general::recording::auto_zoom::label(),
+                    settings.auto_zoom_on_clicks,
+                    cx,
+                    |this, cx| {
+                        this.settings.auto_zoom_on_clicks = !this.settings.auto_zoom_on_clicks;
+                        let value = this.settings.auto_zoom_on_clicks;
+                        this.write_bool("autoZoomOnClicks", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                tr::settings::general::recording::capture_keyboard::label(),
+                Some(tr::settings::general::recording::capture_keyboard::description()),
+                self.toggle(
+                    "capture-keyboard",
+                    tr::settings::general::recording::capture_keyboard::label(),
+                    settings.capture_keyboard_events,
+                    cx,
+                    |this, cx| {
+                        this.settings.capture_keyboard_events =
+                            !this.settings.capture_keyboard_events;
+                        let value = this.settings.capture_keyboard_events;
+                        this.write_bool("captureKeyboardEvents", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+        ]
     }
 
     /// `StorageSection` -- `recordingsPath`.
@@ -5261,11 +5318,12 @@ mod tests {
     /// addresses by slug.
     #[test]
     fn every_page_round_trips_through_its_slug() {
-        assert_eq!(Page::ALL.len(), 10);
+        assert_eq!(Page::ALL.len(), 9);
         for page in Page::ALL {
             assert_eq!(Page::from_slug(page.slug()), Some(*page));
         }
         for removed in [
+            "automations",
             "license",
             "integrations",
             "screenshots",
@@ -5276,6 +5334,25 @@ mod tests {
         }
         assert_eq!(Page::Shortcuts.slug(), "hotkeys");
         assert_eq!(Page::from_slug("nope"), None);
+    }
+
+    #[test]
+    fn advanced_pages_wait_for_the_about_switch() {
+        let basic = Page::sidebar(false);
+        assert!(!basic.contains(&Page::Cli));
+        assert!(!basic.contains(&Page::Experimental));
+        assert!(!basic.contains(&Page::Automations));
+        assert!(Page::About.starts_group(&basic));
+        assert!(Page::Recordings.starts_group(&basic));
+
+        let advanced = Page::sidebar(true);
+        assert!(advanced.contains(&Page::Cli));
+        assert_eq!(
+            advanced.contains(&Page::Experimental),
+            crate::settings_pages::experimental_has_items()
+        );
+        assert!(Page::Cli.starts_group(&advanced));
+        assert!(!Page::About.starts_group(&advanced));
     }
 
     #[test]

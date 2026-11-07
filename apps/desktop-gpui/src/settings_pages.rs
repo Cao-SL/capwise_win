@@ -1589,30 +1589,7 @@ impl SettingsWindow {
                 .collect::<Vec<_>>()
         };
 
-        let mut recording = rows_for(&RECORDING_SHORTCUTS, cx);
-        recording.push(
-            self.render_outcome_panel(
-                "outcome-studio",
-                tr::settings::shortcuts::after_studio::title(),
-                tr::settings::shortcuts::after_studio::hint(),
-                &STUDIO_OUTCOMES
-                    .iter()
-                    .map(|(value, option)| {
-                        (
-                            *option,
-                            *value == self.settings.post_studio_recording_behaviour,
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-                |this, index, cx| {
-                    if let Some((value, _)) = STUDIO_OUTCOMES.get(index) {
-                        this.settings.post_studio_recording_behaviour = *value;
-                        this.write_enum("postStudioRecordingBehaviour", *value, cx);
-                    }
-                },
-                cx,
-            ),
-        );
+        let recording = rows_for(&RECORDING_SHORTCUTS, cx);
         let cancel = vec![
             self.render_outcome_panel(
                 "outcome-cancel",
@@ -1684,6 +1661,33 @@ impl SettingsWindow {
             .into_any_element(),
         );
         sections
+    }
+
+    /// "After a Studio recording", shown on the General page under the
+    /// countdown: it applies however the recording was started, not only from
+    /// a shortcut.
+    pub(crate) fn render_post_studio_panel(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        self.render_outcome_panel(
+            "outcome-studio",
+            tr::settings::shortcuts::after_studio::title(),
+            tr::settings::shortcuts::after_studio::hint(),
+            &STUDIO_OUTCOMES
+                .iter()
+                .map(|(value, option)| {
+                    (
+                        *option,
+                        *value == self.settings.post_studio_recording_behaviour,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            |this, index, cx| {
+                if let Some((value, _)) = STUDIO_OUTCOMES.get(index) {
+                    this.settings.post_studio_recording_behaviour = *value;
+                    this.write_enum("postStudioRecordingBehaviour", *value, cx);
+                }
+            },
+            cx,
+        )
     }
 
     fn render_outcome_panel(
@@ -2657,12 +2661,24 @@ impl SettingsWindow {
 // Experimental (experimental.tsx)
 // ---------------------------------------------------------------------------
 
+/// The page's only switch, the out-of-process muxer, runs the `cap-muxer`
+/// binary, which Capwise builds do not bundle; without it the switch would
+/// do nothing, so the page has nothing to show and leaves the sidebar.
+pub(crate) fn experimental_has_items() -> bool {
+    static MUXER_BUNDLED: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| cap_recording::oop_muxer::resolve_muxer_binary().is_ok());
+    *MUXER_BUNDLED
+}
+
 impl SettingsWindow {
     pub(crate) fn render_experimental(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         // No "Native camera preview" toggle here: the native camera path is
         // the only implementation, so the 0.6.0 page's experimental switch has
         // nothing to switch. The store key (`enableNativeCameraPreview`) stays
         // readable in `store.rs` and is left untouched in the store.
+        if !experimental_has_items() {
+            return Vec::new();
+        }
         vec![
             self.section(
                 tr::settings::experimental::reliability(),
