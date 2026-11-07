@@ -1,0 +1,298 @@
+{
+  "meta": {
+    "date": "2026-11-08T02:01:03",
+    "app": "/Applications/Capwise.app",
+    "app_version": "0.1.0",
+    "app_binary_mtime": "2026-11-08T01:59:07",
+    "machine": "arm64",
+    "chip": "Apple M5 Pro",
+    "macos": "27.0.1",
+    "git": "c0be3cc43",
+    "stages": [
+      "startup",
+      "record",
+      "timeline",
+      "playback",
+      "scrub",
+      "export"
+    ],
+    "fixture": {
+      "duration": 38.745667,
+      "width": 3024,
+      "height": 1964,
+      "fps": 29.84,
+      "codec": "h264"
+    }
+  },
+  "startup.launch_to_window_ms": 1255.7,
+  "startup.launch_to_window_first_ms": 1255.7,
+  "startup.launch_to_devices_ms": 3509.2,
+  "startup.idle_footprint_mb": 263.9,
+  "startup.idle_rss_mb": 193.3,
+  "startup.idle_cpu_pct": 3.0,
+  "raw.startup": {
+    "window_ms": [
+      1255.7,
+      1307.7,
+      829.0,
+      1503.2,
+      624.8
+    ],
+    "devices_ms": [
+      3271.3,
+      3252.5,
+      3773.0,
+      3509.2,
+      3631.9
+    ],
+    "footprint_mb": [
+      196.98577117919922,
+      199.73577117919922,
+      357.3607711791992,
+      283.5639190673828,
+      263.8607482910156
+    ],
+    "rss_mb": [
+      238.484375,
+      193.296875,
+      223.828125,
+      164.65625,
+      149.90625
+    ],
+    "cpu_pct": [
+      2.983120347213647,
+      3.5912731708498145,
+      6.38963838471473,
+      2.5947182689579207,
+      0.0
+    ],
+    "phases_since_spawn_ms": [
+      {
+        "first_log_line": 140.4
+      },
+      {
+        "first_log_line": 48.5
+      },
+      {
+        "first_log_line": 45.4
+      },
+      {
+        "first_log_line": 38.6
+      },
+      {
+        "first_log_line": 50.2
+      }
+    ]
+  },
+  "record.start_to_pipeline_ms": 652.1,
+  "record.start_to_gate_armed_ms": 1329.0,
+  "record.start_to_first_frame_ms": 1345.4,
+  "record.stop_to_editor_window_ms": 179.1,
+  "record.stop_to_finished_ms": null,
+  "record.stop_to_editor_frame_ms": 434.5,
+  "record.cpu_pct": 4.5,
+  "record.rss_mb": 248.4,
+  "record.footprint_mb": 339.5,
+  "raw.record": [
+    {
+      "seconds": 40,
+      "start_to_pipeline_ms": 666.6,
+      "start_to_gate_armed_ms": 1345.6,
+      "start_to_first_frame_ms": 1365.4,
+      "start_to_session_started_ms": 1346.2,
+      "stop_to_editor_window_ms": 179.1,
+      "stop_to_finished_ms": null,
+      "stop_to_editor_frame_ms": 434.5,
+      "cpu_pct": 4.5,
+      "rss_mb": 248.4,
+      "footprint_mb": 339.5
+    },
+    {
+      "seconds": 6,
+      "start_to_pipeline_ms": 467.8,
+      "start_to_gate_armed_ms": 1143.0,
+      "start_to_first_frame_ms": 1158.0,
+      "start_to_session_started_ms": 1143.2,
+      "stop_to_editor_window_ms": 187.7,
+      "stop_to_finished_ms": null,
+      "stop_to_editor_frame_ms": 610.5,
+      "cpu_pct": 7.4,
+      "rss_mb": 198.3,
+      "footprint_mb": 373.8
+    },
+    {
+      "seconds": 6,
+      "start_to_pipeline_ms": 652.1,
+      "start_to_gate_armed_ms": 1329.0,
+      "start_to_first_frame_ms": 1345.4,
+      "start_to_session_started_ms": 1329.2,
+      "stop_to_editor_window_ms": 162.5,
+      "stop_to_finished_ms": null,
+      "stop_to_editor_frame_ms": 413.5,
+      "cpu_pct": 5.8,
+      "rss_mb": 401.0,
+      "footprint_mb": 371.0
+    }
+  ],
+  "timeline.hover_p95_ms": 2.5,
+  "timeline.follow_p95_ms": 1.5,
+  "timeline.tick_p95_ms": 1.46,
+  "raw.timeline": {
+    "tick": {
+      "mean_ms": 1.2174,
+      "p50_ms": 1.1975,
+      "p95_ms": 1.4607,
+      "p99_ms": null,
+      "max_ms": 2.6869
+    },
+    "tick-zoomed-out": {
+      "mean_ms": 1.1458,
+      "p50_ms": 1.1522000000000001,
+      "p95_ms": 1.2634,
+      "p99_ms": null,
+      "max_ms": 2.4027
+    },
+    "hover": {
+      "mean_ms": 1.369,
+      "p50_ms": 1.238,
+      "p95_ms": 2.4995,
+      "p99_ms": null,
+      "max_ms": 3.5255
+    },
+    "follow": {
+      "mean_ms": 1.2892000000000001,
+      "p50_ms": 1.269,
+      "p95_ms": 1.5037,
+      "p99_ms": null,
+      "max_ms": 1.6137000000000001
+    },
+    "clean": {
+      "mean_ms": 0.4878,
+      "p50_ms": 0.48119999999999996,
+      "p95_ms": 0.545,
+      "p99_ms": null,
+      "max_ms": 0.6242000000000001
+    },
+    "caption-download": {
+      "mean_ms": 1.2903,
+      "p50_ms": 1.2663,
+      "p95_ms": 1.4526,
+      "p99_ms": null,
+      "max_ms": 1.9372
+    },
+    "caption-download-full-notify": {
+      "mean_ms": 2.257,
+      "p50_ms": 2.2355,
+      "p95_ms": 2.5086999999999997,
+      "p99_ms": null,
+      "max_ms": 2.9815
+    },
+    "tick-fields": {
+      "mean_ms": 1.1822000000000001,
+      "p50_ms": 1.1712,
+      "p95_ms": 1.3375,
+      "p99_ms": null,
+      "max_ms": 1.6388
+    },
+    "sync-fields": {
+      "mean_ms": 0.1255,
+      "p50_ms": 0.1211,
+      "p95_ms": 0.1425,
+      "p99_ms": null,
+      "max_ms": 0.2454
+    },
+    "sync-visible-fields": {
+      "mean_ms": 0.0007,
+      "p50_ms": 0.0008,
+      "p95_ms": 0.0008,
+      "p99_ms": null,
+      "max_ms": 0.0008
+    }
+  },
+  "playback.frame_p50_ms": 16.67,
+  "playback.frame_p99_ms": 17.64,
+  "playback.frame_max_ms": 21.21,
+  "raw.playback": {
+    "frame_stats": "cap_gpui::editor_window: frame stats frames=361 p50_ms=\"16.67\" p99_ms=\"17.64\" max_ms=\"21.21\" refining=false",
+    "engine_report": [
+      "cap_editor::playback: Playback stats effective_fps=\"60.1\" total_rendered=121 total_skipped=0 starved=0 cache_hits=0 prefetch_hits=120 sync_decodes=0 prefetch_buffer=13 prefetch_limit=14",
+      "cap_editor::playback: Playback stats effective_fps=\"59.9\" total_rendered=241 total_skipped=0 starved=0 cache_hits=0 prefetch_hits=240 sync_decodes=0 prefetch_buffer=13 prefetch_limit=14",
+      "cap_editor::playback: Playback stats effective_fps=\"60.1\" total_rendered=362 total_skipped=0 starved=0 cache_hits=0 prefetch_hits=361 sync_decodes=0 prefetch_buffer=13 prefetch_limit=14"
+    ]
+  },
+  "scrub.drag_p50_ms": 2.93,
+  "scrub.drag_p95_ms": 8.28,
+  "scrub.seek_ms_max": 564.8,
+  "raw.scrub": {
+    "project": "/var/folders/7d/bj4df1t51zx3t8458lyn72400000gn/T/capwise-bench-8o6i2umu/scrub/rec/fixture.cap",
+    "durationSecs": 30.9965336,
+    "steps": 30,
+    "stepFrames": 2,
+    "regions": [
+      {
+        "atSecs": 0.6166666666666667,
+        "seekMs": 564.802,
+        "dragMedianMs": 3.717125,
+        "dragP95Ms": 14.736459
+      },
+      {
+        "atSecs": 5.25,
+        "seekMs": 111.13229199999999,
+        "dragMedianMs": 2.056,
+        "dragP95Ms": 5.6885829999999995
+      },
+      {
+        "atSecs": 15.483333333333333,
+        "seekMs": 125.59995800000002,
+        "dragMedianMs": 3.3937500000000003,
+        "dragP95Ms": 9.0025
+      },
+      {
+        "atSecs": 25.7,
+        "seekMs": 64.13508399999999,
+        "dragMedianMs": 3.6379580000000002,
+        "dragP95Ms": 9.011750000000001
+      },
+      {
+        "atSecs": 29.966666666666665,
+        "seekMs": 40.931166999999995,
+        "dragMedianMs": 2.626583,
+        "dragP95Ms": 6.6245840000000005
+      }
+    ],
+    "dragMedianMs": 2.9318750000000002,
+    "dragP95Ms": 8.280167,
+    "dragCpuSecs": 0.24881899999999996
+  },
+  "export.app_secs": 1.94,
+  "export.app_speed_x": 15.95,
+  "raw.export_app": {
+    "duration": 31.0,
+    "width": 1108,
+    "height": 720,
+    "fps": 30.0,
+    "codec": "h264",
+    "encoder_lines": [
+      "cap_enc_ffmpeg::video::h264: Selected hardware H264 encoder with zero-copy VideoToolbox input width=1108 height=720 fps=30.0",
+      "cap_export::mp4: Created MP4File encoder (NV12, export settings) zero_copy_input=true hardware_video=true"
+    ]
+  },
+  "export.cli_720p30_secs": 2.35,
+  "export.cli_720p30_speed_x": 13.21,
+  "raw.export_cli_720p30": {
+    "duration": 31.0,
+    "width": 1108,
+    "height": 720,
+    "fps": 30.0,
+    "codec": "h264"
+  },
+  "export.cli_1080p60_secs": 6.58,
+  "export.cli_1080p60_speed_x": 4.71,
+  "raw.export_cli_1080p60": {
+    "duration": 31.0,
+    "width": 1664,
+    "height": 1080,
+    "fps": 60.0,
+    "codec": "h264"
+  }
+}
