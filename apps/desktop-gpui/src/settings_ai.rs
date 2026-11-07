@@ -196,6 +196,10 @@ impl AiState {
 }
 
 const READY: u32 = 0x22c55e;
+
+/// Parakeet models the picker no longer offers; a copy left on disk is
+/// listed only so its space can be taken back.
+const RETIRED_MODELS: [&str; 2] = ["best", "best-max"];
 const ERROR: u32 = 0xef4444;
 
 fn tint(color: u32) -> Hsla {
@@ -901,6 +905,24 @@ impl SettingsWindow {
                 }
             }
         }));
+        cx.notify();
+    }
+
+    /// One after another: the hub deletes a single model at a time.
+    fn ai_delete_models(&mut self, models: Vec<&'static str>, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            for model in models {
+                cx.background_executor()
+                    .spawn(async move {
+                        if transcription::begin_delete(model) {
+                            transcription::run_model_delete(model);
+                        }
+                    })
+                    .await;
+                let _ = this.update(cx, |_, cx| cx.notify());
+            }
+        })
+        .detach();
         cx.notify();
     }
 
@@ -1639,7 +1661,7 @@ impl SettingsWindow {
         let snapshot = transcription::ui_snapshot(Path::new(""));
         let sizes = transcription::downloaded_model_bytes();
         let selected = selected_recognizer();
-        let rows = editor_tabs::local_caption_models()
+        let mut rows: Vec<gpui::AnyElement> = editor_tabs::local_caption_models()
             .into_iter()
             .map(|model| {
                 let name = model.name;
@@ -1716,6 +1738,32 @@ impl SettingsWindow {
                 .into_any_element()
             })
             .collect();
+        let retired: Vec<&'static str> = RETIRED_MODELS
+            .into_iter()
+            .filter(|name| snapshot.downloaded.contains(*name))
+            .collect();
+        if !retired.is_empty() {
+            let bytes: u64 = retired.iter().filter_map(|name| sizes.get(*name)).sum();
+            let deleting = snapshot.deleting.is_some();
+            rows.push(
+                self.ai_row(
+                    "P".to_string(),
+                    tr::settings::ai::retired_name().into(),
+                    Vec::new(),
+                    tr::settings::ai::retired_note(format_bytes(bytes)).into(),
+                    self.button(
+                        "ai-delete-retired",
+                        (ui::ButtonVariant::Gray, None),
+                        tr::settings::ai::delete(),
+                        deleting,
+                        cx,
+                        move |this, _window, cx| this.ai_delete_models(retired.clone(), cx),
+                    )
+                    .into_any_element(),
+                )
+                .into_any_element(),
+            );
+        }
         let failure = snapshot
             .download
             .as_ref()
