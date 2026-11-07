@@ -1,7 +1,7 @@
 //! Qwen3-ASR 0.6B on this Mac: the GGUF model, downloaded on demand, run by
 //! the bundled llama.cpp `llama-server`, which hears audio through its
 //! OpenAI-style chat endpoint. The server is started for one transcription
-//! and stopped when it finishes.
+//! and stopped when it finishes, so the model holds no memory between runs.
 
 use std::{
     io::Write as _,
@@ -172,9 +172,52 @@ struct Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        stop_group(&mut self.child);
     }
+}
+
+/// `Drop` never runs when Capwise crashes or is force-quit, and macOS has no
+/// parent-death signal, so `llama-server` runs under a shell that kills it
+/// within a second of Capwise going away. Without this an orphaned server
+/// kept about 1 GB of model in memory until the next transcription.
+#[cfg(unix)]
+const WATCHDOG: &str = r#"parent=$1; shift; "$@" & server=$!; while kill -0 "$parent" 2>/dev/null && kill -0 "$server" 2>/dev/null; do sleep 1; done; kill "$server" 2>/dev/null; wait "$server""#;
+
+#[cfg(unix)]
+fn watched_command(parent: u32, program: &std::path::Path) -> Command {
+    use std::os::unix::process::CommandExt as _;
+    let mut command = Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg(WATCHDOG)
+        .arg("capwise-llama-watchdog")
+        .arg(parent.to_string())
+        .arg(program)
+        .process_group(0);
+    command
+}
+
+#[cfg(not(unix))]
+fn watched_command(_parent: u32, program: &std::path::Path) -> Command {
+    Command::new(program)
+}
+
+#[cfg(unix)]
+fn stop_group(child: &mut Child) {
+    if let Ok(group) = libc::pid_t::try_from(child.id()) {
+        // SAFETY: `killpg` only sends a signal; the group is the watchdog's own.
+        unsafe {
+            libc::killpg(group, libc::SIGTERM);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(not(unix))]
+fn stop_group(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn free_port() -> Result<u16, String> {
@@ -189,7 +232,7 @@ fn start_server() -> Result<Server, String> {
         server_binary().ok_or_else(|| tr::transcription::qwen_missing_server().to_string())?;
     let port = free_port()?;
     let dir = dir();
-    let child = Command::new(&binary)
+    let child = watched_command(std::process::id(), &binary)
         .arg("-m")
         .arg(dir.join(FILES[0].name))
         .arg("--mmproj")
@@ -260,6 +303,67 @@ pub fn transcribe(samples: &[f32], hints: &[String]) -> Result<Vec<CaptionSegmen
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn alive(pid: u32) -> bool {
+        // SAFETY: signal 0 only checks that the process exists.
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    #[cfg(unix)]
+    fn grandchild(watchdog: &Child) -> u32 {
+        let started = Instant::now();
+        loop {
+            let output = Command::new("/usr/bin/pgrep")
+                .args(["-P", &watchdog.id().to_string(), "sleep"])
+                .output()
+                .unwrap();
+            if let Some(pid) = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .and_then(|line| line.trim().parse().ok())
+            {
+                return pid;
+            }
+            assert!(started.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stopping_the_server_kills_the_process_it_runs() {
+        let mut watchdog = watched_command(std::process::id(), std::path::Path::new("/bin/sleep"))
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let server = grandchild(&watchdog);
+        stop_group(&mut watchdog);
+        let started = Instant::now();
+        while alive(server) && started.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!alive(server));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_server_exits_when_capwise_goes_away_without_dropping_it() {
+        let mut parent = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let mut watchdog = watched_command(parent.id(), std::path::Path::new("/bin/sleep"))
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let server = grandchild(&watchdog);
+        parent.kill().unwrap();
+        parent.wait().unwrap();
+        let started = Instant::now();
+        while alive(server) && started.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(!alive(server));
+        watchdog.wait().unwrap();
+    }
 
     /// Needs the downloaded model and `CAPWISE_LLAMA_SERVER` (or an installed
     /// app), plus `CAPWISE_QWEN_TEST_WAV`: a 16 kHz mono WAV of Chinese speech.
