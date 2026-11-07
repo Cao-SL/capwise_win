@@ -20,6 +20,9 @@ pub(crate) fn report(prefix: &str, label: &str, samples: &mut [f64]) {
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
     let p50 = samples[samples.len() / 2];
     let p95 = samples[(samples.len() as f64 * 0.95) as usize];
+    let p99 = samples[(samples.len() as f64 * 0.99) as usize];
     let max = samples[samples.len() - 1];
-    println!("{prefix}: {label} {mean:.1} mean / {p50:.1} p50 / {p95:.1} p95 / {max:.1} max us");
+    println!(
+        "{prefix}: {label} {mean:.1} mean / {p50:.1} p50 / {p95:.1} p95 / {p99:.1} p99 / {max:.1} max us"
+    );
 }

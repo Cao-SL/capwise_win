@@ -85,6 +85,7 @@ mod onboarding_audio;
 mod onboarding_doodles;
 mod onboarding_window;
 mod overlay_backdrop;
+mod perf_marks;
 mod permission_guide;
 mod permissions;
 mod permissions_ui;
@@ -318,6 +319,7 @@ fn app_runtime() -> tokio::runtime::Runtime {
 }
 
 fn main() {
+    perf_marks::start();
     #[cfg(target_os = "linux")]
     if let Some(threads) = cap_utils::linux_runtime::llvmpipe_thread_count() {
         // Mesa counts host CPUs inside containers; apply the process limit before logging starts threads.
@@ -362,6 +364,7 @@ fn main() {
     }
 
     let _log_guard = init_logging();
+    perf_marks::mark("logging_ready");
     crash_capture::install(&diagnostics::logs_dir());
     #[cfg(target_os = "linux")]
     if let Some(wayland_display) = stale_wayland_display {
@@ -403,7 +406,9 @@ fn main() {
     });
     let runtime_handle = runtime.handle().clone();
 
+    perf_marks::mark("before_app_run");
     app.run(move |cx: &mut App| {
+        perf_marks::mark("app_launched");
         gpui_tokio::init_from_handle(cx, runtime_handle);
         gpui_tokio::Tokio::spawn(cx, cap_utils::operation_diagnostics::run_checkpoints()).detach();
         // Only an unbundled dev binary needs this: inside Capwise.app the
