@@ -3475,6 +3475,10 @@ link_picks = "Sélection"
 reward_hint = "Scannez avec WeChat"
 privacy = "Les enregistrements et le traitement par les modèles locaux restent sur votre ordinateur. En activant la reconnaissance dans le cloud ou le traitement par IA, vous envoyez le contenu concerné au service choisi. La recherche de médias nécessite une connexion."
 license = "© {year} 向阳乔木 · AGPL-3.0 · Basé sur Cap"
+advanced = "Afficher les réglages avancés"
+advanced_hint = "Ajoute la page CLI et d’autres options d’enregistrement dans Général."
+advanced_recording = "Plus d’options d’enregistrement"
+advanced_recording_hint = "Les valeurs par défaut conviennent à la plupart des enregistrements. Ne les modifiez qu’en cas de besoin."
 
 [settings.ai]
 key_unverified = "Clé non vérifiée"

@@ -3229,6 +3229,10 @@ link_picks = "乔木推荐"
 reward_hint = "微信扫码赞赏"
 privacy = "录制文件保存在本机，本地模型也在本机运行。启用云识别或 AI 处理时，相关内容会发送至所选服务；素材搜索需要联网。"
 license = "© {year} 向阳乔木 · AGPL-3.0 · 基于 Cap 修改"
+advanced = "显示高级设置"
+advanced_hint = "在侧边栏显示 CLI 页，并在“通用”中显示更多录制选项。"
+advanced_recording = "更多录制选项"
+advanced_recording_hint = "这些默认值适合大多数录制，需要时再调整。"
 
 [brand]
 name = "灵录"

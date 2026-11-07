@@ -3231,6 +3231,10 @@ link_picks = "Picks"
 reward_hint = "Scan with WeChat"
 privacy = "Recordings are saved on this Mac, and local models run here. When enabled, cloud recognition or AI processing sends the relevant content to your selected service. Stock media search uses the internet."
 license = { text = "© {year} 向阳乔木 · AGPL-3.0 · Based on Cap", context = "{year} is the current year. Cap is the open-source project Capwise is built on; keep the name." }
+advanced = "Show advanced settings"
+advanced_hint = "Adds the CLI page and more recording options to General."
+advanced_recording = "More recording options"
+advanced_recording_hint = "Defaults that suit most recordings. Change them only if you need to."
 
 [brand]
 name = "Capwise"

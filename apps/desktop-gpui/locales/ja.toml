@@ -3475,6 +3475,10 @@ link_picks = "おすすめ"
 reward_hint = "WeChatでスキャン"
 privacy = "録画はこのMacに保存され、ローカルモデルもこのMacで動作します。クラウド認識やAI処理を有効にすると、関連する内容が選択したサービスに送信されます。素材の検索にはインターネットを使用します。"
 license = "© {year} 向阳乔木 · AGPL-3.0 · Capをベースに開発"
+advanced = "詳細設定を表示"
+advanced_hint = "CLI ページと、「一般」の追加の録画オプションを表示します。"
+advanced_recording = "その他の録画オプション"
+advanced_recording_hint = "ほとんどの録画に適した既定値です。必要な場合だけ変更してください。"
 
 [settings.ai]
 key_unverified = "キー未確認"
