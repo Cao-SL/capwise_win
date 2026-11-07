@@ -125,7 +125,11 @@ const VIDEO_SPEED_BUTTON_WIDTH: f32 = 46.;
 const EDITOR_OUTPUT_SIZE: XY<u32> = XY { x: 1920, y: 1080 };
 
 pub fn preview_resolution(quality: crate::store::EditorPreviewQuality) -> XY<u32> {
-    let scale = quality.scale();
+    preview_resolution_for_scale(quality.scale())
+}
+
+/// The preview render size for a fraction of [`EDITOR_OUTPUT_SIZE`].
+pub fn preview_resolution_for_scale(scale: f32) -> XY<u32> {
     let width = ((EDITOR_OUTPUT_SIZE.x as f32 * scale).round() as u32)
         .max(4)
         .div_ceil(4)
@@ -135,6 +139,28 @@ pub fn preview_resolution(quality: crate::store::EditorPreviewQuality) -> XY<u32
         .div_ceil(2)
         * 2;
     XY::new(width, height)
+}
+
+/// The smallest and largest automatic preview scales, and the step they snap
+/// to so small resizes don't re-render at a new size every few pixels.
+const AUTO_PREVIEW_MIN_SCALE: f32 = 0.25;
+const AUTO_PREVIEW_STEP: f32 = 0.125;
+/// How long the canvas size must settle before the preview re-renders at it.
+const AUTO_PREVIEW_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Capwise picks the preview resolution from the canvas instead of a
+/// "Full / 1/2 / 1/4" control: enough device pixels to fill the letterboxed
+/// frame on screen, up to the 1080p output, snapped up to the next step.
+/// A big window on a Retina display gets a sharp preview; a small one stays
+/// cheap to render while scrubbing.
+pub fn auto_preview_scale(frame_width: f32, frame_height: f32, scale_factor: f32) -> f32 {
+    let need = (frame_width * scale_factor / EDITOR_OUTPUT_SIZE.x as f32)
+        .max(frame_height * scale_factor / EDITOR_OUTPUT_SIZE.y as f32);
+    if !need.is_finite() || need <= 0. {
+        return AUTO_PREVIEW_MIN_SCALE;
+    }
+    ((need / AUTO_PREVIEW_STEP - 1e-3).ceil() * AUTO_PREVIEW_STEP)
+        .clamp(AUTO_PREVIEW_MIN_SCALE, 1.0)
 }
 
 pub fn default_preview_resolution() -> XY<u32> {
@@ -1673,6 +1699,11 @@ pub struct EditorWindow {
     pub(crate) shape_clipboard: Vec<cap_project::ShapeSegment>,
 
     preview_quality: crate::store::EditorPreviewQuality,
+    /// The automatic preview scale (see [`auto_preview_scale`]).
+    preview_scale: f32,
+    /// The viewport size and scale factor the last render saw.
+    preview_scale_viewport: (f32, f32, f32),
+    preview_scale_task: Option<gpui::Task<()>>,
     // Image/audio minima preserve explicit empty rows; segment-derived rows must remain undoable.
     pub(crate) tracks: TrackLanes,
     toolbar_menu: Option<OpenToolbarMenu>,
@@ -2418,7 +2449,12 @@ impl EditorWindow {
             shape_tool_trigger: Rc::new(std::cell::Cell::new(None)),
             last_shape_kind: cap_project::ShapeKind::Arrow,
             shape_clipboard: Vec::new(),
-            preview_quality: crate::store::GeneralSettings::load().editor_preview_quality,
+            // The control is hidden and `preview_scale` follows the canvas,
+            // so an older stored choice (say 1/4) is ignored.
+            preview_quality: crate::store::EditorPreviewQuality::Half,
+            preview_scale: crate::store::EditorPreviewQuality::Half.scale(),
+            preview_scale_viewport: (0., 0., 0.),
+            preview_scale_task: None,
             tracks: TrackLanes::from_project(&ProjectConfiguration::default(), false),
             toolbar_menu: None,
             text_menu: None,
@@ -2473,7 +2509,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn preview_resolution(&self) -> XY<u32> {
-        preview_resolution(self.preview_quality)
+        preview_resolution_for_scale(self.preview_scale)
     }
 
     /// The transport's own play toggle, reachable from the crop dialog's open
@@ -8366,6 +8402,64 @@ impl EditorWindow {
         }
     }
 
+    /// The automatic scale for the frame the preview canvas last painted.
+    fn measured_preview_scale(&self) -> Option<f32> {
+        let frame = self.player_frame_rect.get()?.frame;
+        let width: f32 = frame.size.width.into();
+        let height: f32 = frame.size.height.into();
+        (width > 0. && height > 0.)
+            .then(|| auto_preview_scale(width, height, self.preview_scale_viewport.2))
+    }
+
+    /// Called every render: when the window or the painted frame changed size,
+    /// re-check the preview resolution once the size has settled.
+    fn sync_preview_scale(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let size = window.viewport_size();
+        let viewport = (
+            f32::from(size.width),
+            f32::from(size.height),
+            window.scale_factor(),
+        );
+        let viewport_changed = viewport != self.preview_scale_viewport;
+        self.preview_scale_viewport = viewport;
+        let stale = self
+            .measured_preview_scale()
+            .is_some_and(|scale| scale != self.preview_scale);
+        if !viewport_changed && (!stale || self.preview_scale_task.is_some()) {
+            return;
+        }
+        self.preview_scale_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(AUTO_PREVIEW_DEBOUNCE).await;
+            let _ = this.update(cx, |this, cx| {
+                this.preview_scale_task = None;
+                this.apply_preview_scale(cx);
+            });
+        }));
+    }
+
+    fn apply_preview_scale(&mut self, cx: &mut Context<Self>) {
+        let Some(scale) = self.measured_preview_scale() else {
+            return;
+        };
+        if scale == self.preview_scale {
+            return;
+        }
+        self.preview_scale = scale;
+        let resolution = self.preview_resolution();
+        if let Some(transport) = &self.transport {
+            transport.set_resolution(resolution);
+        }
+        if self.playing {
+            let from = self.playhead;
+            self.stop_playback(cx);
+            self.start_playback(from, cx);
+        } else {
+            self.publish_project();
+        }
+        cx.notify();
+    }
+
+    #[allow(dead_code)]
     fn set_preview_quality(
         &mut self,
         quality: crate::store::EditorPreviewQuality,
@@ -12058,7 +12152,6 @@ impl EditorWindow {
     /// The player's top row: the stage's own triggers on the left, the
     /// preview-resolution control on the right.
     fn render_player_toolbar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
         let narrow = self.player_width(f32::from(window.viewport_size().width)) < 560.;
         div()
             .w_full()
@@ -12072,22 +12165,10 @@ impl EditorWindow {
             .flex_none()
             .overflow_hidden()
             .child(self.render_player_actions(narrow, cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .flex_none()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.editor.text_2))
-                            .child(tr::editor::window::preview::label()),
-                    )
-                    .child(self.render_preview_quality(cx)),
-            )
+        // Capwise hides the preview-resolution control: it only trades
+        // preview sharpness for speed, never touches the export, and users
+        // could not tell what "Full / 1/2 / 1/4" meant. The preview always
+        // sizes itself to the canvas instead (`auto_preview_scale`).
     }
 
     /// The toolbar's left cluster.
@@ -12141,6 +12222,8 @@ impl EditorWindow {
     }
 
     /// The preview-resolution control: a segmented `Full | Half | Quarter`.
+    /// Hidden in Capwise; kept for upstream merges.
+    #[allow(dead_code)]
     fn render_preview_quality(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let editor = theme.editor;
@@ -13823,6 +13906,7 @@ impl Render for EditorWindow {
         self.sync_appearance(window, cx);
         self.sync_locale();
         self.sync_imported_waveforms(cx);
+        self.sync_preview_scale(window, cx);
         let title_disabled = !self.visual_ready();
         if self.name_input.read(cx).is_disabled() != title_disabled {
             self.name_input
@@ -17280,6 +17364,27 @@ mod tests {
         assert_eq!(height, 392.);
         assert!((width - 392. * (720. / 1280.)).abs() < 0.001);
         assert!(width <= 992.);
+    }
+
+    #[test]
+    fn auto_preview_scale_fills_the_painted_frame() {
+        // A 960x540pt frame on a 2x display needs the full 1080p.
+        assert_eq!(auto_preview_scale(960., 540., 2.), 1.0);
+        // 640x360pt at 2x = 1280x720 device px -> 0.667, snapped up to 0.75.
+        assert_eq!(auto_preview_scale(640., 360., 2.), 0.75);
+        // A tall 9:16 frame is sized by its height.
+        assert_eq!(auto_preview_scale(300., 540., 1.), 0.5);
+        // Never above the output, never below the floor.
+        assert_eq!(auto_preview_scale(3000., 2000., 2.), 1.0);
+        assert_eq!(auto_preview_scale(40., 20., 1.), 0.25);
+        assert_eq!(auto_preview_scale(0., 0., 2.), 0.25);
+    }
+
+    #[test]
+    fn auto_preview_scale_keeps_even_dimensions() {
+        let size = preview_resolution_for_scale(auto_preview_scale(640., 360., 2.));
+        assert_eq!((size.x % 4, size.y % 2), (0, 0));
+        assert_eq!(size, XY::new(1440, 810));
     }
 
     #[test]
