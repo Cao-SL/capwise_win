@@ -455,10 +455,14 @@ impl KeyboardLayer {
             let metrics = Metrics::new(font_size, font_size * 1.2);
             let mut buffer = Buffer::new(&mut self.font_system, metrics);
             buffer.set_size(&mut self.font_system, Some(wrap_width), None);
+            let attrs = super::font::matched_font_attrs(
+                &self.font_system,
+                Attrs::new().family(font_family).weight(weight),
+            );
             buffer.set_text(
                 &mut self.font_system,
                 &shaped.text,
-                &Attrs::new().family(font_family).weight(weight),
+                &attrs,
                 Shaping::Advanced,
             );
             self.text_buffer = buffer;

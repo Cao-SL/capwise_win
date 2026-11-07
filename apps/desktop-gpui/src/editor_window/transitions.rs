@@ -294,6 +294,8 @@ impl EditorWindow {
             multi,
             press_time,
             paused: false,
+            lane: 0,
+            lane_target: None,
         });
         cx.notify();
     }
@@ -334,6 +336,8 @@ impl EditorWindow {
             multi: false,
             press_time: self.playhead,
             paused: false,
+            lane: 0,
+            lane_target: None,
         });
         cx.notify();
     }

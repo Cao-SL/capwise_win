@@ -254,6 +254,7 @@ fn model_migrate(
                             text: w.text.clone(),
                             start: to_source(w.start)? as f32,
                             end: to_source(w.end)? as f32,
+                            hidden: false,
                         })
                     })
                     .collect(),
@@ -396,6 +397,7 @@ fn random_captions(rng: &mut Rng, total: f64) -> Vec<CaptionSegment> {
                 text: text.to_string(),
                 start: t as f32,
                 end: (t + length) as f32,
+                hidden: false,
             });
             t += length;
         }
@@ -609,6 +611,7 @@ fn projection_hold_boundaries() {
         text: text.into(),
         start,
         end,
+        hidden: false,
     };
     let captions = vec![
         CaptionSegment {
@@ -787,16 +790,19 @@ fn legacy_migration_caption_at_timeline_end() {
                 text: "until".into(),
                 start: end - 2.2,
                 end: end - 1.5,
+                hidden: false,
             },
             CaptionWord {
                 text: "the".into(),
                 start: end - 1.5,
                 end: end - 1.0,
+                hidden: false,
             },
             CaptionWord {
                 text: "end".into(),
                 start: end - 1.0,
                 end,
+                hidden: false,
             },
         ],
     }];
@@ -893,6 +899,7 @@ fn styled_settings(rng: &mut Rng) -> CaptionSettings {
         font_weight: 500,
         outline: true,
         outline_color: "#FF0000".into(),
+        shadow: false,
         export_with_subtitles: true,
         highlight_color: "#0000FF".into(),
         fade_duration: 0.3,
@@ -1166,6 +1173,7 @@ fn fake_transcribe(audio: &[f32]) -> Vec<CaptionWord> {
                         text: word_text(source, m.index?),
                         start: m.time_secs as f32,
                         end: (m.time_secs + MARKER_SECS) as f32,
+                        hidden: false,
                     })
                 })
         })
@@ -1365,6 +1373,7 @@ fn scripted_captions(total: f64) -> Vec<CaptionSegment> {
                 text: WORDS[word].into(),
                 start: start as f32,
                 end: end as f32,
+                hidden: false,
             });
             word += 1;
         }
@@ -1725,6 +1734,7 @@ fn back_to_back_captions(total: f64) -> Vec<CaptionSegment> {
                 text: WORDS[k + i].into(),
                 start: (start + 0.5 * i as f64) as f32,
                 end: (start + 0.5 * (i + 1) as f64) as f32,
+                hidden: false,
             })
             .collect();
         captions.push(CaptionSegment {

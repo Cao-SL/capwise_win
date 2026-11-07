@@ -316,6 +316,31 @@ impl Transform {
         self.position = position.max(0.).min(upper);
     }
 
+    pub(crate) fn reveal_range(&mut self, start: f64, end: f64, total: f64) -> bool {
+        if !start.is_finite()
+            || !end.is_finite()
+            || !total.is_finite()
+            || start < 0.0
+            || end <= start
+            || end > total
+            || self.zoom <= 0.0
+            || !self.zoom.is_finite()
+        {
+            return false;
+        }
+        let margin = (self.zoom * 0.1).min(0.5);
+        let target = if start < self.position + margin || end - start > self.zoom - 2.0 * margin {
+            (start - margin).max(0.0)
+        } else if end > self.position + self.zoom - margin {
+            end + margin - self.zoom
+        } else {
+            return false;
+        };
+        let previous = self.position;
+        self.set_position(target, total);
+        self.position != previous
+    }
+
     /// `updateZoom(newZoom, origin)` (`ED/context.ts:1389-1403, 1456-1472`):
     /// clamp the zoom into `[MAX_ZOOM_IN, zoomOutLimit]`, then move the
     /// position so `origin` stays at the same fraction across the viewport,
@@ -1014,7 +1039,7 @@ impl TrackKind {
             Self::Shape => "icons/shapes.svg",
             Self::Mask => "icons/box-select.svg",
             Self::Audio => "icons/music.svg",
-            Self::Zoom => "icons/search.svg",
+            Self::Zoom => "icons/zoom-in.svg",
             Self::ThreeD => "icons/rotate-3d.svg",
             Self::Scene => "icons/video.svg",
         }
@@ -1095,6 +1120,14 @@ impl TrackKind {
         )
     }
 
+    pub fn is_overlay(self) -> bool {
+        matches!(self, Self::Text | Self::Shape | Self::Image | Self::Mask)
+    }
+
+    pub fn same_family(self, other: Self) -> bool {
+        self == other || (self.is_overlay() && other.is_overlay())
+    }
+
     pub fn overlay_track(self, track: u32) -> Option<OverlayTrack> {
         let kind = match self {
             Self::Mask => OverlayTrackKind::Mask,
@@ -1107,30 +1140,37 @@ impl TrackKind {
     }
 }
 
-pub const ADD_TRACK_OPTIONS: &[TrackKind] = &[
-    TrackKind::Style,
-    TrackKind::Image,
-    TrackKind::Caption,
-    TrackKind::Keyboard,
+pub const OVERLAY_KINDS: &[TrackKind] = &[
     TrackKind::Text,
     TrackKind::Shape,
+    TrackKind::Image,
     TrackKind::Mask,
+];
+
+pub const ADD_TRACK_OPTIONS: &[TrackKind] = &[
+    TrackKind::Text,
+    TrackKind::Image,
+    TrackKind::Shape,
     TrackKind::Audio,
-    TrackKind::Scene,
+];
+
+pub const ADD_TRACK_MORE: &[TrackKind] = &[
+    TrackKind::Mask,
+    TrackKind::Style,
+    TrackKind::Zoom,
     TrackKind::ThreeD,
+    TrackKind::Keyboard,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrackLanes {
     pub style: u32,
-    pub image: u32,
+    pub overlay: u32,
     pub caption: bool,
     pub keyboard: bool,
+    pub zoom: bool,
     pub scene: bool,
     pub three_d: bool,
-    pub text: u32,
-    pub shape: u32,
-    pub mask: u32,
     pub audio: u32,
 }
 
@@ -1150,9 +1190,7 @@ impl TrackLanes {
             style: timeline.map_or(0, |timeline| {
                 used_config_lane_count(timeline.style_segments.iter().map(|segment| segment.track))
             }),
-            image: timeline.map_or(0, |timeline| {
-                used_config_lane_count(timeline.image_segments.iter().map(|segment| segment.track))
-            }),
+            overlay: timeline.map_or(0, TimelineConfiguration::overlay_layer_count),
             caption: config
                 .captions
                 .as_ref()
@@ -1164,19 +1202,12 @@ impl TrackLanes {
                 .keyboard
                 .as_ref()
                 .is_some_and(|keyboard| keyboard.settings.enabled),
+            zoom: timeline.is_some_and(|timeline| !timeline.zoom_segments.is_empty()),
             scene: scene_available(config, has_camera),
             three_d: timeline.is_some_and(|timeline| !timeline.camera3d_segments.is_empty()),
-            text: timeline.map_or(0, |timeline| {
-                used_config_lane_count(timeline.text_segments.iter().map(|segment| segment.track))
-            }),
-            shape: timeline.map_or(0, |timeline| {
-                used_config_lane_count(timeline.shape_segments.iter().map(|segment| segment.track))
-            }),
-            mask: timeline.map_or(0, |timeline| {
-                used_config_lane_count(timeline.mask_segments.iter().map(|segment| segment.track))
-            }),
-            audio: timeline.map_or(0, |timeline| {
+            audio: timeline.map_or(1, |timeline| {
                 used_config_lane_count(timeline.audio_segments.iter().map(|segment| segment.track))
+                    .max(1)
             }),
         }
     }
@@ -1188,22 +1219,19 @@ impl TrackLanes {
             TrackKind::Scene => self.scene,
             TrackKind::ThreeD => self.three_d,
             TrackKind::Style => self.style > 0,
-            TrackKind::Image => self.image > 0,
-            TrackKind::Text => self.text > 0,
-            TrackKind::Shape => self.shape > 0,
-            TrackKind::Mask => self.mask > 0,
+            TrackKind::Image | TrackKind::Text | TrackKind::Shape | TrackKind::Mask => {
+                self.overlay > 0
+            }
             TrackKind::Audio => self.audio > 0,
-            TrackKind::Clip | TrackKind::Zoom => true,
+            TrackKind::Zoom => self.zoom,
+            TrackKind::Clip => true,
         }
     }
 
     pub fn count(self, kind: TrackKind) -> u32 {
         match kind {
             TrackKind::Style => self.style,
-            TrackKind::Image => self.image,
-            TrackKind::Text => self.text,
-            TrackKind::Shape => self.shape,
-            TrackKind::Mask => self.mask,
+            TrackKind::Image | TrackKind::Text | TrackKind::Shape | TrackKind::Mask => self.overlay,
             TrackKind::Audio => self.audio,
             _ => 0,
         }
@@ -1329,21 +1357,6 @@ pub struct TrackRow {
     pub lane: u32,
 }
 
-impl TrackRow {
-    pub fn from_overlay_track(track: OverlayTrack) -> Self {
-        let kind = match track.kind {
-            OverlayTrackKind::Mask => TrackKind::Mask,
-            OverlayTrackKind::Image => TrackKind::Image,
-            OverlayTrackKind::Text => TrackKind::Text,
-            OverlayTrackKind::Shape => TrackKind::Shape,
-        };
-        Self {
-            kind,
-            lane: track.track,
-        }
-    }
-}
-
 /// Everything the timeline draws, derived once per project-config change.
 #[derive(Debug, Clone, Default)]
 pub struct TimelineModel {
@@ -1385,8 +1398,84 @@ impl TimelineModel {
         TRACK_HEIGHT
     }
 
-    fn segments_for(&self, row: TrackRow) -> &[Segment] {
-        self.segments(row.kind)
+    pub fn row_kinds(&self, row: TrackRow) -> &'static [TrackKind] {
+        if row.kind.is_overlay() {
+            OVERLAY_KINDS
+        } else {
+            match row.kind {
+                TrackKind::Style => &[TrackKind::Style],
+                TrackKind::Image => &[TrackKind::Image],
+                TrackKind::Clip => &[TrackKind::Clip],
+                TrackKind::Caption => &[TrackKind::Caption],
+                TrackKind::Keyboard => &[TrackKind::Keyboard],
+                TrackKind::Text => &[TrackKind::Text],
+                TrackKind::Shape => &[TrackKind::Shape],
+                TrackKind::Mask => &[TrackKind::Mask],
+                TrackKind::Audio => &[TrackKind::Audio],
+                TrackKind::Zoom => &[TrackKind::Zoom],
+                TrackKind::ThreeD => &[TrackKind::ThreeD],
+                TrackKind::Scene => &[TrackKind::Scene],
+            }
+        }
+    }
+
+    pub fn row_has_segments(&self, row: TrackRow) -> bool {
+        self.row_kinds(row).iter().any(|kind| {
+            self.segments(*kind)
+                .iter()
+                .any(|segment| segment.lane == row.lane)
+        })
+    }
+
+    pub fn overlay_row_kind(&self, lane: u32) -> TrackKind {
+        OVERLAY_KINDS
+            .iter()
+            .copied()
+            .find(|kind| {
+                self.segments(*kind)
+                    .iter()
+                    .any(|segment| segment.lane == lane)
+            })
+            .unwrap_or(TrackKind::Text)
+    }
+
+    pub fn overlay_row_mixed(&self, lane: u32) -> bool {
+        OVERLAY_KINDS
+            .iter()
+            .filter(|kind| {
+                self.segments(**kind)
+                    .iter()
+                    .any(|segment| segment.lane == lane)
+            })
+            .count()
+            > 1
+    }
+
+    pub fn lane_spans(&self, kind: TrackKind, lane: u32) -> Vec<(TrackKind, usize, f64, f64)> {
+        let row = TrackRow { kind, lane };
+        self.row_kinds(row)
+            .iter()
+            .flat_map(|kind| {
+                self.segments(*kind)
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, segment)| segment.lane == lane)
+                    .map(|(index, segment)| (*kind, index, segment.start, segment.end))
+            })
+            .collect()
+    }
+
+    pub fn family_neighbour_segments(&self, kind: TrackKind) -> std::borrow::Cow<'_, [Segment]> {
+        if !kind.is_overlay() {
+            return std::borrow::Cow::Borrowed(self.segments(kind));
+        }
+        let mut combined = self.segments(kind).to_vec();
+        for other in OVERLAY_KINDS {
+            if *other != kind {
+                combined.extend(self.segments(*other).iter().cloned());
+            }
+        }
+        std::borrow::Cow::Owned(combined)
     }
 
     /// The drawn segments of one track, in **config index order** -- which is
@@ -1690,35 +1779,30 @@ fn build_rows(
             lane,
         });
     }
-    let mut overlay_tracks = Vec::new();
-    for (kind, segments, count) in [
-        (TrackKind::Text, &model.text, lanes.text),
-        (TrackKind::Shape, &model.shape, lanes.shape),
-        (TrackKind::Image, &model.image, lanes.image),
-        (TrackKind::Mask, &model.mask, lanes.mask),
-    ] {
-        overlay_tracks.extend(
-            (0..lane_count(segments).max(count))
-                .rev()
-                .filter_map(|lane| kind.overlay_track(lane)),
-        );
+    let overlay_lanes = OVERLAY_KINDS
+        .iter()
+        .map(|kind| lane_count(model.segments(*kind)))
+        .max()
+        .unwrap_or(0)
+        .max(lanes.overlay);
+    for lane in (0..overlay_lanes).rev() {
+        rows.push(TrackRow {
+            kind: model.overlay_row_kind(lane),
+            lane,
+        });
     }
-    rows.extend(
-        config
-            .resolved_overlay_order(&overlay_tracks)
-            .into_iter()
-            .map(TrackRow::from_overlay_track),
-    );
     for lane in (0..lane_count(&model.audio).max(lanes.audio)).rev() {
         rows.push(TrackRow {
             kind: TrackKind::Audio,
             lane,
         });
     }
-    rows.push(TrackRow {
-        kind: TrackKind::Zoom,
-        lane: 0,
-    });
+    if lanes.zoom || !model.zoom.is_empty() {
+        rows.push(TrackRow {
+            kind: TrackKind::Zoom,
+            lane: 0,
+        });
+    }
     if lanes.three_d {
         rows.push(TrackRow {
             kind: TrackKind::ThreeD,
@@ -1816,8 +1900,6 @@ fn clip_rows(
                         _ => SharedString::new_static(tr::editor::timeline::segment::clip()),
                     },
                     source_start: segment.start,
-                    // The label shows `formatTime(seg.end - seg.start)` -- the
-                    // *source* span, not the output one (`TL/ClipTrack.tsx:1261`).
                     source_duration: segment.end - segment.start,
                     timescale: segment.timescale,
                     muted: clip_is_muted(segment) || segment.volume() == 0.0,
@@ -1952,9 +2034,9 @@ impl SegmentUi<'_> {
 
     fn row_selected(&self, model: &TimelineModel, row: TrackRow) -> bool {
         self.selection.is_some_and(|selection| {
-            selection.track == row.kind
+            selection.track.same_family(row.kind)
                 && model
-                    .segments_for(row)
+                    .segments(selection.track)
                     .iter()
                     .enumerate()
                     .any(|(index, segment)| {
@@ -1971,8 +2053,11 @@ impl SegmentUi<'_> {
 /// The gutter cell: a tinted 22px tile carrying the track's glyph, then the
 /// track's name. The saturated pill the source draws
 /// (`TL/TrackManager.tsx:264-281`) is gone.
-pub fn track_chip(theme: &Theme, kind: TrackKind) -> impl IntoElement {
-    let color = kind.color();
+pub fn track_chip(theme: &Theme, kind: TrackKind) -> gpui::Div {
+    labelled_chip(theme, kind.icon(), kind.label(), kind.color())
+}
+
+fn labelled_chip(theme: &Theme, icon: &'static str, label: &'static str, color: Hsla) -> gpui::Div {
     div()
         .w_full()
         .h_full()
@@ -1993,7 +2078,7 @@ pub fn track_chip(theme: &Theme, kind: TrackKind) -> impl IntoElement {
                 .bg(tile_bg(theme, color))
                 .child(
                     svg()
-                        .path(kind.icon())
+                        .path(icon)
                         .size(px(12.))
                         .flex_none()
                         .text_color(tile_fg(theme, color)),
@@ -2006,7 +2091,7 @@ pub fn track_chip(theme: &Theme, kind: TrackKind) -> impl IntoElement {
                 .text_size(px(11.))
                 .line_height(px(14.))
                 .font_weight(FontWeight::MEDIUM)
-                .child(kind.label()),
+                .child(label),
         )
 }
 
@@ -2298,13 +2383,18 @@ pub fn render_row(
             Hsla::from(theme.editor.text_2)
         })
         .hover(|style| style.bg(active_bg).text_color(active_text))
-        .child(
-            div()
-                .w(px(TRACK_GUTTER))
-                .flex_none()
-                .relative()
-                .child(track_chip(theme, row.kind)),
-        )
+        .child(div().w(px(TRACK_GUTTER)).flex_none().relative().child(
+            if row.kind.is_overlay() && model.overlay_row_mixed(row.lane) {
+                labelled_chip(
+                    theme,
+                    "icons/layers.svg",
+                    tr::editor::timeline::track::layer(),
+                    row.kind.color(),
+                )
+            } else {
+                track_chip(theme, row.kind)
+            },
+        ))
         .child(
             div()
                 .flex_1()
@@ -2338,11 +2428,9 @@ fn render_track_content(
 ) -> AnyElement {
     let width = content_width(viewport_width);
     let secs_per_pixel = view.transform.secs_per_pixel(width);
-    let segments = model.segments_for(row);
-
     let mut content = div().relative().size_full();
 
-    if !segments.iter().any(|segment| segment.lane == row.lane)
+    if !model.row_has_segments(row)
         && let Some(empty) = render_empty_track(
             theme,
             row.kind,
@@ -2355,30 +2443,33 @@ fn render_track_content(
 
     // Enumerated before the lane filter so the index stays the **config**
     // index -- what the selection and every mutator address segments by.
-    for (index, segment) in segments
-        .iter()
-        .enumerate()
-        .filter(|(_, segment)| segment.lane == row.lane)
-    {
-        // `SEGMENT_RENDER_PADDING` culling (`TL/context.ts:14, 57-68`): a
-        // segment outside the viewport plus two seconds is never built.
-        if !view.transform.segment_visible(segment.start, segment.end) {
-            continue;
+    for kind in model.row_kinds(row) {
+        for (index, segment) in model
+            .segments(*kind)
+            .iter()
+            .enumerate()
+            .filter(|(_, segment)| segment.lane == row.lane)
+        {
+            // `SEGMENT_RENDER_PADDING` culling (`TL/context.ts:14, 57-68`): a
+            // segment outside the viewport plus two seconds is never built.
+            if !view.transform.segment_visible(segment.start, segment.end) {
+                continue;
+            }
+            content = content.child(render_segment(
+                theme,
+                model,
+                *kind,
+                index,
+                segment,
+                view,
+                secs_per_pixel,
+                height,
+                ui.is_selected(*kind, index),
+                ui.is_hovered(*kind, row.lane, index),
+                ui.split_mode,
+                ui.camera3d_editing_end,
+            ));
         }
-        content = content.child(render_segment(
-            theme,
-            model,
-            row.kind,
-            index,
-            segment,
-            view,
-            secs_per_pixel,
-            height,
-            ui.is_selected(row.kind, index),
-            ui.is_hovered(row.kind, row.lane, index),
-            ui.split_mode,
-            ui.camera3d_editing_end,
-        ));
     }
 
     // The zoom track's create-by-click ghost (`TL/ZoomTrack.tsx:104-166,
@@ -2424,7 +2515,7 @@ fn render_track_content(
     if row.kind == TrackKind::ThreeD
         && !ui.dragging
         && ui.camera3d_preview.is_empty()
-        && !segments.is_empty()
+        && model.row_has_segments(row)
         && view.hovered_track == Some(TrackKind::ThreeD)
         && let Some(preview) = view.preview_time
         && let Some(ghost) = new_camera3d_ghost(model, preview)
@@ -3726,6 +3817,7 @@ fn label_body(
             SegmentDetail::Clip {
                 name,
                 source_duration,
+                timescale,
                 muted,
                 cursor_hidden,
                 ..
@@ -3749,11 +3841,15 @@ fn label_body(
                     tr::editor::timeline::segment::cursor_hidden(),
                 ))
             })
-            .child(label_secondary(theme, color).child(format_clip_time(*source_duration)))
+            .child(
+                label_secondary(theme, color)
+                    .child(format_clip_time(*source_duration / *timescale)),
+            )
             .into_any_element(),
         (
             SegmentDetail::Clip {
                 source_duration,
+                timescale,
                 muted,
                 cursor_hidden,
                 ..
@@ -3779,7 +3875,9 @@ fn label_body(
                         .text_color(seg_label(theme, color)),
                 )
             })
-            .child(label_primary(theme, color).child(format_clip_time(*source_duration)))
+            .child(
+                label_primary(theme, color).child(format_clip_time(*source_duration / *timescale)),
+            )
             .into_any_element(),
         (SegmentDetail::Clip { muted: true, .. }, LabelTier::Glyph) => label_glyph(
             theme,
@@ -4103,6 +4201,29 @@ pub fn wheel_zoom_delta(dom_delta_y: f64, zoom: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revealing_a_card_keeps_zoom_and_brings_both_edges_into_view() {
+        let mut transform = Transform {
+            zoom: 13.44,
+            position: 0.0,
+        };
+        assert!(transform.reveal_range(16.45, 18.44, 18.44));
+        assert!(transform.position < 16.45);
+        assert!(transform.position + transform.zoom > 18.44);
+        assert_eq!(transform.zoom, 13.44);
+        assert!(!transform.reveal_range(16.45, 18.44, 18.44));
+        assert!(transform.reveal_range(0.0, 3.0, 18.44));
+        assert_eq!(transform.position, 0.0);
+        transform.zoom = 3.0;
+        assert!(transform.reveal_range(10.0, 20.0, 30.0));
+        assert!(transform.position <= 10.0 && transform.position + transform.zoom > 10.0);
+        let previous = transform;
+        for (start, end, total) in [(f64::NAN, 2.0, 30.0), (10.0, 9.0, 30.0), (0.0, 31.0, 30.0)] {
+            assert!(!transform.reveal_range(start, end, total));
+            assert_eq!(transform, previous);
+        }
+    }
 
     const AUDIO_SAMPLE_RATE: usize = 48_000;
 
@@ -4549,7 +4670,7 @@ mod tests {
                     { "start": 3.0, "end": 4.0, "track": 2, "content": "b" }
                 ],
                 "maskSegments": [
-                    { "start": 1.0, "end": 2.0, "track": 0, "maskType": "sensitive",
+                    { "start": 1.0, "end": 2.0, "track": 3, "maskType": "sensitive",
                       "center": {"x": 0.5, "y": 0.5}, "size": {"x": 0.2, "y": 0.2} }
                 ],
                 "audioSegments": [
@@ -4575,12 +4696,11 @@ mod tests {
                 // segment, which is the fallback (`ED/context.ts:1414-1416`).
                 (TrackKind::Caption, 0),
                 (TrackKind::Keyboard, 0),
+                (TrackKind::Mask, 3),
                 (TrackKind::Text, 2),
                 (TrackKind::Text, 1),
                 (TrackKind::Text, 0),
-                (TrackKind::Mask, 0),
                 (TrackKind::Audio, 0),
-                (TrackKind::Zoom, 0),
                 (TrackKind::ThreeD, 0),
                 (TrackKind::Scene, 0),
             ]
@@ -4606,7 +4726,7 @@ mod tests {
         assert_eq!(
             with_camera.rows.len(),
             3,
-            "clip + zoom + scene: {:?}",
+            "clip + audio + scene: {:?}",
             with_camera.rows
         );
         // Two rows means the roomier track height.
@@ -5809,18 +5929,17 @@ mod style_image_tests {
     use super::*;
 
     #[test]
-    fn timeline_rows_follow_the_saved_overlay_order() {
+    fn timeline_rows_follow_overlay_layers_and_share_mixed_layers() {
         let project: ProjectConfiguration = serde_json::from_value(serde_json::json!({
-            "overlayOrder": [
-                {"kind": "mask", "track": 0},
-                {"kind": "image", "track": 0},
-                {"kind": "text", "track": 0}
-            ],
+            "overlayLayerVersion": 1,
             "timeline": {
                 "segments": [{"start": 0, "end": 20, "timescale": 1}],
                 "zoomSegments": [],
-                "textSegments": [{"start": 1, "end": 5, "track": 0, "content": "Text"}],
-                "imageSegments": [{"start": 1, "end": 5, "track": 0, "path": "image.png"}],
+                "textSegments": [
+                    {"start": 1, "end": 5, "track": 2, "content": "Text"},
+                    {"start": 6, "end": 8, "track": 0, "content": "Late"}
+                ],
+                "imageSegments": [{"start": 1, "end": 5, "track": 1, "path": "image.png"}],
                 "maskSegments": [{
                     "start": 1,
                     "end": 5,
@@ -5836,25 +5955,26 @@ mod style_image_tests {
         let overlays = model
             .rows
             .iter()
-            .filter(|row| row.kind.overlay_track(row.lane).is_some())
-            .copied()
+            .filter(|row| row.kind.is_overlay())
+            .map(|row| (row.kind, row.lane))
             .collect::<Vec<_>>();
         assert_eq!(
             overlays,
             [
-                TrackRow {
-                    kind: TrackKind::Mask,
-                    lane: 0
-                },
-                TrackRow {
-                    kind: TrackKind::Image,
-                    lane: 0
-                },
-                TrackRow {
-                    kind: TrackKind::Text,
-                    lane: 0
-                }
+                (TrackKind::Text, 2),
+                (TrackKind::Image, 1),
+                (TrackKind::Text, 0)
             ]
+        );
+        assert!(model.overlay_row_mixed(0));
+        assert!(!model.overlay_row_mixed(1));
+        assert_eq!(
+            model
+                .lane_spans(TrackKind::Text, 0)
+                .iter()
+                .map(|(kind, _, start, _)| (*kind, *start))
+                .collect::<Vec<_>>(),
+            [(TrackKind::Text, 6.), (TrackKind::Mask, 1.)]
         );
     }
 
@@ -5874,7 +5994,7 @@ mod style_image_tests {
         .unwrap();
         let model = TimelineModel::build(&project, false, false);
         let lanes = TrackLanes::from_project(&project, false);
-        assert_eq!(lanes.shape, 2);
+        assert_eq!(lanes.overlay, 2);
         assert!(lanes.is_active(TrackKind::Shape));
         assert_eq!(lanes.count(TrackKind::Shape), 2);
         let overlays = model
@@ -5883,14 +6003,7 @@ mod style_image_tests {
             .filter(|row| row.kind.overlay_track(row.lane).is_some())
             .map(|row| (row.kind, row.lane))
             .collect::<Vec<_>>();
-        assert_eq!(
-            overlays,
-            [
-                (TrackKind::Text, 0),
-                (TrackKind::Shape, 1),
-                (TrackKind::Shape, 0)
-            ]
-        );
+        assert_eq!(overlays, [(TrackKind::Shape, 1), (TrackKind::Text, 0)]);
         let shapes = model.segments(TrackKind::Shape);
         assert_eq!(shapes.len(), 2);
         assert!(matches!(

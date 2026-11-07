@@ -96,6 +96,7 @@ pub enum Page {
     Screenshots,
     Automations,
     Transcription,
+    Assets,
     Integrations,
     License,
     Experimental,
@@ -113,6 +114,7 @@ impl Page {
         Page::Shortcuts,
         Page::Recordings,
         Page::Transcription,
+        Page::Assets,
         Page::Automations,
         Page::Cli,
         Page::Experimental,
@@ -134,6 +136,7 @@ impl Page {
             Self::Screenshots => tr::settings::nav::screenshots(),
             Self::Automations => tr::settings::nav::automations(),
             Self::Transcription => tr::settings::nav::transcription(),
+            Self::Assets => tr::settings::stock::title(),
             Self::Integrations => tr::settings::nav::integrations(),
             Self::License => tr::settings::nav::license(),
             Self::Experimental => tr::settings::nav::experimental(),
@@ -154,6 +157,7 @@ impl Page {
             Self::Screenshots => "screenshots",
             Self::Automations => "automations",
             Self::Transcription => "transcription",
+            Self::Assets => "assets",
             Self::Integrations => "integrations",
             Self::License => "license",
             Self::Experimental => "experimental",
@@ -178,6 +182,7 @@ impl Page {
             Self::Screenshots => "icons/image.svg",
             Self::Automations => "icons/zap.svg",
             Self::Transcription => "icons/sparkles.svg",
+            Self::Assets => "icons/image.svg",
             Self::Integrations => "icons/unplug.svg",
             Self::License => "icons/gift.svg",
             Self::Feedback => "icons/message-square-plus.svg",
@@ -200,6 +205,8 @@ impl Page {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MenuKind {
     Countdown,
+    WorkflowPreset,
+    WorkflowSpeed,
     MainWindowStart,
     WindowCapture,
     PostDeletion,
@@ -746,6 +753,7 @@ pub struct SettingsWindow {
     /// Save/Update are the commit, not Return.
     project_name_input: Entity<ui::TextInputState>,
     server_url_input: Entity<ui::TextInputState>,
+    workflow_name_input: Entity<ui::TextInputState>,
     _field_events: [gpui::Subscription; 4],
     /// The Recordings page.
     recordings: Recordings,
@@ -807,6 +815,15 @@ impl SettingsWindow {
         let server_url_input = cx.new(|cx| {
             let mut input = ui::TextInputState::single_line(window, cx);
             input.set_text(settings.server_url.clone(), cx);
+            input
+        });
+        let workflow_name_input = cx.new(|cx| {
+            let mut input = ui::TextInputState::single_line(window, cx);
+            let catalog = crate::workflow_presets::WorkflowPresets::load();
+            input.set_text(
+                catalog.selected().map_or("", |preset| preset.name.as_str()),
+                cx,
+            );
             input
         });
         let recordings_search = cx.new(|cx| ui::TextInputState::single_line(window, cx));
@@ -888,6 +905,7 @@ impl SettingsWindow {
             studio_quality_save_failed: false,
             project_name_input,
             server_url_input,
+            workflow_name_input,
             _field_events: field_events,
             recordings: Recordings::new(recordings_search),
             screenshots: Screenshots::new(screenshots_search),
@@ -1543,6 +1561,29 @@ impl SettingsWindow {
     /// One row per option, check-marked when it is the value in force.
     fn menu_items(&self, kind: MenuKind) -> Vec<ui::MenuItem> {
         match kind {
+            MenuKind::WorkflowPreset => {
+                let catalog = crate::workflow_presets::WorkflowPresets::load();
+                catalog
+                    .presets
+                    .iter()
+                    .map(|preset| {
+                        ui::MenuItem::new(preset.name.clone(), preset.id == catalog.selected_id)
+                    })
+                    .collect()
+            }
+            MenuKind::WorkflowSpeed => {
+                let catalog = crate::workflow_presets::WorkflowPresets::load();
+                let speed = catalog.selected().map_or(1.0, |preset| preset.speed);
+                crate::workflow_presets::SPEEDS
+                    .iter()
+                    .map(|value| {
+                        ui::MenuItem::new(
+                            format!("{value}×"),
+                            (*value - speed).abs() < f64::EPSILON,
+                        )
+                    })
+                    .collect()
+            }
             MenuKind::Countdown => {
                 let current = self.settings.recording_countdown.unwrap_or(0);
                 COUNTDOWN_OPTIONS
@@ -1583,6 +1624,24 @@ impl SettingsWindow {
     ) {
         self.close_menu(window, cx);
         match kind {
+            MenuKind::WorkflowPreset => self.update_workflow(
+                move |catalog| {
+                    if let Some(preset) = catalog.presets.get(index) {
+                        catalog.selected_id = preset.id.clone();
+                    }
+                },
+                cx,
+            ),
+            MenuKind::WorkflowSpeed => self.update_workflow(
+                move |catalog| {
+                    if let Some(speed) = crate::workflow_presets::SPEEDS.get(index)
+                        && let Some(preset) = catalog.selected_mut()
+                    {
+                        preset.speed = *speed;
+                    }
+                },
+                cx,
+            ),
             MenuKind::Countdown => {
                 if let Some((value, _)) = COUNTDOWN_OPTIONS.get(index) {
                     self.settings.recording_countdown = Some(*value);
@@ -2373,6 +2432,7 @@ impl SettingsWindow {
                         Page::Cli => self.render_cli(cx),
                         Page::Automations => self.render_automations(cx),
                         Page::Transcription => self.render_ai_models(cx),
+                        Page::Assets => self.render_stock_services(cx),
                         Page::Integrations => self.render_integrations(cx),
                         Page::License => self.render_license(cx),
                         Page::Experimental => self.render_experimental(cx),
@@ -3169,11 +3229,238 @@ impl SettingsWindow {
         sections.extend([
             self.render_app_section(cx).into_any_element(),
             self.render_recording(cx).into_any_element(),
+            self.render_workflow_presets(cx).into_any_element(),
             self.render_storage(cx).into_any_element(),
             self.render_project_name(window, cx).into_any_element(),
             self.render_excluded_windows(cx).into_any_element(),
         ]);
         sections
+    }
+
+    fn update_workflow(
+        &mut self,
+        change: impl FnOnce(&mut crate::workflow_presets::WorkflowPresets),
+        cx: &mut Context<Self>,
+    ) {
+        let mut catalog = crate::workflow_presets::WorkflowPresets::load();
+        change(&mut catalog);
+        if !catalog.save() {
+            tracing::warn!("Could not save workflow preset settings");
+            return;
+        }
+        let name = catalog.selected().map_or("", |preset| preset.name.as_str());
+        self.workflow_name_input
+            .update(cx, |input, cx| input.set_text(name, cx));
+        cx.notify();
+    }
+
+    fn render_workflow_presets(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use tr::settings::workflow as text;
+        let catalog = crate::workflow_presets::WorkflowPresets::load();
+        let preset = catalog.selected().cloned().unwrap_or_default();
+        let rows = vec![
+            self.setting_row(
+                text::enabled(),
+                None,
+                self.toggle(
+                    "workflow-enabled",
+                    text::enabled(),
+                    catalog.enabled,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(|catalog| catalog.enabled = !catalog.enabled, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::selected(),
+                None,
+                self.select(
+                    "workflow-selected",
+                    preset.name.clone(),
+                    MenuKind::WorkflowPreset,
+                    cx,
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::name(),
+                None,
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .child(
+                        ui::TextInput::settings(
+                            &self.theme,
+                            "workflow-name",
+                            &self.workflow_name_input,
+                        )
+                        .width(px(180.))
+                        .flex(false),
+                    )
+                    .child(self.button(
+                        "workflow-rename",
+                        (ui::ButtonVariant::Gray, None),
+                        text::rename(),
+                        false,
+                        cx,
+                        |this, _, cx| {
+                            let name = this.workflow_name_input.read(cx).text().trim().to_string();
+                            if !name.is_empty() {
+                                this.update_workflow(
+                                    move |catalog| {
+                                        if let Some(preset) = catalog.selected_mut() {
+                                            preset.name = name;
+                                        }
+                                    },
+                                    cx,
+                                );
+                            }
+                        },
+                    ))
+                    .into_any_element(),
+            ),
+            self.setting_row(
+                text::speed(),
+                Some(text::speed_note()),
+                self.select(
+                    "workflow-speed",
+                    format!("{}×", preset.speed),
+                    MenuKind::WorkflowSpeed,
+                    cx,
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::review(),
+                None,
+                self.toggle(
+                    "workflow-review",
+                    text::review(),
+                    preset.ai_caption_review,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.ai_caption_review = !preset.ai_caption_review;
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::bilingual(),
+                None,
+                self.toggle(
+                    "workflow-bilingual",
+                    text::bilingual(),
+                    preset.bilingual_english,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.bilingual_english = !preset.bilingual_english;
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::voice(),
+                None,
+                self.toggle(
+                    "workflow-voice",
+                    text::voice(),
+                    preset.enhance_voice,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.enhance_voice = !preset.enhance_voice;
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::beauty(),
+                Some(text::beauty_note()),
+                self.toggle(
+                    "workflow-beauty",
+                    text::beauty(),
+                    preset.camera_beauty > 0.0,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.camera_beauty =
+                                        if preset.camera_beauty > 0.0 { 0.0 } else { 1.0 };
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+        ];
+        self.section(
+            text::title(),
+            Some(text::description()),
+            None,
+            vec![
+                self.rows(rows).into_any_element(),
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .child(self.button(
+                        "workflow-copy",
+                        (ui::ButtonVariant::Gray, None),
+                        text::duplicate(),
+                        false,
+                        cx,
+                        |this, _, cx| {
+                            this.update_workflow(
+                                |catalog| {
+                                    let name = text::copy_name(
+                                        catalog
+                                            .selected()
+                                            .map_or("", |preset| preset.name.as_str()),
+                                        catalog.presets.len(),
+                                    );
+                                    catalog.duplicate_selected(name);
+                                },
+                                cx,
+                            );
+                        },
+                    ))
+                    .child(self.button(
+                        "workflow-delete",
+                        (ui::ButtonVariant::Gray, None),
+                        text::delete(),
+                        catalog.selected_id == crate::workflow_presets::QIAOMU_ID,
+                        cx,
+                        |this, _, cx| {
+                            this.update_workflow(|catalog| catalog.delete_selected(), cx);
+                        },
+                    ))
+                    .into_any_element(),
+            ],
+        )
     }
 
     /// `AppearanceSection` -- `theme`.
@@ -3721,6 +4008,23 @@ impl SettingsWindow {
                                     !this.settings.custom_cursor_capture;
                                 let value = this.settings.custom_cursor_capture;
                                 this.write_bool("custom_cursor_capture2", value, cx);
+                            },
+                        )
+                        .into_any_element(),
+                    ),
+                    self.setting_row(
+                        tr::settings::general::recording::auto_captions::label(),
+                        Some(tr::settings::general::recording::auto_captions::description()),
+                        self.toggle(
+                            "auto-captions",
+                            tr::settings::general::recording::auto_captions::label(),
+                            settings.auto_captions_after_recording,
+                            cx,
+                            |this, cx| {
+                                this.settings.auto_captions_after_recording =
+                                    !this.settings.auto_captions_after_recording;
+                                let value = this.settings.auto_captions_after_recording;
+                                this.write_bool("autoCaptionsAfterRecording", value, cx);
                             },
                         )
                         .into_any_element(),
@@ -4957,11 +5261,17 @@ mod tests {
     /// addresses by slug.
     #[test]
     fn every_page_round_trips_through_its_slug() {
-        assert_eq!(Page::ALL.len(), 9);
+        assert_eq!(Page::ALL.len(), 10);
         for page in Page::ALL {
             assert_eq!(Page::from_slug(page.slug()), Some(*page));
         }
-        for removed in ["license", "integrations", "screenshots", "feedback", "changelog"] {
+        for removed in [
+            "license",
+            "integrations",
+            "screenshots",
+            "feedback",
+            "changelog",
+        ] {
             assert_eq!(Page::from_slug(removed), None);
         }
         assert_eq!(Page::Shortcuts.slug(), "hotkeys");

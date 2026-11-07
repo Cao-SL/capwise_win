@@ -6,6 +6,7 @@ mod analytics;
 mod atomic;
 mod automation;
 mod caps;
+mod captions;
 mod confirmation;
 mod credentials;
 mod developers;
@@ -19,12 +20,14 @@ mod mcp;
 mod notifications;
 mod organizations;
 mod project;
+mod project_edit;
 mod record;
 mod recordings;
 mod screenshot;
 mod selftest;
 mod session;
 mod targets;
+mod title_cards;
 mod update;
 mod upload;
 
@@ -253,7 +256,7 @@ impl Commands {
         matches!(
             self,
             Self::Export(_) | Self::ExportPreview(_) | Self::Selftest(_)
-        )
+        ) || matches!(self, Self::Project(ProjectArgs { command: ProjectCommands::TitleCard(args) }) if args.renders_image())
     }
 }
 
@@ -343,6 +346,10 @@ enum ProjectCommands {
     Validate(ProjectTarget),
     /// Read or write a project's editor configuration (project-config.json)
     Config(ProjectConfigArgs),
+    #[command(about = "Read, export, or safely adjust local project captions")]
+    Captions(captions::CaptionArgs),
+    #[command(about = "Read or safely edit reusable intro and outro cards")]
+    TitleCard(title_cards::TitleCardArgs),
 }
 
 #[derive(Args)]
@@ -600,7 +607,7 @@ async fn run(cli: Cli) -> Result<(), String> {
         Commands::Export(e) => e.run(json).await,
         Commands::ExportPreview(e) => e.run().await,
         Commands::Selftest(args) => args.run(json).await,
-        Commands::Project(args) => args.run(json),
+        Commands::Project(args) => args.run(json).await,
         Commands::Record(RecordArgs { command, args }) => match command {
             Some(RecordCommands::Start(args)) => args.run(json).await,
             Some(RecordCommands::Stop(args)) => args.run(json).await,
@@ -740,8 +747,10 @@ impl TargetsArgs {
 }
 
 impl ProjectArgs {
-    fn run(self, json: bool) -> Result<(), String> {
+    async fn run(self, json: bool) -> Result<(), String> {
         match self.command {
+            ProjectCommands::Captions(args) => args.run(json),
+            ProjectCommands::TitleCard(args) => args.run(json).await,
             // validate emits its own structured report (incl. JSON errors), so it is not wrapped.
             ProjectCommands::Validate(args) => {
                 project::validate(args.project_path, resolve_format(json, args.format))

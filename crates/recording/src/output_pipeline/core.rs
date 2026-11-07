@@ -2426,6 +2426,87 @@ impl OutputPipelineBuilder<NoVideo> {
 #[derive(Clone)]
 pub(crate) struct PipelineBuildScope(Arc<PipelineBuildScopeInner>);
 
+pub struct OwnedAudioPipelineScope(PipelineBuildScope);
+
+pub struct OwnedAudioPipelineStop {
+    pub quiescent: bool,
+    pub error: Option<String>,
+}
+
+impl Default for OwnedAudioPipelineScope {
+    fn default() -> Self {
+        Self(PipelineBuildScope::with_lifetime_policy(true, false, false))
+    }
+}
+
+impl OwnedAudioPipelineScope {
+    pub async fn build<TMuxer: AudioMuxer>(
+        &self,
+        builder: OutputPipelineBuilder<NoVideo>,
+        config: TMuxer::Config,
+    ) -> anyhow::Result<OutputPipeline> {
+        self.0.run(builder.build::<TMuxer>(config)).await
+    }
+
+    pub async fn shutdown(&self) -> OwnedAudioPipelineStop {
+        let report = self.0.cancel_and_join_report().await;
+        OwnedAudioPipelineStop {
+            quiescent: report.quiescent,
+            error: report.error,
+        }
+    }
+}
+
+impl Drop for OwnedAudioPipelineScope {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+#[cfg(test)]
+mod owned_audio_scope_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn owned_audio_scope_waits_for_nested_capture_work_after_parent_exits() {
+        let scope = OwnedAudioPipelineScope::default();
+        let child_started = Arc::new(tokio::sync::Notify::new());
+        let child_release = Arc::new(tokio::sync::Notify::new());
+        let released = Arc::new(AtomicBool::new(false));
+        scope
+            .0
+            .run(async {
+                let started = child_started.clone();
+                let release = child_release.clone();
+                let released = released.clone();
+                drop(spawn_capture_task(async move {
+                    drop(spawn_capture_task(async move {
+                        started.notify_one();
+                        release.notified().await;
+                        released.store(true, Ordering::Release);
+                    }));
+                }));
+            })
+            .await;
+        child_started.notified().await;
+        let shutdown = scope.shutdown();
+        tokio::pin!(shutdown);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), &mut shutdown)
+                .await
+                .is_err()
+        );
+        assert!(!released.load(Ordering::Acquire));
+        child_release.notify_one();
+        let report = tokio::time::timeout(Duration::from_secs(2), shutdown)
+            .await
+            .unwrap();
+        assert!(report.quiescent);
+        assert!(report.error.is_none());
+        assert!(released.load(Ordering::Acquire));
+    }
+}
+
 type CaptureCompletion = Shared<BoxFuture<'static, Result<(), String>>>;
 
 struct ScopeError {
@@ -11848,6 +11929,33 @@ mod build_scope_tests {
     impl AudioMuxer for Encoder {
         fn send_audio_frame(&mut self, _: AudioFrame, _: Duration) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn owned_audio_scope_joins_workers_after_actual_startup_failures() {
+        for stage in [
+            FailureStage::AudioSetup,
+            FailureStage::MuxerSetup,
+            FailureStage::AudioStart,
+        ] {
+            let scope = OwnedAudioPipelineScope::default();
+            let probe = Probe::new(stage, &scope.0);
+            let directory = tempfile::tempdir().unwrap();
+            let result = scope
+                .build::<Encoder>(
+                    OutputPipeline::builder(directory.path().join("failed-audio.m4a"))
+                        .with_audio_source::<Audio>(probe.clone()),
+                    probe.clone(),
+                )
+                .await;
+            assert!(result.is_err(), "injected audio startup must fail");
+            let report = tokio::time::timeout(Duration::from_secs(2), scope.shutdown())
+                .await
+                .unwrap();
+            assert!(report.quiescent, "{:?}", report.error);
+            assert_eq!(probe.alive.load(Ordering::Acquire), 0);
+            assert!(!scope.0.is_committed());
         }
     }
 

@@ -29,6 +29,7 @@ fn main() {
                             text: format!("word{word} café 字"),
                             start: index as f32 * 4.0 + word as f32 * 0.4,
                             end: index as f32 * 4.0 + (word + 1) as f32 * 0.4,
+                            hidden: false,
                         })
                         .collect(),
                 })

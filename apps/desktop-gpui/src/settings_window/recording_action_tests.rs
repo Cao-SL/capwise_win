@@ -35,6 +35,7 @@ fn settings_fixture(window: &mut Window, cx: &mut Context<SettingsWindow>) -> Se
         server_url: String::new(),
         project_name_input: input.clone(),
         server_url_input: input.clone(),
+        workflow_name_input: input.clone(),
         _field_events: std::array::from_fn(|_| gpui::Subscription::new(|| {})),
         recordings: Recordings::new(input.clone()),
         screenshots: Screenshots::new(input),

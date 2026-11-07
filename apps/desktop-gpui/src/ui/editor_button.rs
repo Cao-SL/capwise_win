@@ -53,6 +53,9 @@ pub struct EditorButton {
     pressed_bg: Hsla,
     pressed_text: Hsla,
     chevron: Hsla,
+    rest_bg: Option<Hsla>,
+    border: Option<Hsla>,
+    full: bool,
     tooltip: Option<(Theme, SharedString)>,
     on_click: Option<ClickHandler>,
     on_open: Option<OpenHandler>,
@@ -83,6 +86,9 @@ impl EditorButton {
             pressed_bg: Hsla::from(theme.editor.ctl_hover),
             pressed_text: Hsla::from(theme.editor.text_1),
             chevron: Hsla::from(theme.editor.text_3),
+            rest_bg: None,
+            border: None,
+            full: false,
             tooltip: None,
             on_click: None,
             on_open: None,
@@ -101,6 +107,31 @@ impl EditorButton {
     /// The "text" ghost: the resting label is `text-1` rather than `text-2`.
     pub fn text(mut self, theme: &Theme) -> Self {
         self.text = Hsla::from(theme.editor.text_1);
+        self
+    }
+
+    pub fn filled(mut self, theme: &Theme) -> Self {
+        let white = Hsla::from(gpui::rgb(0xffffff));
+        self.text = white;
+        self.hover_text = white;
+        self.pressed_text = white;
+        self.rest_bg = Some(Hsla::from(theme.editor.accent));
+        self.hover_bg = Hsla::from(theme.editor.accent_2);
+        self.active_bg = Hsla::from(theme.editor.accent);
+        self.pressed_bg = Hsla::from(theme.editor.accent);
+        self.chevron = white;
+        self
+    }
+
+    pub fn tinted(mut self, theme: &Theme) -> Self {
+        self.text = Hsla::from(theme.editor.text_1);
+        self.rest_bg = Some(Hsla::from(theme.editor.ctl));
+        self.border = Some(Hsla::from(theme.editor.line));
+        self
+    }
+
+    pub fn grow(mut self) -> Self {
+        self.full = true;
         self
     }
 
@@ -207,6 +238,9 @@ impl RenderOnce for EditorButton {
             pressed_bg,
             pressed_text,
             chevron,
+            rest_bg,
+            border,
+            full,
             tooltip,
             on_click,
             on_open,
@@ -243,10 +277,13 @@ impl RenderOnce for EditorButton {
             .flex_shrink_0()
             .when(right_icon_end, |this| this.justify_between())
             .when_some(width, |this, width| this.w(width))
+            .when(full, |this| this.flex_1().min_w_0())
             .text_size(text_size)
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(foreground)
             .when(disabled, |this| this.opacity(0.45))
+            .when_some(rest_bg, |this, bg| this.bg(bg))
+            .when_some(border, |this, color| this.border_1().border_color(color))
             .when(pressed, |this| this.bg(pressed_bg))
             .when(!disabled && !pressed, |this| {
                 this.cursor_pointer()

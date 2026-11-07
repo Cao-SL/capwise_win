@@ -1,6 +1,9 @@
 use std::ops::Range;
 
-use cap_project::disfluency::{Disfluency, DisfluencyToken, detect_disfluencies};
+use cap_project::disfluency::{
+    Disfluency, DisfluencyToken, detect_disfluencies, is_hesitation_filler,
+};
+use cap_project::filler_review::{FillerAction, FillerOccurrence, review_fillers};
 use cap_project::{CaptionsData, TimelineConfiguration};
 use gpui::SharedString;
 
@@ -52,7 +55,9 @@ pub struct TranscriptDoc {
     pub paragraphs: Vec<Paragraph>,
     pub paragraph_of: Vec<u32>,
     pub fillers: Vec<Disfluency>,
-    pub filler_of: Vec<u32>,
+    pub review: Vec<FillerOccurrence>,
+    pub review_of: Vec<u32>,
+    pub hidden: Vec<bool>,
     pub signature: u64,
 }
 
@@ -98,6 +103,7 @@ pub fn captions_signature(captions: Option<&CaptionsData>) -> u64 {
     let mut hasher = std::hash::DefaultHasher::new();
     if let Some(captions) = captions {
         captions.source_timed.hash(&mut hasher);
+        captions.settings.hides_fillers().hash(&mut hasher);
         captions.segments.len().hash(&mut hasher);
         for segment in &captions.segments {
             segment.words.len().hash(&mut hasher);
@@ -105,6 +111,7 @@ pub fn captions_signature(captions: Option<&CaptionsData>) -> u64 {
                 word.text.hash(&mut hasher);
                 word.start.to_bits().hash(&mut hasher);
                 word.end.to_bits().hash(&mut hasher);
+                word.hidden.hash(&mut hasher);
             }
         }
     }
@@ -148,6 +155,39 @@ pub fn flatten_words(captions: &CaptionsData) -> Vec<Word> {
     words
 }
 
+fn word_span(word: &Word) -> Range<f64> {
+    word.start..word.end
+}
+
+fn word_covers(span: &Range<f64>, start: f64) -> bool {
+    start == span.start || span.contains(&start)
+}
+
+/// Sets `hidden` on the caption words behind `spans`. Captions that still hide
+/// English fillers through their settings move to per-word flags first, so a
+/// single filler can come back without bringing the others.
+pub fn set_captions_hidden(captions: &mut CaptionsData, spans: &[Range<f64>], hidden: bool) -> bool {
+    if captions.settings.hides_fillers() {
+        for word in captions.segments.iter_mut().flat_map(|segment| &mut segment.words) {
+            word.hidden |= is_hesitation_filler(&word.text);
+        }
+        captions.settings.show_filler_words = true;
+    }
+    let mut changed = false;
+    for word in captions.segments.iter_mut().flat_map(|segment| &mut segment.words) {
+        let start = f64::from(word.start);
+        let punctuation = cap_project::disfluency::normalize_word(&word.text).is_empty();
+        let covered = spans.iter().any(|span| {
+            word_covers(span, start) || (punctuation && start == span.end)
+        });
+        if word.hidden != hidden && covered {
+            word.hidden = hidden;
+            changed = true;
+        }
+    }
+    changed
+}
+
 fn build_paragraphs(words: &[Word]) -> Vec<Range<usize>> {
     let mut paragraphs = Vec::new();
     let mut start = 0;
@@ -184,12 +224,33 @@ impl TranscriptDoc {
             })
             .collect();
         let fillers = detect_disfluencies(&tokens);
-        let mut filler_of = vec![NO_FILLER; words.len()];
-        for (index, filler) in fillers.iter().enumerate() {
-            for slot in &mut filler_of[filler.words.clone()] {
+        let review = review_fillers(&tokens);
+        let mut review_of = vec![NO_FILLER; words.len()];
+        for (index, occurrence) in review.iter().enumerate() {
+            for slot in &mut review_of[occurrence.words.clone()] {
                 *slot = index as u32;
             }
         }
+        let hides_fillers = captions.settings.hides_fillers();
+        let mut hidden_starts: Vec<f64> = captions
+            .segments
+            .iter()
+            .flat_map(|segment| &segment.words)
+            .filter(|caption| caption.hidden)
+            .map(|caption| f64::from(caption.start))
+            .collect();
+        hidden_starts.sort_by(f64::total_cmp);
+        let hidden = words
+            .iter()
+            .map(|word| {
+                let span = word_span(word);
+                let first = hidden_starts.partition_point(|start| *start < span.start);
+                (hides_fillers && is_hesitation_filler(&word.text))
+                    || hidden_starts
+                        .get(first)
+                        .is_some_and(|start| word_covers(&span, *start))
+            })
+            .collect();
 
         let ranges = build_paragraphs(&words);
         let mut paragraph_of = vec![0u32; words.len()];
@@ -224,7 +285,9 @@ impl TranscriptDoc {
             paragraphs,
             paragraph_of,
             fillers,
-            filler_of,
+            review,
+            review_of,
+            hidden,
             signature: captions_signature(Some(captions)),
         }
     }
@@ -253,15 +316,34 @@ impl TranscriptDoc {
         };
     }
 
-    pub fn filler(&self, word: usize) -> Option<&Disfluency> {
-        let index = *self.filler_of.get(word)?;
-        (index != NO_FILLER).then(|| &self.fillers[index as usize])
+    pub fn is_hidden(&self, word: usize) -> bool {
+        self.hidden.get(word).copied().unwrap_or(false)
+    }
+
+    pub fn is_range_hidden(&self, words: Range<usize>) -> bool {
+        words.clone().all(|word| self.is_hidden(word))
+    }
+
+    /// The occurrence the transcript should mark: one the rules would act on
+    /// or want a person to look at.
+    pub fn marked_occurrence(&self, word: usize) -> Option<&FillerOccurrence> {
+        let index = *self.review_of.get(word)?;
+        if index == NO_FILLER {
+            return None;
+        }
+        let occurrence = &self.review[index as usize];
+        (occurrence.review || occurrence.suggestion != FillerAction::Keep).then_some(occurrence)
+    }
+
+    pub fn occurrence_at(&self, word: usize) -> Option<&FillerOccurrence> {
+        let index = *self.review_of.get(word)?;
+        (index != NO_FILLER).then(|| &self.review[index as usize])
     }
 
     pub fn text_of(&self, words: Range<usize>) -> String {
         let mut text = String::new();
         for word in &self.words[words] {
-            if !text.is_empty() {
+            if !text.is_empty() && !cap_project::joins_without_space(&text, &word.text) {
                 text.push(' ');
             }
             text.push_str(&word.text);

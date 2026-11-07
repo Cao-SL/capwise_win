@@ -53,6 +53,7 @@ impl ProgressiveAudioTestProducer {
         let audio = {
             let mut pending = self.pending.lock().map_err(|error| error.to_string())?;
             Arc::new(DecodedAudio {
+                speech_activity: Default::default(),
                 channels: pending.channels.ok_or("No published audio channels")?,
                 frames: pending.frames,
                 voice_profile: pending.voice_profile.clone(),

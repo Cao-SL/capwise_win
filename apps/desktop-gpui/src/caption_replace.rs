@@ -72,6 +72,7 @@ fn replace_in_words(
                 text: merged.to_string(),
                 start,
                 end,
+                hidden: false,
             };
             words.splice(first..=last, [word]);
         }
@@ -186,6 +187,7 @@ mod tests {
                     text: (*word).into(),
                     start: index as f32,
                     end: index as f32 + 1.0,
+                    hidden: false,
                 })
                 .collect(),
         }
@@ -225,8 +227,8 @@ mod tests {
                 start: 10.0,
                 end: 12.0,
                 words: vec![
-                    CaptionWord { text: "零".into(), start: 10.0, end: 11.0 },
-                    CaptionWord { text: "路".into(), start: 11.0, end: 12.0 },
+                    CaptionWord { text: "零".into(), start: 10.0, end: 11.0, hidden: false },
+                    CaptionWord { text: "路".into(), start: 11.0, end: 12.0, hidden: false },
                 ],
                 ..line("零路", &[])
             },

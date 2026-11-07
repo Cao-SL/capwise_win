@@ -253,19 +253,11 @@ pub enum SidebarTab {
     Camera,
     Audio,
     Cursor,
-    Keyboard,
     Captions,
 }
 
 impl SidebarTab {
-    pub const ALL: [SidebarTab; 6] = [
-        Self::Background,
-        Self::Camera,
-        Self::Audio,
-        Self::Cursor,
-        Self::Keyboard,
-        Self::Captions,
-    ];
+    pub const ALL: [SidebarTab; 4] = [Self::Background, Self::Camera, Self::Audio, Self::Captions];
 
     pub fn icon(self) -> &'static str {
         match self {
@@ -273,8 +265,7 @@ impl SidebarTab {
             Self::Camera => "icons/camera.svg",
             Self::Audio => "icons/audio-on.svg",
             Self::Cursor => "icons/cursor.svg",
-            Self::Keyboard => "icons/keyboard.svg",
-            Self::Captions => "icons/message-bubble.svg",
+            Self::Captions => "icons/captions.svg",
         }
     }
 
@@ -284,7 +275,6 @@ impl SidebarTab {
             Self::Camera => tr::editor::sidebar::tab::camera(),
             Self::Audio => tr::editor::sidebar::tab::audio(),
             Self::Cursor => tr::editor::sidebar::tab::cursor(),
-            Self::Keyboard => tr::editor::sidebar::tab::keyboard(),
             Self::Captions => tr::editor::sidebar::tab::captions(),
         }
     }
@@ -298,7 +288,6 @@ impl SidebarTab {
             Self::Camera => "Camera",
             Self::Audio => "Audio",
             Self::Cursor => "Cursor",
-            Self::Keyboard => "Keyboard",
             Self::Captions => "Captions",
         }
     }
@@ -747,6 +736,7 @@ pub enum ColorTarget {
     /// A text segment's colour, per segment index.
     TextColor(usize),
     TextBackground(usize),
+    TitleCardBackground(usize),
     /// The outline colour, only reachable while `stroke_width > 0`.
     TextStroke(usize),
     /// The right-hand stop of the horizontal gradient, only reachable while
@@ -853,6 +843,10 @@ pub struct SidebarState {
     /// state in the source too, not project config.
     pub caption_model: &'static str,
     pub caption_language: &'static str,
+    pub caption_translation: crate::caption_translation::TranslationUi,
+    pub caption_review: crate::caption_review::ReviewUi,
+    pub caption_resplit: crate::caption_breaks::ResplitUi,
+    pub caption_more_styles: bool,
     /// The text panel's Style chip row: 0 is "All", `n` is
     /// `TEXT_PRESET_GROUPS[n - 1]`. Local UI state, like the source's own
     /// signal, so it survives selecting another text segment.
@@ -860,9 +854,11 @@ pub struct SidebarState {
     /// Which edge the text panel's Animation tiles and Duration row point at:
     /// `false` is In, `true` is Out.
     pub text_anim_edge: bool,
+    pub(crate) title_cards: crate::editor_title_cards::TitleCardUi,
     /// `editingEnd` on the 3D panel -- which of the two poses the camera
     /// sliders point at (`ConfigSidebar.tsx:4908`).
     pub editing_end_pose: bool,
+    pub more_open: std::collections::HashSet<&'static str>,
     /// Which half of the 3D panel's Look grid is showing. Session state, like
     /// the source's own `lookTab` signal: it survives selecting another shot.
     pub camera3d_angles: bool,
@@ -935,11 +931,17 @@ impl SidebarState {
             panel_sections: std::cell::RefCell::new(HashMap::new()),
             noise: std::cell::RefCell::default(),
             menu: None,
-            caption_model: "best",
+            caption_model: crate::local_qwen::MODEL,
             caption_language: "auto",
+            caption_translation: Default::default(),
+            caption_review: Default::default(),
+            caption_resplit: Default::default(),
+            caption_more_styles: false,
             text_style_group: 0,
             text_anim_edge: false,
+            title_cards: Default::default(),
             editing_end_pose: false,
+            more_open: Default::default(),
             camera3d_angles: false,
             color_target: None,
             color_picker: None,
@@ -1038,17 +1040,31 @@ pub enum PanelSection {
 // ---------------------------------------------------------------------------
 
 impl EditorWindow {
-    /// `sidebarSelection()` (`:577-580`): the timeline selection, **excluding
-    /// clip** -- selecting a clip is a timeline-only affordance (highlight,
-    /// Delete, multi-select) and must not swap the sidebar away from its tab.
     pub fn sidebar_selection(&self) -> Option<&crate::editor_edits::Selection> {
         self.selection
             .as_ref()
-            .filter(|selection| selection.track != TrackKind::Clip)
+            .filter(|selection| selection.track != TrackKind::Clip || selection.indices.len() == 1)
     }
 
     /// The tab rail's click: clear any selection, then switch tab and put the
     /// scroll body back to the top (`:632-650`).
+    /// The panels share the sidebar's place, so the tab only shows once they
+    /// have closed.
+    pub(crate) fn open_captions_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.transcript.open {
+            self.toggle_transcript(window, cx);
+        }
+        if self.clips.open {
+            self.close_clips(window, cx);
+        }
+        if let Some(index) = SidebarTab::ALL
+            .iter()
+            .position(|tab| *tab == SidebarTab::Captions)
+        {
+            self.select_sidebar_tab(index, window, cx);
+        }
+    }
+
     fn select_sidebar_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(tab) = SidebarTab::ALL.get(index).copied() else {
             return;
@@ -1160,6 +1176,26 @@ impl EditorWindow {
         self.edit_project_with_rebuild(false, reason, window, cx, change);
     }
 
+    pub(crate) fn edit_project_global(
+        &mut self,
+        reason: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut ProjectConfiguration) -> bool,
+    ) {
+        self.edit_project_at_target(None, true, reason, window, cx, change);
+    }
+
+    pub(crate) fn edit_project_global_without_timeline(
+        &mut self,
+        reason: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut ProjectConfiguration) -> bool,
+    ) {
+        self.edit_project_at_target(None, false, reason, window, cx, change);
+    }
+
     /// The shared project write. `rebuild_timeline` is true for edits that
     /// touch a field [`crate::editor_timeline::TimelineModel::build`] or
     /// [`crate::editor_timeline::TrackLanes::from_project`] reads.
@@ -1171,11 +1207,30 @@ impl EditorWindow {
         cx: &mut Context<Self>,
         change: impl FnOnce(&mut ProjectConfiguration) -> bool,
     ) {
-        if !self.project_ready() {
+        self.edit_project_at_target(
+            self.sidebar.style_target,
+            rebuild_timeline,
+            reason,
+            window,
+            cx,
+            change,
+        );
+    }
+
+    fn edit_project_at_target(
+        &mut self,
+        target: Option<(usize, StyleGroup)>,
+        rebuild_timeline: bool,
+        reason: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut ProjectConfiguration) -> bool,
+    ) {
+        if !self.project_ready() || self.voiceover.is_busy() {
             return;
         }
         self.end_color_history();
-        if !self.apply_control_change(change) {
+        if !apply_project_control_change(&mut self.project, target, change) {
             return;
         }
         if rebuild_timeline {
@@ -1793,6 +1848,16 @@ impl EditorWindow {
                 .as_ref()
                 .and_then(|timeline| timeline.text_segments.get(index))
                 .map(|segment| segment.color.clone()),
+            ColorTarget::TitleCardBackground(index) => self
+                .project
+                .timeline
+                .as_ref()
+                .and_then(|timeline| timeline.text_segments.get(index))
+                .and_then(|segment| segment.title_card.as_ref())
+                .and_then(|card| match &card.background {
+                    cap_project::TitleCardBackground::Solid { color } => Some(color.clone()),
+                    cap_project::TitleCardBackground::ProjectImage { .. } => None,
+                }),
             ColorTarget::TextBackground(index) => self
                 .project
                 .timeline
@@ -1942,6 +2007,12 @@ impl EditorWindow {
                     segment.color = hex;
                     true
                 })
+            }
+            ColorTarget::TitleCardBackground(index) => {
+                self.update_title_card(index, window, cx, move |segment| {
+                    segment.title_card.as_mut().unwrap().background =
+                        cap_project::TitleCardBackground::Solid { color: hex };
+                });
             }
             ColorTarget::TextBackground(index) => {
                 self.edit_text_segment("text-background-color", index, window, cx, move |segment| {
@@ -2628,19 +2699,27 @@ impl EditorWindow {
             .into_iter()
             .map(|tab| {
                 let disabled = match tab {
-                    SidebarTab::Camera => !summary.is_some_and(|summary| summary.has_camera),
+                    SidebarTab::Camera => !summary
+                        .is_some_and(|summary| summary.has_camera || summary.display_is_camera),
                     SidebarTab::Cursor => !summary.is_some_and(|summary| summary.has_cursor_data),
                     _ => false,
                 };
-                // While a selection panel is up the rail shows no selected
-                // item at all: `KTabs`'s value is forced to `undefined` and
-                // the indicator is hidden (`:586-592, 667-677`).
+                let picking_audio = self.audio_picker.is_some();
+                let context = (picking_audio && tab == SidebarTab::Audio)
+                    || selection.as_ref().is_some_and(|selection| {
+                        matches!(
+                            (selection.track, tab),
+                            (TrackKind::Caption, SidebarTab::Captions)
+                                | (TrackKind::Audio, SidebarTab::Audio)
+                        )
+                    });
                 ui::TabRailItem::new(
                     tab.icon(),
                     tab.title(),
-                    selection.is_none() && tab == selected_tab,
+                    selection.is_none() && !picking_audio && tab == selected_tab,
                     disabled,
                 )
+                .context(context)
             })
             .collect();
 
@@ -2701,11 +2780,28 @@ impl EditorWindow {
     /// own `flex flex-col gap-6 p-4` inside it.
     fn render_tab_body(&self, cx: &mut Context<Self>) -> AnyElement {
         let content: AnyElement = match self.sidebar.tab {
-            SidebarTab::Background => self.render_background_tab(cx).into_any_element(),
+            SidebarTab::Background => {
+                let cursor = self.sidebar.style_target.is_none()
+                    && self
+                        .summary()
+                        .is_some_and(|summary| summary.has_cursor_data);
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(24.))
+                    .child(self.render_background_tab(cx))
+                    .children(cursor.then(|| {
+                        div()
+                            .pt(px(20.))
+                            .border_t_1()
+                            .border_color(Hsla::from(self.theme.editor.line))
+                            .child(self.render_cursor_tab(cx))
+                    }))
+                    .into_any_element()
+            }
             SidebarTab::Camera => self.render_camera_tab(cx),
             SidebarTab::Audio => self.render_audio_tab(cx),
             SidebarTab::Cursor => self.render_cursor_tab(cx),
-            SidebarTab::Keyboard => self.render_keyboard_tab(cx),
             SidebarTab::Captions => self.render_captions_tab(cx),
         };
 
@@ -2757,98 +2853,95 @@ impl EditorWindow {
     fn render_background_tab(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let background = &self.project.background;
+        let editing_style = self.sidebar.style_target.is_some();
 
         div()
             .flex()
             .flex_col()
-            .gap(px(14.))
+            .gap(px(16.))
             .child(self.render_source_field(cx))
-            .child(dashed_divider(Hsla::from(theme.editor.line)))
-            .child(
-                ui::Field::section(&theme, tr::editor::sidebar::layout::title()).child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .child(self.slider_field(
-                            tr::editor::sidebar::layout::background_blur(),
-                            SliderKey::Bg(BgSlider::Blur),
-                            "%",
-                            cx,
-                        ))
-                        .child(self.slider_field(
-                            tr::editor::sidebar::layout::padding(),
-                            SliderKey::Bg(BgSlider::Padding),
-                            "%",
-                            cx,
-                        ))
-                        // The custom screen position row, shown only once the
-                        // display has been dragged on the canvas (`:2656-2667`).
-                        .children(background.display_position.map(|_| {
-                            div()
-                                .flex()
-                                .flex_row()
-                                .justify_between()
-                                .items_center()
-                                .h(px(34.))
-                                .child(
-                                    div()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_size(px(12.))
-                                        .text_color(Hsla::from(theme.editor.text_2))
-                                        .child(tr::editor::sidebar::layout::custom_position()),
-                                )
-                                .child(section_action(
-                                    &theme,
-                                    "reset-display-position",
-                                    tr::common::reset(),
-                                    None,
-                                    false,
-                                    cx.listener(|this, _, window, cx| {
-                                        this.edit_background(
-                                            "display-position",
-                                            |project| {
-                                                project.background.display_position = None;
-                                                true
-                                            },
-                                            window,
-                                            cx,
-                                        );
-                                    }),
-                                ))
-                                .into_any_element()
-                        }))
-                        .child(self.slider_field(
-                            tr::editor::sidebar::layout::rounded_corners(),
-                            SliderKey::Bg(BgSlider::Rounding),
-                            "%",
-                            cx,
-                        ))
-                        .child(self.render_corner_style(cx))
-                        .children(self.sidebar.style_target.is_none().then(|| {
-                            self.slider_field(
-                                tr::editor::sidebar::layout::motion_blur(),
-                                SliderKey::Bg(BgSlider::MotionBlur),
-                                "x100%",
+            .child(self.slider_field(
+                tr::editor::sidebar::layout::padding(),
+                SliderKey::Bg(BgSlider::Padding),
+                "%",
+                cx,
+            ))
+            .child(self.slider_field(
+                tr::editor::sidebar::layout::rounded_corners(),
+                SliderKey::Bg(BgSlider::Rounding),
+                "%",
+                cx,
+            ))
+            .children(background.display_position.map(|_| {
+                div()
+                    .flex()
+                    .flex_row()
+                    .justify_between()
+                    .items_center()
+                    .h(px(32.))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(12.))
+                            .text_color(Hsla::from(theme.editor.text_2))
+                            .child(tr::editor::sidebar::layout::custom_position()),
+                    )
+                    .child(
+                        ui::EditorButton::plain(&theme, "reset-display-position")
+                            .tinted(&theme)
+                            .height(px(26.))
+                            .text_size(px(12.))
+                            .label(tr::common::reset())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.edit_background(
+                                    "display-position",
+                                    |project| {
+                                        project.background.display_position = None;
+                                        true
+                                    },
+                                    window,
+                                    cx,
+                                );
+                            })),
+                    )
+                    .into_any_element()
+            }))
+            .child(self.more_settings("background", cx, move |this, cx| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(18.))
+                    .child(this.render_shadow_field(cx))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(this.slider_field(
+                                tr::editor::sidebar::layout::background_blur(),
+                                SliderKey::Bg(BgSlider::Blur),
+                                "%",
                                 cx,
-                            )
-                            .into_any_element()
-                        })),
-                ),
-            )
-            .child(dashed_divider(Hsla::from(theme.editor.line)))
-            .child(self.render_border_field(cx))
-            .child(dashed_divider(Hsla::from(theme.editor.line)))
-            .child(self.render_notch_field(cx))
-            .child(dashed_divider(Hsla::from(theme.editor.line)))
-            .child(self.render_shadow_field(cx))
-            // `<ColorCorrectionSection target="screen" />` (`:2962`).
-            .children(
-                self.sidebar
-                    .style_target
-                    .is_none()
-                    .then(|| self.render_color_correction(GradeTarget::Screen, cx)),
-            )
+                            ))
+                            .child(this.render_corner_style(cx))
+                            .children((!editing_style).then(|| {
+                                this.slider_field(
+                                    tr::editor::sidebar::layout::motion_blur(),
+                                    SliderKey::Bg(BgSlider::MotionBlur),
+                                    "x100%",
+                                    cx,
+                                )
+                                .into_any_element()
+                            })),
+                    )
+                    .child(this.render_border_field(cx))
+                    .child(this.render_notch_field(cx))
+                    .children(
+                        (!editing_style)
+                            .then(|| this.render_color_correction(GradeTarget::Screen, cx)),
+                    )
+                    .into_any_element()
+            }))
     }
 
     // -- Source ------------------------------------------------------------
@@ -3833,21 +3926,6 @@ impl EditorWindow {
         .detach();
     }
 
-    /// One slider row, wired to the shared drag/undo bracket.
-    ///
-    /// `unit` is the source's `formatTooltip`, which is what the hover tooltip
-    /// prints. gpui's tooltip is hover-driven only -- the Solid slider *also*
-    /// forces it open mid-drag, which this rev cannot do (the README's
-    /// standing tooltip deviation).
-    pub(crate) fn slider(
-        &self,
-        slider: SliderKey,
-        unit: &'static str,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        self.slider_sized(slider, unit, false, cx)
-    }
-
     /// The angle row is the one place a slider sits *beside* something rather
     /// than filling a column, and the source spells that out as
     /// `<Slider class="flex-1">` (`GradientEditor.tsx:169`). A flex item with
@@ -3978,6 +4056,106 @@ pub(crate) fn format_slider_value(value: f32, unit: &str) -> String {
 }
 
 /// The section dividers: a solid hairline, not the source's dashes.
+impl EditorWindow {
+    pub(crate) fn more_open(&self, key: &'static str) -> bool {
+        self.sidebar.more_open.contains(key)
+    }
+
+    pub(crate) fn more_settings(
+        &self,
+        key: &'static str,
+        cx: &mut Context<Self>,
+        body: impl FnOnce(&Self, &mut Context<Self>) -> AnyElement,
+    ) -> AnyElement {
+        let theme = self.theme;
+        let open = self.more_open(key);
+        let group: SharedString = SharedString::from(format!("more-{key}"));
+        let rest = Hsla::from(theme.editor.text_2);
+        let hover = Hsla::from(theme.editor.text_1);
+        let toggle = div()
+            .id(SharedString::from(format!("more-settings-{key}")))
+            .group(group.clone())
+            .flex()
+            .flex_row()
+            .items_center()
+            .justify_between()
+            .h(px(32.))
+            .px(px(10.))
+            .rounded(px(8.))
+            .bg(Hsla::from(theme.editor.ctl))
+            .cursor_pointer()
+            .text_size(px(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(rest)
+            .hover(move |this| {
+                this.bg(Hsla::from(theme.editor.ctl_hover))
+                    .text_color(hover)
+            })
+            .child(tr::editor::window::clip_menu::more())
+            .child(
+                svg()
+                    .path(if open {
+                        "icons/chevron-up.svg"
+                    } else {
+                        "icons/chevron-down.svg"
+                    })
+                    .size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_3))
+                    .group_hover(group, move |style| style.text_color(hover)),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if !this.sidebar.more_open.remove(key) {
+                    this.sidebar.more_open.insert(key);
+                }
+                cx.notify();
+            }));
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .child(toggle)
+            .when(open, |column| column.child(body(self, cx)))
+            .into_any_element()
+    }
+}
+
+pub(crate) fn section_title(
+    theme: &crate::theme::Theme,
+    label: impl Into<SharedString>,
+) -> AnyElement {
+    div()
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(Hsla::from(theme.editor.text_2))
+        .child(label.into())
+        .into_any_element()
+}
+
+pub(crate) fn tab_header(
+    theme: &crate::theme::Theme,
+    title: impl Into<SharedString>,
+    trailing: Option<AnyElement>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_between()
+        .gap(px(8.))
+        .min_h(px(28.))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(px(14.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(Hsla::from(theme.editor.text_1))
+                .child(title.into()),
+        )
+        .children(trailing)
+        .into_any_element()
+}
+
 pub(crate) fn dashed_divider(color: Hsla) -> impl IntoElement {
     div().w_full().h(px(1.)).bg(color)
 }
@@ -4172,6 +4350,23 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if name.eq_ignore_ascii_case("clips") {
+            if !self.clips.open {
+                self.toggle_clips(window, cx);
+            }
+            self.assets.source = crate::editor_assets::AssetSource::Project;
+            static AUTO_IMPORTED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if let Ok(source) = std::env::var("CAP_GPUI_AUTO_IMPORT_MP4")
+                && !AUTO_IMPORTED.swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                self.auto_import_mp4(std::path::PathBuf::from(source), window, cx);
+            }
+            cx.notify();
+            tracing::info!(tab = name, "auto sidebar tab");
+            window.refresh();
+            return;
+        }
         let Some(index) = SidebarTab::ALL
             .iter()
             .position(|tab| tab.label().eq_ignore_ascii_case(name))
@@ -4542,6 +4737,17 @@ impl StyleGroup {
     }
 }
 
+fn apply_project_control_change(
+    project: &mut ProjectConfiguration,
+    target: Option<(usize, StyleGroup)>,
+    change: impl FnOnce(&mut ProjectConfiguration) -> bool,
+) -> bool {
+    match target {
+        Some((index, group)) => apply_style_control_change(project, index, group, change),
+        None => change(project),
+    }
+}
+
 pub(crate) fn apply_style_control_change(
     project: &mut ProjectConfiguration,
     index: usize,
@@ -4674,12 +4880,10 @@ impl EditorWindow {
         &mut self,
         change: impl FnOnce(&mut ProjectConfiguration) -> bool,
     ) -> bool {
-        match self.sidebar.style_target {
-            Some((index, group)) => {
-                apply_style_control_change(&mut self.project, index, group, change)
-            }
-            None => change(&mut self.project),
+        if self.voiceover.is_busy() {
+            return false;
         }
+        apply_project_control_change(&mut self.project, self.sidebar.style_target, change)
     }
 
     pub(crate) fn open_style_group(
@@ -4794,6 +4998,256 @@ impl EditorWindow {
 #[cfg(test)]
 mod style_image_tests {
     use super::*;
+
+    fn caption_style_project() -> ProjectConfiguration {
+        let mut project: ProjectConfiguration = serde_json::from_value(serde_json::json!({
+            "timeline": {"zoomSegments":[], "segments":[{"recordingSegment":0,"start":0.0,"end":4.0,"timescale":1.25}],"styleSegments":[{"start":0.0,"end":3.0}]}
+        })).unwrap();
+        let mut background = project.background.clone();
+        background.padding = 37.;
+        let mut camera = project.camera.clone();
+        camera.hide = true;
+        let mut cursor = project.cursor.clone();
+        cursor.hide = true;
+        let style = &mut project.timeline.as_mut().unwrap().style_segments[0];
+        style.overrides.background = Some(background);
+        style.overrides.camera = Some(camera);
+        style.overrides.cursor = Some(cursor);
+        project
+    }
+
+    fn spoken_caption() -> cap_project::CaptionSegment {
+        cap_project::CaptionSegment {
+            id: "spoken".into(),
+            start: 0.,
+            end: 2.,
+            text: "零录".into(),
+            words: vec![
+                cap_project::CaptionWord {
+                    text: "零".into(),
+                    start: 0.,
+                    end: 0.8,
+                    hidden: false,
+                },
+                cap_project::CaptionWord {
+                    text: "录".into(),
+                    start: 1.,
+                    end: 1.8,
+                    hidden: false,
+                },
+            ],
+        }
+    }
+
+    fn styles(project: &ProjectConfiguration) -> serde_json::Value {
+        serde_json::to_value(&project.timeline.as_ref().unwrap().style_segments).unwrap()
+    }
+
+    #[test]
+    fn global_caption_results_preserve_each_local_style_and_survive_save_undo_redo() {
+        let original = caption_style_project();
+        let mut recognized = original.clone();
+        crate::transcription::apply_caption_result(
+            &mut recognized,
+            vec![spoken_caption()],
+            "zh",
+            &[4.],
+            4.,
+        );
+        let mut reviewed = recognized.clone();
+        let segment = &mut reviewed.captions.as_mut().unwrap().segments[0];
+        segment.words[0].text = "灵".into();
+        segment.text = cap_project::caption_text_from_words(&segment.words);
+        cap_project::synchronize_captions(&mut reviewed, &[4.]);
+        let mut translated = reviewed.clone();
+        let settings = &mut translated.captions.as_mut().unwrap().settings;
+        settings.set_translation("spoken", "灵录", "Capwise".into(), "en".into());
+        settings.display_mode = cap_project::CaptionDisplayMode::Bilingual;
+        for group in [
+            StyleGroup::Background,
+            StyleGroup::Camera,
+            StyleGroup::Cursor,
+        ] {
+            for (before, expected) in [
+                (&original, &recognized),
+                (&recognized, &reviewed),
+                (&reviewed, &translated),
+            ] {
+                let mut incorrectly_scoped = before.clone();
+                assert!(apply_project_control_change(
+                    &mut incorrectly_scoped,
+                    Some((0, group)),
+                    |project| {
+                        *project = expected.clone();
+                        true
+                    }
+                ));
+                assert_ne!(
+                    serde_json::to_value(&incorrectly_scoped.captions).unwrap(),
+                    serde_json::to_value(&expected.captions).unwrap()
+                );
+                let mut project = before.clone();
+                let mut history = crate::editor_edits::ProjectHistory::new(project.clone());
+                assert!(apply_project_control_change(
+                    &mut project,
+                    None,
+                    |project| {
+                        *project = expected.clone();
+                        true
+                    }
+                ));
+                history.record(&project);
+                assert_eq!(
+                    serde_json::to_value(&project.captions).unwrap(),
+                    serde_json::to_value(&expected.captions).unwrap()
+                );
+                assert_eq!(styles(&project), styles(before));
+                let directory = tempfile::tempdir().unwrap();
+                project.write(directory.path()).unwrap();
+                let restored = ProjectConfiguration::load(directory.path()).unwrap();
+                assert_eq!(
+                    serde_json::to_value(&restored.captions).unwrap(),
+                    serde_json::to_value(&expected.captions).unwrap()
+                );
+                assert_eq!(styles(&restored), styles(before));
+                let undone = history.undo().unwrap();
+                assert_eq!(
+                    serde_json::to_value(&undone.captions).unwrap(),
+                    serde_json::to_value(&before.captions).unwrap()
+                );
+                assert_eq!(styles(undone), styles(before));
+                let redone = history.redo().unwrap();
+                assert_eq!(
+                    serde_json::to_value(&redone.captions).unwrap(),
+                    serde_json::to_value(&expected.captions).unwrap()
+                );
+                assert_eq!(styles(redone), styles(before));
+            }
+        }
+    }
+
+    #[test]
+    fn global_manual_subtitle_tools_preserve_local_style_overrides() {
+        let mut project = caption_style_project();
+        crate::transcription::apply_caption_result(
+            &mut project,
+            vec![spoken_caption()],
+            "zh",
+            &[4.],
+            4.,
+        );
+        let before = styles(&project);
+        assert!(apply_project_control_change(
+            &mut project,
+            None,
+            |project| {
+                crate::caption_replace::replace_in_captions(
+                    &mut project.captions.as_mut().unwrap().segments,
+                    "零",
+                    "灵",
+                    None,
+                ) == 1
+            }
+        ));
+        assert_eq!(project.captions.as_ref().unwrap().segments[0].text, "灵录");
+        assert!(apply_project_control_change(
+            &mut project,
+            None,
+            |project| {
+                crate::transcript::model::set_captions_hidden(
+                    project.captions.as_mut().unwrap(),
+                    &[0.0..0.8],
+                    true,
+                )
+            }
+        ));
+        assert!(project.captions.as_ref().unwrap().segments[0].words[0].hidden);
+        assert!(apply_project_control_change(
+            &mut project,
+            None,
+            |project| {
+                let settings = &mut project.captions.as_mut().unwrap().settings;
+                settings.color = "#FFCC00".into();
+                settings.size = 42;
+                settings.set_translation("spoken", "录", "My subtitle".into(), "en".into());
+                settings.display_mode = cap_project::CaptionDisplayMode::Bilingual;
+                true
+            }
+        ));
+        assert_eq!(project.captions.as_ref().unwrap().settings.size, 42);
+        assert_eq!(project.captions.as_ref().unwrap().settings.color, "#FFCC00");
+        assert!(
+            project
+                .captions
+                .as_ref()
+                .unwrap()
+                .settings
+                .translation_for("spoken", "录")
+                .is_some()
+        );
+        assert_eq!(styles(&project), before);
+    }
+
+    #[test]
+    fn trusted_refinement_preserves_manual_words_styles_and_existing_history_steps() {
+        let mut original = caption_style_project();
+        crate::transcription::apply_caption_result(
+            &mut original,
+            vec![spoken_caption()],
+            "zh",
+            &[4.],
+            4.,
+        );
+        let input = original.captions.as_ref().unwrap().segments.clone();
+        let mut aligned = input.clone();
+        aligned[0].words[1].end = 1.9;
+        aligned[0].end = 1.9;
+        let refined = crate::transcription::RefinedCaptions::new(&input, aligned);
+        let mut history = crate::editor_edits::ProjectHistory::new(original.clone());
+        let mut edited = original.clone();
+        let segment = &mut edited.captions.as_mut().unwrap().segments[0];
+        segment.words[0].text = "用户词".into();
+        segment.text = cap_project::caption_text_from_words(&segment.words);
+        history.record(&edited);
+        assert!(crate::transcription::apply_refined_captions(
+            &mut edited,
+            &refined,
+            &[4.]
+        ));
+        history.amend_all(|entry| {
+            crate::transcription::apply_refined_captions(entry, &refined, &[4.]);
+        });
+        assert_eq!(
+            edited.captions.as_ref().unwrap().segments[0].words[0].text,
+            "用户词"
+        );
+        assert_eq!(
+            edited.captions.as_ref().unwrap().segments[0].words[1].end,
+            1.9
+        );
+        assert_eq!(styles(&edited), styles(&original));
+        let undone = history.undo().unwrap();
+        assert_eq!(
+            undone.captions.as_ref().unwrap().segments[0].words[0].text,
+            "零"
+        );
+        assert_eq!(
+            undone.captions.as_ref().unwrap().segments[0].words[1].end,
+            1.9
+        );
+        assert_eq!(styles(undone), styles(&original));
+        assert!(history.undo().is_none());
+        let redone = history.redo().unwrap();
+        assert_eq!(
+            redone.captions.as_ref().unwrap().segments[0].words[0].text,
+            "用户词"
+        );
+        assert_eq!(
+            redone.captions.as_ref().unwrap().segments[0].words[1].end,
+            1.9
+        );
+        assert_eq!(styles(redone), styles(&original));
+    }
 
     #[test]
     fn style_image_group_changes_preserve_globals_and_require_opt_in() {

@@ -147,6 +147,37 @@ pub fn plan_word_cuts(
     )
 }
 
+/// ASR gives a hesitation a sliver of time and leaves the rest of the sound in
+/// the gap after it: on real footage "呃" is stamped 0.04s long and rings for
+/// 0.2s more. So a filler's cut runs up to the next word instead of stopping at
+/// the quietest point, which would leave that tail audible.
+pub fn plan_filler_cuts(
+    doc: &TranscriptDoc,
+    energy: Option<&EnergyEnvelope>,
+    kept: Option<&[bool]>,
+    runs: &[Range<usize>],
+) -> Vec<Range<f64>> {
+    let mut cuts = plan_word_cuts(doc, energy, kept, runs);
+    for run in runs {
+        let (Some(last), Some(next)) = (doc.voiced.get(run.end - 1), doc.voiced.get(run.end))
+        else {
+            continue;
+        };
+        let gap = next.start - last.end;
+        if gap <= 0.0 {
+            continue;
+        }
+        let end = next.start - ONSET_GUARD.min(gap * 0.2);
+        if let Some(cut) = cuts
+            .iter_mut()
+            .find(|cut| cut.start <= last.end && cut.end >= last.start)
+        {
+            cut.end = cut.end.max(end);
+        }
+    }
+    merge_ranges(cuts)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PauseCut {
     pub after_word: usize,

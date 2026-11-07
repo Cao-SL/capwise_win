@@ -1,4 +1,5 @@
 use crate::export_audio::{EXPORT_AUDIO_BLOCK_SAMPLES, ExportAudioError, ExportAudioSources};
+mod ducking;
 use cap_audio::{
     AudioData, AudioRendererTrack, DecodedAudio, FromSampleBytes, StereoMode, VoiceAudio,
     VoiceEnhancer, VoiceSource, cast_bytes_to_f32_slice, cast_f32_slice_to_bytes,
@@ -275,7 +276,16 @@ impl AudioRenderer {
             crate::join_fade::apply_join_fades(&mut buf, frame_start, &joins);
 
             if !self.music.is_empty() && !timeline.audio_segments.is_empty() {
-                mix_music(&self.music, timeline, frame_start, written, &mut buf);
+                let ducking =
+                    ducking::DuckingEnvelope::for_audio(&self.data, project, frame_start, written);
+                mix_music(
+                    &self.music,
+                    timeline,
+                    frame_start,
+                    written,
+                    &mut buf,
+                    ducking.as_ref(),
+                );
             }
 
             return Some((written, buf));
@@ -327,6 +337,7 @@ impl AudioRenderer {
             sources.check_cancelled()?;
             let (mapping, span) = if !timeline.transitions.is_empty()
                 || !timeline.hold_windows().is_empty()
+                || timeline.has_content_tail()
             {
                 let Some((mapping, output_end_samples)) = self.next_transition_mapping(timeline)
                 else {
@@ -477,7 +488,10 @@ impl AudioRenderer {
     ) -> Option<(usize, Vec<f32>)> {
         // Transitions and fullscreen-text holds both need the mapping-driven
         // path; the accumulation fast path below knows nothing about either.
-        if !timeline.transitions.is_empty() || !timeline.hold_windows().is_empty() {
+        if !timeline.transitions.is_empty()
+            || !timeline.hold_windows().is_empty()
+            || timeline.has_content_tail()
+        {
             return self.render_timeline_transition_frame_raw(samples, project, timeline);
         }
 
@@ -1313,6 +1327,7 @@ fn mix_music(
     frame_start: usize,
     samples: usize,
     out: &mut [f32],
+    ducking: Option<&ducking::DuckingEnvelope>,
 ) {
     if samples == 0 {
         return;
@@ -1373,6 +1388,11 @@ fn mix_music(
             let until_end = segment_len - local;
             if fade_out > 0 && until_end <= fade_out {
                 g *= (until_end as f32 / fade_out as f32).clamp(0.0, 1.0);
+            }
+            if segment.ducking
+                && let Some(ducking) = ducking
+            {
+                g *= ducking.gain(out_sample as usize);
             }
             if g <= 0.0 {
                 continue;
@@ -1962,6 +1982,7 @@ fn audio_project_key(project: &ProjectConfiguration) -> Option<Vec<u8>> {
         color_correction: _,
         text_size_version: _,
         text_anim_version: _,
+        overlay_layer_version: _,
         markers: _,
     } = project;
     let timeline = timeline.as_ref().map(|timeline| {
@@ -2029,7 +2050,10 @@ fn render_is_origin_independent(
     let Some(timeline) = &project.timeline else {
         return false;
     };
-    if !timeline.transitions.is_empty() || !timeline.hold_windows().is_empty() {
+    if !timeline.transitions.is_empty()
+        || !timeline.hold_windows().is_empty()
+        || timeline.has_content_tail()
+    {
         return false;
     }
     let rate = AudioData::SAMPLE_RATE as f64;
@@ -4502,6 +4526,7 @@ mod tests {
             enabled: true,
             trim_start: 0.0,
             volume_db: 0.0,
+            ducking: false,
             fade_in,
             fade_out,
             duration: Some(end - start),
@@ -4543,7 +4568,14 @@ mod tests {
         .collect();
         let project = music_project(vec![music_track_segment("a.wav", 0.0, 3.0, 0.0, 0.0)]);
         let mut out = [1.5, -1.5].repeat(4);
-        mix_music(&music, project.timeline.as_ref().unwrap(), 0, 4, &mut out);
+        mix_music(
+            &music,
+            project.timeline.as_ref().unwrap(),
+            0,
+            4,
+            &mut out,
+            None,
+        );
         assert_eq!(out, [1.0, -1.0, 1.0, -1.0, 1.5, -1.5, 1.5, -1.5]);
     }
 
@@ -4598,6 +4630,35 @@ mod tests {
 
     // Timeline music must be mixed on top of the recording even when the
     // recording itself carries no audio (empty renderer `data`).
+    #[test]
+    fn full_audio_tail_renders_and_seeks_without_repeating_original_speech() {
+        let (dir, mut renderer, mut project) = build_renderer_fixture();
+        let music_path = dir.path().join("tail.wav");
+        write_step_wav(&music_path, &[8000; 5]);
+        let music = [(
+            "tail.wav".into(),
+            Arc::new(AudioData::from_file(&music_path).unwrap()),
+        )]
+        .into_iter()
+        .collect();
+        renderer = renderer.with_music(music);
+        project
+            .timeline
+            .as_mut()
+            .unwrap()
+            .audio_segments
+            .push(music_track_segment("tail.wav", 5., 10., 0., 0.));
+        assert_eq!(project.timeline.as_ref().unwrap().duration(), 10.);
+        let stream = render_export_audio(&mut renderer, &project, 30, 300);
+        assert_eq!(stream.len(), AudioData::SAMPLE_RATE as usize * 10 * 2);
+        for second in 7..10usize {
+            assert!((left_at_second(&stream, second) - expected(8000)).abs() < 0.02);
+        }
+        renderer.set_playhead(7., &project);
+        let (_, tail) = renderer.render_frame_raw(4800, &project).unwrap();
+        assert!((tail[100] - expected(8000)).abs() < 0.02);
+    }
+
     #[test]
     fn mixes_timeline_music_over_silent_recording() {
         let _ = ffmpeg::init();

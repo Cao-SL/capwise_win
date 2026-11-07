@@ -744,6 +744,8 @@ pub struct Feeds {
     camera_preview_not_before: Option<cap_timestamp::Timestamps>,
     mic_input_pending: bool,
     mic_input_released: bool,
+    mic_tap_leases: usize,
+    mic_release_deferred: bool,
     microphone_error: Option<String>,
     camera_ready: Option<InputReady>,
     microphone_ready: Option<InputReady>,
@@ -833,6 +835,8 @@ impl Feeds {
             camera_preview_not_before: None,
             mic_input_pending: false,
             mic_input_released: false,
+            mic_tap_leases: 0,
+            mic_release_deferred: false,
             microphone_error: None,
             camera_ready: None,
             microphone_ready: None,
@@ -897,6 +901,32 @@ impl Feeds {
     pub fn mic_actor(&self) -> Option<ActorRef<MicrophoneFeed>> {
         self.microphone.as_ref()?;
         self.mic_actor.clone().filter(|actor| actor.is_alive())
+    }
+
+    pub(crate) fn mic_tap_route(&self) -> Option<(ActorRef<MicrophoneFeed>, u64)> {
+        if self.mic_input_pending || self.mic_input_released || self.microphone_error.is_some() {
+            return None;
+        }
+        Some((self.mic_actor()?, self.mic_epoch))
+    }
+
+    pub(crate) fn acquire_mic_tap(&mut self, cx: &mut Context<Self>) {
+        self.mic_tap_leases += 1;
+        if self.mic_input_released {
+            self.set_microphone_with_settings(
+                self.microphone.clone(),
+                self.microphone_settings,
+                cx,
+            );
+            self.mic_release_deferred = true;
+        }
+    }
+
+    pub(crate) fn release_mic_tap(&mut self, cx: &mut Context<Self>) {
+        self.mic_tap_leases = self.mic_tap_leases.saturating_sub(1);
+        if self.mic_tap_leases == 0 && self.mic_release_deferred {
+            self.release_microphone(cx);
+        }
     }
 
     /// The level meter's input, for a recording that has to open its own
@@ -1194,6 +1224,7 @@ impl Feeds {
         settings: Option<microphone::MicrophoneDeviceSettings>,
         cx: &mut Context<Self>,
     ) -> u64 {
+        self.mic_release_deferred = false;
         if self.microphone == label
             && self.microphone_settings == settings
             && !self.mic_input_released
@@ -1298,6 +1329,15 @@ impl Feeds {
     /// chosen -- so neither does this: only the hardware is released.
     pub fn release_inputs(&mut self, cx: &mut Context<Self>) {
         self.park_camera_preview(cx);
+        if self.mic_tap_leases > 0 {
+            self.mic_release_deferred = true;
+            return;
+        }
+        self.release_microphone(cx);
+    }
+
+    fn release_microphone(&mut self, cx: &mut Context<Self>) {
+        self.mic_release_deferred = false;
         self.mic_epoch += 1;
         self.mic_input_epoch
             .store(self.mic_epoch, Ordering::Release);

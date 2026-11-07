@@ -745,6 +745,7 @@ fn utterance_words(utterance: &Utterance, offset: f64) -> Vec<CaptionWord> {
             text: word.text.trim().to_string(),
             start: seconds(word.start_time),
             end: seconds(word.end_time.max(word.start_time)),
+            hidden: false,
         })
         .collect();
 
@@ -776,7 +777,7 @@ fn utterance_words(utterance: &Utterance, offset: f64) -> Vec<CaptionWord> {
             .into_iter()
             .map(|piece| {
                 let span = (end - start) * width(&piece).max(0.5) / total.max(0.5);
-                let word = CaptionWord { text: piece, start: at, end: at + span };
+                let word = CaptionWord { text: piece, start: at, end: at + span, hidden: false };
                 at += span;
                 word
             })
@@ -804,6 +805,16 @@ fn utterance_words(utterance: &Utterance, offset: f64) -> Vec<CaptionWord> {
 /// Caption lines for one utterance: break after a clause once the line is long
 /// enough to read, and before a word that would make it too long.
 fn caption_lines(words: Vec<CaptionWord>) -> Vec<Vec<CaptionWord>> {
+    if cap_project::caption_breaks::reads_as_chinese(&words) {
+        let hints = cap_project::caption_breaks::BreakHints {
+            inside_word: crate::caption_breaks::inside_word(&words),
+            preferred: Vec::new(),
+        };
+        return cap_project::caption_breaks::plan_caption_lines(&words, &hints)
+            .into_iter()
+            .map(|line| words[line].to_vec())
+            .collect();
+    }
     let mut lines = Vec::new();
     let mut line: Vec<CaptionWord> = Vec::new();
     for word in words {
@@ -1048,7 +1059,7 @@ mod tests {
 
     #[test]
     fn long_lines_break_at_clauses_and_english_keeps_spaces() {
-        let word = |text: &str, i: usize| CaptionWord { text: text.into(), start: i as f32, end: i as f32 + 0.5 };
+        let word = |text: &str, i: usize| CaptionWord { text: text.into(), start: i as f32, end: i as f32 + 0.5, hidden: false };
         let text = "我们今天先介绍一下这个产品的背景，然后再看具体的使用方法";
         let utterance = Utterance {
             start_time: 0.0,

@@ -138,9 +138,9 @@ mod inline_preview_tests {
     #[test]
     fn a_shrunk_preview_fits_its_toolbar_inside_it() {
         // Not shrunk: the size-driven scale and every button.
-        assert_eq!(toolbar_fit(0.85, None), (0.85, 5));
+        assert_eq!(toolbar_fit(0.85, None), (0.85, TOOLBAR_MOST_BUTTONS));
         // Wide enough: unchanged.
-        assert_eq!(toolbar_fit(0.7, Some(300.)), (0.7, 5));
+        assert_eq!(toolbar_fit(0.7, Some(300.)), (0.7, TOOLBAR_MOST_BUTTONS));
         for width in [81., 100., 120., 144., 160., 200.] {
             let (scale, buttons) = toolbar_fit(1., Some(width));
             let drawn = (42. * buttons as f32 + 4.) * scale + 2.;
@@ -173,6 +173,8 @@ fn normalized_size(state: &CameraWindowState) -> f32 {
     (clamp_size(state.size) - CAMERA_MIN_SIZE) / (CAMERA_MAX_SIZE - CAMERA_MIN_SIZE)
 }
 
+const TOOLBAR_MOST_BUTTONS: usize = if cfg!(target_os = "macos") { 6 } else { 5 };
+
 /// The fit uses each button's footprint (a 22px icon in 8px padding, 4px
 /// apart, in a 4px-padded strip with a 1px border). The preview-only blur,
 /// then mirror, buttons go first, before the rest get too small to hit.
@@ -180,10 +182,10 @@ fn toolbar_fit(base_scale: f32, width: Option<f32>) -> (f32, usize) {
     const SMALLEST_COMFORTABLE: f32 = 0.6;
     const SMALLEST: f32 = 0.4;
     let Some(width) = width else {
-        return (base_scale, 5);
+        return (base_scale, TOOLBAR_MOST_BUTTONS);
     };
     let fit = |buttons: usize| (width - 10.) / (42. * buttons as f32 + 4.);
-    for buttons in [5, 4] {
+    for buttons in (4..=TOOLBAR_MOST_BUTTONS).rev() {
         let scale = base_scale.min(fit(buttons));
         if scale >= SMALLEST_COMFORTABLE {
             return (scale, buttons);
@@ -798,6 +800,7 @@ enum EffectIssue {
     Mirror,
     Blur,
     Both,
+    SkinSmoothing,
 }
 
 impl EffectIssue {
@@ -815,6 +818,10 @@ impl EffectIssue {
                 tr::camera::effects::both_title(),
                 tr::camera::effects::both_message(),
             ),
+            Self::SkinSmoothing => (
+                tr::camera::effects::skin_smoothing_title(),
+                tr::camera::effects::skin_smoothing_message(),
+            ),
         }
     }
 }
@@ -824,13 +831,14 @@ impl EffectIssue {
 struct PreviewEffectFailures {
     mirror: bool,
     blur: bool,
+    skin_smoothing: bool,
 }
 
 #[cfg(target_os = "macos")]
 impl PreviewEffectFailures {
     fn issue(self) -> Option<EffectIssue> {
         match (self.mirror, self.blur) {
-            (false, false) => None,
+            (false, false) => self.skin_smoothing.then_some(EffectIssue::SkinSmoothing),
             (true, false) => Some(EffectIssue::Mirror),
             (false, true) => Some(EffectIssue::Blur),
             (true, true) => Some(EffectIssue::Both),
@@ -843,6 +851,9 @@ impl PreviewEffectFailures {
         }
         if before.background_blur != after.background_blur {
             self.blur = false;
+        }
+        if before.skin_smoothing != after.skin_smoothing {
+            self.skin_smoothing = false;
         }
     }
 }
@@ -857,7 +868,8 @@ mod preview_effect_failure_tests {
         assert!(
             PreviewEffectFailures {
                 mirror: true,
-                blur: false
+                blur: false,
+                skin_smoothing: false,
             }
             .issue()
             .unwrap()
@@ -868,7 +880,8 @@ mod preview_effect_failure_tests {
         assert!(
             PreviewEffectFailures {
                 mirror: false,
-                blur: true
+                blur: true,
+                skin_smoothing: false,
             }
             .issue()
             .unwrap()
@@ -879,7 +892,8 @@ mod preview_effect_failure_tests {
         assert!(
             PreviewEffectFailures {
                 mirror: true,
-                blur: true
+                blur: true,
+                skin_smoothing: false,
             }
             .issue()
             .unwrap()
@@ -903,6 +917,7 @@ mod preview_effect_failure_tests {
         let mut failures = PreviewEffectFailures {
             mirror: true,
             blur: true,
+            skin_smoothing: false,
         };
         failures.reset_changed(before, after);
         assert!(failures.mirror && failures.blur);
@@ -919,6 +934,7 @@ mod preview_effect_failure_tests {
         let mut failures = PreviewEffectFailures {
             mirror: true,
             blur: true,
+            skin_smoothing: false,
         };
         failures.reset_changed(
             before,
@@ -1535,8 +1551,16 @@ struct ConvertJob {
 struct ConvertSettings {
     epoch: u64,
     blur_mode: Option<cap_camera_effects::BlurMode>,
+    skin_smoothing: bool,
     mirrored: bool,
     rebuilds: u64,
+}
+
+#[cfg(target_os = "macos")]
+impl ConvertSettings {
+    fn max_dims(self) -> Option<(usize, usize)> {
+        (self.blur_mode.is_some() || self.skin_smoothing).then_some(camera_blur::BLUR_MAX_DIMS)
+    }
 }
 
 /// The `camera-preview-convert` thread. The VideoToolbox transfer (and the
@@ -1563,7 +1587,7 @@ fn run_preview_conversion(
         let settings = job.settings;
         let force_rebuild = rebuilds.is_some_and(|rebuilds| rebuilds != settings.rebuilds);
         rebuilds = Some(settings.rebuilds);
-        let max_dims = settings.blur_mode.map(|_| camera_blur::BLUR_MAX_DIMS);
+        let max_dims = settings.max_dims();
         let result = frame::FrameConverter::convert(
             &mut converter,
             &job.frame,
@@ -1676,6 +1700,7 @@ impl CameraWindow {
         })();
         crate::recording::StudioCameraSnapshot {
             blur: self.state.background_blur,
+            skin_smoothing: self.state.skin_smoothing,
             placement,
         }
     }
@@ -1921,8 +1946,13 @@ impl CameraWindow {
                 return;
             };
             let failures_before = self.effect_failures;
-            if self.state.background_blur != BlurMode::Off && camera_blur::is_low_spec_preview() {
-                self.effect_failures.blur = true;
+            if camera_blur::is_low_spec_preview() {
+                if self.state.background_blur != BlurMode::Off {
+                    self.effect_failures.blur = true;
+                }
+                if self.state.skin_smoothing {
+                    self.effect_failures.skin_smoothing = true;
+                }
             }
             if failures_before != self.effect_failures {
                 self.sync_effect_feedback(cx);
@@ -1937,7 +1967,7 @@ impl CameraWindow {
                 Ok(()) | Err(flume::TrySendError::Full(_)) => {}
                 Err(flume::TrySendError::Disconnected(job)) => {
                     let settings = job.settings;
-                    let max_dims = settings.blur_mode.map(|_| camera_blur::BLUR_MAX_DIMS);
+                    let max_dims = settings.max_dims();
                     let force_rebuild = self
                         .fallback_rebuilds
                         .is_some_and(|rebuilds| rebuilds != settings.rebuilds);
@@ -2020,10 +2050,18 @@ impl CameraWindow {
     }
 
     #[cfg(target_os = "macos")]
+    fn active_skin_smoothing(&self) -> bool {
+        self.state.skin_smoothing
+            && !self.effect_failures.skin_smoothing
+            && !camera_blur::is_low_spec_preview()
+    }
+
+    #[cfg(target_os = "macos")]
     fn convert_settings(&self, epoch: u64) -> ConvertSettings {
         ConvertSettings {
             epoch,
             blur_mode: self.active_blur_mode(),
+            skin_smoothing: self.active_skin_smoothing(),
             mirrored: self.state.mirrored,
             rebuilds: self.convert_rebuilds,
         }
@@ -2044,6 +2082,7 @@ impl CameraWindow {
             return;
         }
         let blur_mode = settings.blur_mode;
+        let skin_smoothing = settings.skin_smoothing;
         use core_foundation::base::TCFType as _;
         use core_video::pixel_buffer::{CVPixelBuffer, CVPixelBufferRef};
 
@@ -2055,14 +2094,15 @@ impl CameraWindow {
             let dims_changed = self.frame_dims != Some(dims);
             self.frame_dims = Some(dims);
 
-            let mut paint_raw = blur_mode.is_none();
-            if let Some(mode) = blur_mode {
+            let mut paint_raw = blur_mode.is_none() && !skin_smoothing;
+            if !paint_raw {
                 let job = camera_blur::BlurJob {
                     buffer: camera_blur::SendPixelBuf(converted.buffer.clone()),
                     width: dims.0 as u32,
                     height: dims.1 as u32,
                     ring_generation: converted.generation,
-                    mode,
+                    mode: blur_mode,
+                    skin_smoothing,
                 };
                 match self.ensure_blur_bridge(epoch, window, cx).tx.try_send(job) {
                     Ok(()) => {}
@@ -2079,7 +2119,8 @@ impl CameraWindow {
                             "camera blur worker unavailable; preview continues unblurred"
                         );
                         self.blur = None;
-                        self.effect_failures.blur = true;
+                        self.effect_failures.blur = blur_mode.is_some();
+                        self.effect_failures.skin_smoothing = skin_smoothing;
                         paint_raw = true;
                     }
                 }
@@ -2209,7 +2250,8 @@ impl CameraWindow {
     ) -> bool {
         // A stale output can land after the mode flips back to Off; the raw
         // path is already painting again, so drop it.
-        if self.active_blur_mode() != Some(output.mode)
+        if self.active_blur_mode() != output.mode
+            || self.active_skin_smoothing() != output.skin_smoothing
             || Feeds::global(cx).read(cx).camera_preview_epoch() != Some(epoch)
         {
             return false;
@@ -2275,7 +2317,7 @@ impl CameraWindow {
                 self.convert_rebuilds += 1;
             }
             self.sync_effect_feedback(cx);
-            if self.state.background_blur == BlurMode::Off {
+            if self.state.background_blur == BlurMode::Off && !self.state.skin_smoothing {
                 // Ends the worker thread, dropping the ONNX session and every
                 // GPU texture -- `release_blur_resources`
                 // (`camera.rs:1477-1484`).
@@ -2496,6 +2538,8 @@ impl CameraWindow {
         let (scale, buttons) = self.toolbar_fit();
         #[cfg(target_os = "macos")]
         let (mirror_failed, blur_failed) = (self.effect_failures.mirror, self.effect_failures.blur);
+        #[cfg(target_os = "macos")]
+        let skin_smoothing_failed = self.effect_failures.skin_smoothing;
         #[cfg(not(target_os = "macos"))]
         let (mirror_failed, blur_failed) = (false, false);
         let shape_icon = match self.state.shape {
@@ -2602,6 +2646,25 @@ impl CameraWindow {
                             |this, window, cx| {
                                 this.mutate_state(window, cx, |state| {
                                     state.background_blur = state.background_blur.cycle();
+                                })
+                            },
+                        ))
+                    })
+                    .when(cfg!(target_os = "macos") && buttons >= 6, |this| {
+                        #[cfg(target_os = "macos")]
+                        let failed = skin_smoothing_failed;
+                        #[cfg(not(target_os = "macos"))]
+                        let failed = false;
+                        this.child(self.toolbar_button(
+                            "skin-smoothing",
+                            "icons/sparkles.svg",
+                            self.state.skin_smoothing && !failed,
+                            scale,
+                            failed.then_some("!"),
+                            cx,
+                            |this, window, cx| {
+                                this.mutate_state(window, cx, |state| {
+                                    state.skin_smoothing = !state.skin_smoothing;
                                 })
                             },
                         ))

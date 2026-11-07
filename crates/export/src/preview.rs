@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use cap_editor::EditorInstance;
@@ -9,8 +9,8 @@ use cap_rendering::{
     ZoomTransformTimeline,
 };
 use image::{
-    Rgba,
-    codecs::jpeg::JpegEncoder,
+    ImageEncoder, Rgba,
+    codecs::{jpeg::JpegEncoder, png::PngEncoder},
     flat::{FlatSamples, SampleLayout},
 };
 use serde::{Deserialize, Serialize};
@@ -37,6 +37,80 @@ pub struct ExportPreviewResult {
     pub actual_height: u32,
     pub frame_render_time_ms: f64,
     pub total_frames: u32,
+}
+
+#[derive(Debug)]
+pub struct StillImage {
+    pub png: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+const MAX_STILL_DIMENSION: u32 = 16_384;
+const MAX_STILL_PIXELS: u64 = 40_000_000;
+
+pub async fn render_still_with_config(
+    project_path: PathBuf,
+    project_config: ProjectConfiguration,
+    frame_time: f64,
+    resolution_base: XY<u32>,
+    force_ffmpeg_decoder: bool,
+) -> Result<StillImage, ExportError> {
+    validate_still_request(frame_time, resolution_base)?;
+    let settings = ExportPreviewSettings {
+        fps: 30,
+        resolution_base,
+        compression_bpp: 0.2,
+        cursor_only: false,
+    };
+    let base =
+        preview_builder_with_config(project_path, project_config, settings, force_ffmpeg_decoder)
+            .build_video_only()
+            .await
+            .map_err(|error| ExportError::Other(format!("Exporter build error: {error}")))?;
+    let dimensions = ProjectUniforms::get_output_size(
+        &base.render_constants.options,
+        &base.project_config,
+        resolution_base,
+    );
+    validate_still_dimensions(dimensions.0, dimensions.1)?;
+    let device_limit = base
+        .render_constants
+        .device
+        .limits()
+        .max_texture_dimension_2d;
+    if dimensions.0 > device_limit || dimensions.1 > device_limit {
+        return Err(ExportError::Other(format!(
+            "Still image dimensions exceed the device limit of {device_limit}"
+        )));
+    }
+    let rendered = render_frame(source_from_base(&base), frame_time, settings).await?;
+    drop(base);
+    tokio::task::spawn_blocking(move || encode_still_png(&rendered.frame)).await?
+}
+
+fn validate_still_request(frame_time: f64, resolution: XY<u32>) -> Result<(), ExportError> {
+    if !frame_time.is_finite() || frame_time < 0.0 {
+        return Err(ExportError::Other(
+            "Still image time must be finite and nonnegative".into(),
+        ));
+    }
+    validate_still_dimensions(resolution.x, resolution.y)
+}
+
+fn validate_still_dimensions(width: u32, height: u32) -> Result<(), ExportError> {
+    if width == 0
+        || height == 0
+        || width > MAX_STILL_DIMENSION
+        || height > MAX_STILL_DIMENSION
+        || u64::from(width) * u64::from(height) > MAX_STILL_PIXELS
+    {
+        return Err(ExportError::Other(
+            "Still image dimensions must be nonzero, at most 16384 per side and 40 million pixels"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 pub async fn render_preview(
@@ -114,13 +188,17 @@ async fn render_preview_with_base(
     frame_time: f64,
     settings: ExportPreviewSettings,
 ) -> Result<ExportPreviewResult, ExportError> {
+    render_preview_frame(source_from_base(&exporter_base), frame_time, settings).await
+}
+
+fn source_from_base(exporter_base: &ExporterBase) -> PreviewSource<'_> {
     let total_duration = cap_rendering::get_duration(
         &exporter_base.recordings,
         &exporter_base.recording_meta,
         &exporter_base.studio_meta,
         &exporter_base.project_config,
     );
-    let source = PreviewSource {
+    PreviewSource {
         project_config: &exporter_base.project_config,
         render_constants: &exporter_base.render_constants,
         segments: exporter_base
@@ -133,8 +211,7 @@ async fn render_preview_with_base(
             .collect(),
         total_duration,
         layers_cache: None,
-    };
-    render_preview_frame(source, frame_time, settings).await
+    }
 }
 
 /// Render the preview through an open editor's decoders and GPU pipelines
@@ -218,6 +295,49 @@ async fn render_preview_frame(
     frame_time: f64,
     settings: ExportPreviewSettings,
 ) -> Result<ExportPreviewResult, ExportError> {
+    let rendered = render_frame(source, frame_time, settings).await?;
+    let width = rendered.frame.width;
+    let height = rendered.frame.height;
+    let jpeg_buffer = encode_preview_jpeg(
+        &rendered.frame,
+        bpp_to_jpeg_quality(settings.compression_bpp),
+    )?;
+    let duration_seconds = rendered.total_duration;
+    let fps_f64 = settings.fps as f64;
+    let total_frames = (duration_seconds * fps_f64).ceil() as u32;
+    let total_pixels = (settings.resolution_base.x * settings.resolution_base.y) as f64;
+    let estimated_size_mb = if settings.cursor_only {
+        let total_frames_f64 = (duration_seconds * fps_f64).ceil();
+        estimate_cursor_only_size_mb(total_pixels, total_frames_f64)
+    } else {
+        let effective_fps = ((fps_f64 - 30.0).max(0.0) * 0.6) + fps_f64.min(30.0);
+        let video_bitrate = total_pixels * settings.compression_bpp as f64 * effective_fps;
+        let audio_bitrate = 192_000.0;
+        let total_bitrate = video_bitrate + audio_bitrate;
+        let encoder_efficiency = 0.5;
+        (total_bitrate * encoder_efficiency * duration_seconds) / (8.0 * 1024.0 * 1024.0)
+    };
+    Ok(ExportPreviewResult {
+        jpeg_base64: STANDARD.encode(&jpeg_buffer),
+        estimated_size_mb,
+        actual_width: width,
+        actual_height: height,
+        frame_render_time_ms: rendered.frame_render_time_ms,
+        total_frames,
+    })
+}
+
+struct PreviewFrame {
+    frame: RenderedFrame,
+    frame_render_time_ms: f64,
+    total_duration: f64,
+}
+
+async fn render_frame(
+    source: PreviewSource<'_>,
+    frame_time: f64,
+    settings: ExportPreviewSettings,
+) -> Result<PreviewFrame, ExportError> {
     let PreviewSource {
         project_config,
         render_constants,
@@ -401,27 +521,6 @@ async fn render_preview_frame(
     };
 
     let frame_render_time_ms = render_start.elapsed().as_secs_f64() * 1000.0;
-    let width = frame.width;
-    let height = frame.height;
-
-    let jpeg_buffer = encode_preview_jpeg(&frame, bpp_to_jpeg_quality(settings.compression_bpp))?;
-    drop(frame);
-
-    let duration_seconds = total_duration;
-    let fps_f64 = settings.fps as f64;
-    let total_frames = (duration_seconds * fps_f64).ceil() as u32;
-    let total_pixels = (settings.resolution_base.x * settings.resolution_base.y) as f64;
-    let estimated_size_mb = if settings.cursor_only {
-        let total_frames_f64 = (duration_seconds * fps_f64).ceil();
-        estimate_cursor_only_size_mb(total_pixels, total_frames_f64)
-    } else {
-        let effective_fps = ((fps_f64 - 30.0).max(0.0) * 0.6) + fps_f64.min(30.0);
-        let video_bitrate = total_pixels * settings.compression_bpp as f64 * effective_fps;
-        let audio_bitrate = 192_000.0;
-        let total_bitrate = video_bitrate + audio_bitrate;
-        let encoder_efficiency = 0.5;
-        (total_bitrate * encoder_efficiency * duration_seconds) / (8.0 * 1024.0 * 1024.0)
-    };
 
     if let Some(cache) = layers_cache
         && let Ok(mut guard) = cache.lock()
@@ -429,13 +528,10 @@ async fn render_preview_frame(
         *guard = Some(layers);
     }
 
-    Ok(ExportPreviewResult {
-        jpeg_base64: STANDARD.encode(&jpeg_buffer),
-        estimated_size_mb,
-        actual_width: width,
-        actual_height: height,
+    Ok(PreviewFrame {
+        frame,
         frame_render_time_ms,
-        total_frames,
+        total_duration,
     })
 }
 
@@ -449,6 +545,24 @@ fn bpp_to_jpeg_quality(bpp: f32) -> u8 {
 }
 
 fn encode_preview_jpeg(frame: &RenderedFrame, quality: u8) -> Result<Vec<u8>, ExportError> {
+    let samples = FlatSamples {
+        samples: frame.data.as_ref().as_slice(),
+        layout: validated_rgba_layout(frame)?,
+        color_hint: None,
+    };
+    let view = samples
+        .as_view::<Rgba<u8>>()
+        .map_err(|e| ExportError::Other(format!("Invalid preview frame layout: {e}")))?;
+
+    let mut jpeg_buffer = Vec::new();
+    let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buffer, quality);
+    encoder
+        .encode_image(&view)
+        .map_err(|e| ExportError::Other(format!("Failed to encode JPEG: {e}")))?;
+    Ok(jpeg_buffer)
+}
+
+fn validated_rgba_layout(frame: &RenderedFrame) -> Result<SampleLayout, ExportError> {
     let width = usize::try_from(frame.width)
         .map_err(|_| ExportError::Other("Preview frame width is too large".to_string()))?;
     let height = usize::try_from(frame.height)
@@ -477,28 +591,48 @@ fn encode_preview_jpeg(frame: &RenderedFrame, quality: u8) -> Result<Vec<u8>, Ex
         ));
     }
 
-    let samples = FlatSamples {
-        samples: frame.data.as_ref().as_slice(),
-        layout: SampleLayout {
-            channels: 4,
-            channel_stride: 1,
-            width: frame.width,
-            width_stride: 4,
-            height: frame.height,
-            height_stride,
-        },
-        color_hint: None,
-    };
-    let view = samples
-        .as_view::<Rgba<u8>>()
-        .map_err(|e| ExportError::Other(format!("Invalid preview frame layout: {e}")))?;
+    Ok(SampleLayout {
+        channels: 4,
+        channel_stride: 1,
+        width: frame.width,
+        width_stride: 4,
+        height: frame.height,
+        height_stride,
+    })
+}
 
-    let mut jpeg_buffer = Vec::new();
-    let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buffer, quality);
-    encoder
-        .encode_image(&view)
-        .map_err(|e| ExportError::Other(format!("Failed to encode JPEG: {e}")))?;
-    Ok(jpeg_buffer)
+fn encode_still_png(frame: &RenderedFrame) -> Result<StillImage, ExportError> {
+    validate_still_dimensions(frame.width, frame.height)?;
+    let layout = validated_rgba_layout(frame)?;
+    let row_bytes = frame.width as usize * 4;
+    let length = row_bytes * frame.height as usize;
+    let rgba = if layout.height_stride == row_bytes {
+        Cow::Borrowed(&frame.data[..length])
+    } else {
+        let mut pixels = Vec::new();
+        pixels.try_reserve_exact(length).map_err(|error| {
+            ExportError::Other(format!("Still image allocation failed: {error}"))
+        })?;
+        for row in 0..frame.height as usize {
+            let start = row * layout.height_stride;
+            pixels.extend_from_slice(&frame.data[start..start + row_bytes]);
+        }
+        Cow::Owned(pixels)
+    };
+    let mut png = Vec::new();
+    PngEncoder::new(&mut png)
+        .write_image(
+            &rgba,
+            frame.width,
+            frame.height,
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|error| ExportError::Other(format!("Failed to encode PNG: {error}")))?;
+    Ok(StillImage {
+        png,
+        width: frame.width,
+        height: frame.height,
+    })
 }
 
 #[cfg(test)]
@@ -593,6 +727,87 @@ mod tests {
         let mut empty = valid;
         empty.width = 0;
         assert!(encode_preview_jpeg(&empty, 70).is_err());
+    }
+
+    #[test]
+    fn still_png_preserves_exact_rgba_pixels_with_padded_and_unpadded_rows() {
+        for (width, height, stride) in [(1, 1, 4), (13, 9, 64)] {
+            let mut source = frame(width, height, stride, 0x1234_5678_9abc_def0);
+            let mut data = source.data.as_ref().clone();
+            data[3] = 0;
+            if width > 1 {
+                data[7] = 128;
+                data[11] = 255;
+            }
+            let required_len = stride * (height as usize - 1) + width as usize * 4;
+            data.truncate(required_len);
+            source.data = Arc::new(data);
+            let still = encode_still_png(&source).unwrap();
+            assert!(still.png.starts_with(b"\x89PNG\r\n\x1a\n"));
+            assert_eq!((still.width, still.height), (width, height));
+            let decoded = image::load_from_memory_with_format(&still.png, image::ImageFormat::Png)
+                .unwrap()
+                .into_rgba8();
+            for row in 0..height as usize {
+                let start = row * stride;
+                let expected = &source.data[start..start + width as usize * 4];
+                let actual_start = row * width as usize * 4;
+                assert_eq!(
+                    &decoded.as_raw()[actual_start..actual_start + width as usize * 4],
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn still_png_rejects_bad_stride_short_buffers_and_excessive_dimensions() {
+        let valid = frame(13, 9, 64, 2);
+        let mut invalid = valid.clone();
+        invalid.padded_bytes_per_row = 51;
+        assert!(encode_still_png(&invalid).is_err());
+        invalid = valid.clone();
+        invalid.data = Arc::new(vec![0; 64 * 8 + 13 * 4 - 1]);
+        assert!(encode_still_png(&invalid).is_err());
+        for (width, height) in [
+            (0, 1),
+            (1, 0),
+            (16_385, 1),
+            (8_000, 8_000),
+            (u32::MAX, u32::MAX),
+        ] {
+            let mut invalid = valid.clone();
+            invalid.width = width;
+            invalid.height = height;
+            assert!(encode_still_png(&invalid).is_err());
+        }
+        assert!(validate_still_dimensions(7_680, 4_320).is_ok());
+    }
+
+    #[tokio::test]
+    async fn still_rejects_invalid_requests_before_opening_project() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing_project = directory.path().join("must-not-be-created.cap");
+        for (time, resolution) in [
+            (f64::NAN, XY::new(1920, 1080)),
+            (f64::INFINITY, XY::new(1920, 1080)),
+            (-0.1, XY::new(1920, 1080)),
+            (0., XY::new(0, 1080)),
+            (0., XY::new(16385, 1)),
+            (0., XY::new(8000, 8000)),
+        ] {
+            let error = render_still_with_config(
+                missing_project.clone(),
+                ProjectConfiguration::default(),
+                time,
+                resolution,
+                true,
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains("Still image"));
+        }
+        assert!(!missing_project.exists());
     }
 }
 
@@ -747,6 +962,72 @@ mod video_only_preview_tests {
             actual.estimated_size_mb.to_bits(),
             expected.estimated_size_mb.to_bits()
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires ffmpeg and a wgpu adapter"]
+    async fn still_first_title_frame_matches_raw_renderer_without_saving_config_or_loading_audio() {
+        let project = studio_project();
+        let config_path = project.path().join("project-config.json");
+        let saved = std::fs::read(&config_path).unwrap();
+        let mut config: ProjectConfiguration = serde_json::from_value(serde_json::json!({
+            "textSizeVersion": 1,
+            "textAnimVersion": 1,
+            "timeline": {
+                "segments": [{"start": 0., "end": 2., "timescale": 1.}],
+                "zoomSegments": []
+            }
+        }))
+        .unwrap();
+        config
+            .upsert_title_card(cap_project::TextSegment::new_title_card(
+                cap_project::TitleCardRole::Intro,
+                "Exact PNG",
+            ))
+            .unwrap();
+        let settings = ExportPreviewSettings {
+            fps: 30,
+            resolution_base: XY::new(320, 180),
+            compression_bpp: 0.2,
+            cursor_only: false,
+        };
+        let base = preview_builder_with_config(
+            project.path().to_path_buf(),
+            config.clone(),
+            settings,
+            true,
+        )
+        .build_video_only()
+        .await
+        .unwrap();
+        assert!(base.segments[0].audio.get().await.unwrap().is_none());
+        assert!(base.segments[0].system_audio.get().await.unwrap().is_none());
+        let raw = render_frame(source_from_base(&base), 0., settings)
+            .await
+            .unwrap();
+        let actual = render_still_with_config(
+            project.path().to_path_buf(),
+            config,
+            0.,
+            settings.resolution_base,
+            true,
+        )
+        .await
+        .unwrap();
+        let pixels = image::load_from_memory_with_format(&actual.png, image::ImageFormat::Png)
+            .unwrap()
+            .into_rgba8();
+        assert_eq!(pixels.dimensions(), (raw.frame.width, raw.frame.height));
+        for row in 0..raw.frame.height as usize {
+            let start = row * raw.frame.padded_bytes_per_row as usize;
+            let row_bytes = raw.frame.width as usize * 4;
+            assert_eq!(
+                &pixels.as_raw()[row * row_bytes..(row + 1) * row_bytes],
+                &raw.frame.data[start..start + row_bytes]
+            );
+        }
+        assert_eq!(std::fs::read(&config_path).unwrap(), saved);
+        assert!(!project.path().join("output/result.mp4").exists());
     }
 
     #[tokio::test]

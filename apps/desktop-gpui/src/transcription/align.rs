@@ -518,11 +518,13 @@ mod tests {
                 text: "a".into(),
                 start: 0.0,
                 end: 0.0,
+                hidden: false,
             },
             CaptionWord {
                 text: "42".into(),
                 start: 9.0,
                 end: 9.5,
+                hidden: false,
             },
         ];
         apply_spans(&mut words, &[Some((10, 14)), None], 3.0);
@@ -536,6 +538,7 @@ mod tests {
             text: text.into(),
             start,
             end,
+            hidden: false,
         }
     }
 

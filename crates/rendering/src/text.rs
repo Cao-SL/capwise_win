@@ -64,11 +64,11 @@ pub fn stagger_alpha(edge: StaggerEdge, unit: usize, units: usize) -> f32 {
     ease_out_cubic(((edge.progress - start) / WINDOW).clamp(0.0, 1.0))
 }
 
-fn parse_color(hex: &str) -> [f32; 4] {
+pub(crate) fn parse_color(hex: &str) -> [f32; 4] {
     parse_rgb_color(hex).unwrap_or([1.0, 1.0, 1.0, 1.0])
 }
 
-fn parse_rgb_color(hex: &str) -> Option<[f32; 4]> {
+pub(crate) fn parse_rgb_color(hex: &str) -> Option<[f32; 4]> {
     let color = hex.trim_start_matches('#');
     if color.len() == 6
         && color.is_ascii()
@@ -346,6 +346,7 @@ pub fn prepare_texts(
         .enumerate()
         .filter(|(index, segment)| {
             segment.enabled
+                && segment.title_card.is_none()
                 && !hidden_indices.contains(index)
                 && !(frame_time < segment.start || frame_time > segment.end)
         })
@@ -484,6 +485,7 @@ mod tests {
             animation_out_duration: 1.0,
             layout: TextLayout::Overlay,
             layout_transition: 0.5,
+            title_card: None,
         }
     }
 

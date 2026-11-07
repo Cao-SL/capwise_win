@@ -6,7 +6,9 @@
 //! element resolves every icon path through it, and an unregistered path fails
 //! silently -- the element lays out at its declared size and draws nothing.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::BTreeSet, fs, path::PathBuf};
+
+use anyhow::Context as _;
 
 use gpui::{App, AssetSource, Result, SharedString};
 
@@ -70,6 +72,7 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "flag.svg",
     "flag-filled.svg",
     "eye-off.svg",
+    "eye.svg",
     "film-cut.svg",
     "flip-horizontal-2.svg",
     "folder.svg",
@@ -103,7 +106,6 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "logo-full-dark.svg",
     "logo-full.svg",
     "logo-mark.svg",
-    "message-bubble.svg",
     "message-square-plus.svg",
     "mic-off.svg",
     "microphone.svg",
@@ -180,6 +182,7 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "ratio.svg",
     "refresh-cw.svg",
     "rotate-ccw.svg",
+    "volume-2.svg",
     "volume-x.svg",
     "gem.svg",
     "sliders-horizontal.svg",
@@ -297,19 +300,82 @@ impl AssetSource for Assets {
     }
 }
 
+fn preview_font_paths() -> Vec<PathBuf> {
+    let mut pending = cap_rendering::bundled_font_dirs();
+    let mut paths = BTreeSet::new();
+    while let Some(directory) = pending.pop() {
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::warn!(path = %directory.display(), %error, "preview font directory unavailable");
+                continue;
+            }
+        };
+        for entry in entries {
+            let result = entry.and_then(|entry| entry.file_type().map(|kind| (entry.path(), kind)));
+            let (path, kind) = match result {
+                Ok(entry) => entry,
+                Err(error) => {
+                    tracing::warn!(path = %directory.display(), %error, "preview font entry unavailable");
+                    continue;
+                }
+            };
+            if kind.is_dir() {
+                pending.push(path);
+            } else if kind.is_file()
+                && path.extension().is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("ttf") || extension.eq_ignore_ascii_case("otf")
+                })
+            {
+                match path.canonicalize() {
+                    Ok(path) => {
+                        paths.insert(path);
+                    }
+                    Err(error) => {
+                        tracing::warn!(path = %path.display(), %error, "preview font path unavailable")
+                    }
+                }
+            }
+        }
+    }
+    paths.into_iter().collect()
+}
+
 impl Assets {
-    /// Register the embedded Geist faces with the text system.
-    ///
-    /// gpui resolves `.font_family("Geist")` against whatever the platform text
-    /// system knows about, so this has to run before the first window renders or
-    /// text silently falls back to the system UI font.
     pub fn load_fonts(&self, cx: &App) -> Result<()> {
         cx.text_system().add_fonts(
             FONTS
                 .iter()
                 .map(|(_, bytes)| Cow::Borrowed(*bytes))
                 .collect(),
-        )
+        )?;
+        let started = std::time::Instant::now();
+        let paths = preview_font_paths();
+        let mut first_error = None;
+        let mut loaded = 0;
+        for path in paths {
+            let result = fs::read(&path)
+                .with_context(|| format!("Cannot read preview font {}", path.display()))
+                .and_then(|bytes| cx.text_system().add_fonts(vec![Cow::Owned(bytes)]));
+            match result {
+                Ok(()) => loaded += 1,
+                Err(error) => {
+                    tracing::warn!(path = %path.display(), %error, "preview font unavailable");
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        tracing::info!(
+            loaded,
+            elapsed_ms = started.elapsed().as_millis(),
+            "loaded bundled preview fonts"
+        );
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 }
 
@@ -334,10 +400,21 @@ mod tests {
         include_str!("settings_ai.rs"),
         include_str!("mode_select_window.rs"),
         include_str!("teleprompter_window.rs"),
+        include_str!("teleprompter_window/follow.rs"),
         include_str!("editor_window.rs"),
         include_str!("editor_window/frame.rs"),
         include_str!("editor_window/scenes.rs"),
         include_str!("editor_window/markers.rs"),
+        include_str!("editor_window/style_preset_ui.rs"),
+        include_str!("editor_assets.rs"),
+        include_str!("editor_audio.rs"),
+        include_str!("editor_voiceover.rs"),
+        include_str!("editor_title_cards.rs"),
+        include_str!("editor_title_card_presets.rs"),
+        include_str!("settings_stock.rs"),
+        include_str!("settings_cover.rs"),
+        include_str!("editor_cover.rs"),
+        include_str!("transcript/view.rs"),
         // The timeline's nine track glyphs and its scene-mode icons are named
         // in the strip's own module, not in the window that hosts it.
         include_str!("editor_timeline.rs"),

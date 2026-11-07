@@ -33,6 +33,8 @@ pub struct DisplayLayer {
     pending_copy: Option<PendingTextureCopy>,
     prefer_cpu_conversion: bool,
     has_valid_frame: bool,
+    skin_bind_group: Option<(u64, wgpu::BindGroup)>,
+    skin_active: bool,
 }
 
 impl DisplayLayer {
@@ -93,6 +95,8 @@ impl DisplayLayer {
             #[cfg(target_os = "macos")]
             frame_sources: [None, None],
             pending_copy: None,
+            skin_bind_group: None,
+            skin_active: false,
             prefer_cpu_conversion,
             has_valid_frame: false,
         }
@@ -1001,12 +1005,53 @@ impl DisplayLayer {
         );
     }
 
+    /// The texture a camera-only recording's frame ends up in. A pending
+    /// `copy_to_texture` has to be encoded before anything reads it.
+    pub fn source_texture_for_skin_smoothing(&self) -> Option<&wgpu::Texture> {
+        self.has_valid_frame
+            .then(|| &self.frame_textures[self.current_texture])
+    }
+
+    pub fn clear_skin_smoothing(&mut self) {
+        self.skin_active = false;
+    }
+
+    pub fn attach_skin_smoothing(
+        &mut self,
+        device: &wgpu::Device,
+        smoother: &cap_camera_effects::SkinSmoother,
+    ) {
+        let Some(output_view) = smoother.output_view() else {
+            return;
+        };
+        let generation = smoother.output_generation();
+        if !self
+            .skin_bind_group
+            .as_ref()
+            .is_some_and(|(cached, _)| *cached == generation)
+        {
+            self.skin_bind_group = Some((
+                generation,
+                self.pipeline
+                    .bind_group(device, &self.uniforms_buffer, output_view),
+            ));
+        }
+        self.skin_active = true;
+    }
+
     pub fn render(&self, pass: &mut wgpu::RenderPass<'_>) {
         if !self.has_valid_frame {
             return;
         }
 
-        if let Some(bind_group) = &self.bind_groups[self.current_texture] {
+        let skin_bind_group = self
+            .skin_bind_group
+            .as_ref()
+            .filter(|_| self.skin_active)
+            .map(|(_, bind_group)| bind_group);
+        if let Some(bind_group) =
+            skin_bind_group.or(self.bind_groups[self.current_texture].as_ref())
+        {
             pass.set_pipeline(&self.pipeline.render_pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);

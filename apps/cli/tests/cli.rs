@@ -936,6 +936,8 @@ fn guide_json_is_parseable_and_self_describing() {
     assert!(commands.contains("organizations billing get|checkout|portal"));
     assert!(commands.contains("organizations storage list|s3|provider|google-drive"));
     assert!(commands.contains("developers list|get|create|update|delete"));
+    assert!(commands.contains("project captions get|export|style"));
+    assert!(commands.contains("project title-card get|set|remove|export"));
 }
 
 #[test]
@@ -1649,4 +1651,993 @@ fn caps_json_errors_include_the_standard_error_field() {
         assert_eq!(error["code"], "INVALID_REQUEST");
         assert_eq!(error["retryable"], false);
     }
+}
+
+fn write_caption_project(project: &Path) {
+    write_single_segment_meta(project);
+    let config = serde_json::json!({
+        "futureEditorField": {"preserve": true},
+        "captions": {
+            "segments": [{"id": "intro", "start": 0.25, "end": 0.75, "text": "开始录制"}],
+            "sourceTimed": true,
+            "settings": {
+                "enabled": true, "font": "Noto Sans SC", "size": 32,
+                "futureCaptionField": "preserve",
+                "translations": {"intro": {"sourceText": "开始录制", "text": "Start recording", "language": "en"}}
+            }
+        },
+        "timeline": {
+            "segments": [{"recordingSegment": 0, "start": 0.25, "end": 0.9, "timescale": 1.0}],
+            "zoomSegments": [], "captionSegments": []
+        }
+    });
+    std::fs::write(
+        project.join("project-config.json"),
+        serde_json::to_vec_pretty(&config).unwrap(),
+    )
+    .unwrap();
+}
+
+fn write_title_card_project(project: &Path) {
+    write_caption_project(project);
+    let path = project.join("project-config.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["timeline"]["futureTimelineField"] = "keep".into();
+    value["timeline"]["textSegments"] = serde_json::json!([
+        {"start": 0.1, "end": 0.4, "content": "已有文字", "futureTextField": {"keep": true}}
+    ]);
+    value["timeline"]["audioSegments"] = serde_json::json!([
+        {"start": 0.0, "end": 0.6, "path": "music.wav", "futureMusicField": true}
+    ]);
+    std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+}
+
+#[test]
+fn title_card_image_refuses_disabled_duplicate_or_misplaced_cards_without_rewriting() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let config_path = project.join("project-config.json");
+    let mut config: cap_project::ProjectConfiguration =
+        serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+    config
+        .upsert_title_card(cap_project::TextSegment::new_title_card(
+            cap_project::TitleCardRole::Outro,
+            "感谢观看",
+        ))
+        .unwrap();
+    let timeline = config.timeline.as_ref().unwrap();
+    let card_index = timeline
+        .text_segments
+        .iter()
+        .position(|segment| segment.title_card.is_some())
+        .unwrap();
+    for scenario in ["disabled", "duplicate", "misplaced"] {
+        let mut invalid = config.clone();
+        let segments = &mut invalid.timeline.as_mut().unwrap().text_segments;
+        match scenario {
+            "disabled" => segments[card_index].enabled = false,
+            "duplicate" => segments.push(segments[card_index].clone()),
+            "misplaced" => {
+                segments[card_index].start += 0.5;
+                segments[card_index].end += 0.5;
+            }
+            _ => unreachable!(),
+        }
+        let before = serde_json::to_vec_pretty(&invalid).unwrap();
+        std::fs::write(&config_path, &before).unwrap();
+        let output_path = directory.path().join(format!("{scenario}.png"));
+        let output = run(&[
+            "project",
+            "title-card",
+            "export",
+            project.to_str().unwrap(),
+            "--role",
+            "outro",
+            "--output",
+            output_path.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{scenario}: {}",
+            stderr(&output)
+        );
+        assert_eq!(parse_json(&output)["code"], "INVALID_PROJECT", "{scenario}");
+        assert_eq!(std::fs::read(&config_path).unwrap(), before);
+        assert!(!output_path.exists());
+    }
+}
+
+#[test]
+fn title_card_image_preview_preserves_project_and_checks_roles_revisions_and_bounds() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let config_path = project.join("project-config.json");
+    let mut config: cap_project::ProjectConfiguration =
+        serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+    config
+        .upsert_title_card(cap_project::TextSegment::new_title_card(
+            cap_project::TitleCardRole::Outro,
+            "感谢观看",
+        ))
+        .unwrap();
+    std::fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let before = std::fs::read(&config_path).unwrap();
+    let output_path = directory.path().join("cover.png");
+    let args = [
+        "project",
+        "title-card",
+        "export",
+        project.to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--dry-run",
+        "--json",
+    ];
+    let missing = run(&args);
+    assert_eq!(parse_json(&missing)["code"], "NO_TITLE_CARD");
+    let preview = run(&[args.as_slice(), &["--role", "outro"]].concat());
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let value = parse_json(&preview);
+    assert_eq!(value["operation"], "title-card.export");
+    assert_eq!(value["written"], false);
+    assert_eq!(value["role"], "outro");
+    let card = config
+        .title_card(cap_project::TitleCardRole::Outro)
+        .unwrap();
+    let frame_time = value["frameTime"].as_f64().unwrap();
+    assert!(frame_time >= card.start && frame_time < card.end);
+    for extra in [
+        vec!["--width", "0"],
+        vec!["--height", "16385"],
+        vec!["--width", "10000", "--height", "10000"],
+    ] {
+        let rejected = run(&[args.as_slice(), &["--role", "outro"], extra.as_slice()].concat());
+        assert_eq!(rejected.status.code(), Some(1));
+        assert_eq!(parse_json(&rejected)["code"], "INVALID_ARGUMENT");
+    }
+    let conflict = run(&[
+        args.as_slice(),
+        &["--role", "outro", "--expected-revision", "stale"],
+    ]
+    .concat());
+    assert_eq!(parse_json(&conflict)["code"], "REVISION_CONFLICT");
+    assert_eq!(std::fs::read(&config_path).unwrap(), before);
+    assert!(!output_path.exists());
+    assert!(!project.join("output").exists());
+    assert!(!project.join(".cap-project-edit.lock").exists());
+}
+
+#[test]
+fn title_card_image_rejects_existing_paths_and_wrong_extensions_before_rendering() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let before = std::fs::read(project.join("project-config.json")).unwrap();
+    for (name, expected) in [
+        ("existing.png", "OUTPUT_EXISTS"),
+        ("cover.mp4", "INVALID_ARGUMENT"),
+        ("missing/cover.png", "INVALID_ARGUMENT"),
+    ] {
+        let output_path = directory.path().join(name);
+        if name == "existing.png" {
+            std::fs::write(&output_path, b"original image").unwrap();
+        }
+        let output = run(&[
+            "project",
+            "title-card",
+            "export",
+            project.to_str().unwrap(),
+            "--output",
+            output_path.to_str().unwrap(),
+            "--json",
+        ]);
+        assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+        assert_eq!(parse_json(&output)["code"], expected);
+    }
+    assert_eq!(
+        std::fs::read(directory.path().join("existing.png")).unwrap(),
+        b"original image"
+    );
+    assert_eq!(
+        std::fs::read(project.join("project-config.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn title_card_preview_apply_and_remove_preserve_body_music_and_unknown_fields() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let path = project.join("project-config.json");
+    let bytes = std::fs::read(&path).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let args = [
+        "project",
+        "title-card",
+        "set",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--title",
+        "把复杂的操作讲清楚",
+        "--subtitle",
+        "三步完成第一次录制",
+        "--duration",
+        "2.5",
+        "--json",
+    ];
+    let preview = run(&[args.as_slice(), &["--dry-run"]].concat());
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let preview = parse_json(&preview);
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    assert_eq!(preview["written"], false);
+    assert_eq!(preview["after"]["intro"]["end"], 2.5);
+    assert_eq!(preview["after"]["intro"]["fontSize"], 96.0);
+    let revision = preview["revision"].as_str().unwrap();
+    let applied = run(&[args.as_slice(), &["--expected-revision", revision]].concat());
+    assert!(applied.status.success(), "{}", stderr(&applied));
+    let applied = parse_json(&applied);
+    assert_eq!(applied["after"], preview["after"]);
+    assert_eq!(applied["resultRevision"], preview["resultRevision"]);
+    let updated: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(updated["futureEditorField"], original["futureEditorField"]);
+    assert_eq!(updated["timeline"]["futureTimelineField"], "keep");
+    assert_eq!(updated["timeline"]["textSegments"][0]["start"], 2.6);
+    assert_eq!(
+        updated["timeline"]["textSegments"][0]["futureTextField"],
+        original["timeline"]["textSegments"][0]["futureTextField"]
+    );
+    assert_eq!(
+        updated["timeline"]["audioSegments"],
+        original["timeline"]["audioSegments"]
+    );
+    assert_eq!(updated["captions"], original["captions"]);
+    let before_noop = std::fs::read(&path).unwrap();
+    let repeated = run(&[
+        args.as_slice(),
+        &[
+            "--expected-revision",
+            applied["resultRevision"].as_str().unwrap(),
+        ],
+    ]
+    .concat());
+    assert!(repeated.status.success(), "{}", stderr(&repeated));
+    assert_eq!(parse_json(&repeated)["changed"], false);
+    assert_eq!(std::fs::read(&path).unwrap(), before_noop);
+    let conflict = run(&[args.as_slice(), &["--expected-revision", revision]].concat());
+    assert_eq!(conflict.status.code(), Some(1));
+    assert_eq!(parse_json(&conflict)["code"], "REVISION_CONFLICT");
+    assert_eq!(std::fs::read(&path).unwrap(), before_noop);
+    let removed = run(&[
+        "project",
+        "title-card",
+        "remove",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--expected-revision",
+        applied["resultRevision"].as_str().unwrap(),
+        "--json",
+    ]);
+    assert!(removed.status.success(), "{}", stderr(&removed));
+    let restored: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        restored["timeline"]["textSegments"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        (restored["timeline"]["textSegments"][0]["start"]
+            .as_f64()
+            .unwrap()
+            - 0.1)
+            .abs()
+            < 1e-9
+    );
+    assert_eq!(
+        restored["timeline"]["textSegments"][0]["futureTextField"],
+        original["timeline"]["textSegments"][0]["futureTextField"]
+    );
+    assert_eq!(restored["captions"], original["captions"]);
+    assert_eq!(
+        restored["timeline"]["audioSegments"],
+        original["timeline"]["audioSegments"]
+    );
+}
+
+#[test]
+fn title_card_outro_reanchors_and_keeps_identity_when_intro_is_added() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let path = project.to_str().unwrap();
+    let initial = run(&["project", "title-card", "get", path, "--json"]);
+    assert!(initial.status.success(), "{}", stderr(&initial));
+    let initial = parse_json(&initial);
+    let outro = run(&[
+        "project",
+        "title-card",
+        "set",
+        path,
+        "--role",
+        "outro",
+        "--title",
+        "下一步，自己试一次",
+        "--expected-revision",
+        initial["revision"].as_str().unwrap(),
+        "--json",
+    ]);
+    assert!(outro.status.success(), "{}", stderr(&outro));
+    let outro = parse_json(&outro);
+    let intro = run(&[
+        "project",
+        "title-card",
+        "set",
+        path,
+        "--role",
+        "intro",
+        "--title",
+        "从这里开始",
+        "--expected-revision",
+        outro["resultRevision"].as_str().unwrap(),
+        "--json",
+    ]);
+    assert!(intro.status.success(), "{}", stderr(&intro));
+    let intro = parse_json(&intro);
+    assert_eq!(
+        intro["after"]["outro"]["titleCard"]["id"],
+        outro["after"]["outro"]["titleCard"]["id"]
+    );
+    assert!((intro["after"]["outro"]["start"].as_f64().unwrap() - 2.65).abs() < 1e-9);
+    assert!((intro["after"]["outputDuration"].as_f64().unwrap() - 4.65).abs() < 1e-9);
+}
+
+#[test]
+fn title_card_rejects_invalid_inputs_and_requires_revision_before_writing() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let config_path = project.join("project-config.json");
+    let before = std::fs::read(&config_path).unwrap();
+    let args = [
+        "project",
+        "title-card",
+        "set",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--json",
+    ];
+    for flags in [
+        vec!["--dry-run"],
+        vec!["--dry-run", "--title", "   "],
+        vec!["--dry-run", "--title", "标题", "--duration", "NaN"],
+        vec!["--dry-run", "--title", "标题", "--duration", "31"],
+        vec!["--dry-run", "--title", "标题", "--font-size", "23"],
+        vec!["--dry-run", "--title", "标题", "--font-size", "241"],
+        vec!["--dry-run", "--title", "标题", "--background-color", "red"],
+        vec![
+            "--dry-run",
+            "--title",
+            "标题",
+            "--background-image",
+            "../outside.png",
+        ],
+    ] {
+        let output = run(&[args.as_slice(), flags.as_slice()].concat());
+        assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+        assert_eq!(parse_json(&output)["code"], "INVALID_ARGUMENT");
+        assert_eq!(std::fs::read(&config_path).unwrap(), before);
+    }
+    let no_revision = run(&[args.as_slice(), &["--title", "标题"]].concat());
+    assert_eq!(no_revision.status.code(), Some(2));
+    assert_eq!(std::fs::read(&config_path).unwrap(), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn title_card_rejects_background_symlink_outside_project_without_mutation() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let outside = directory.path().join("outside.png");
+    image::RgbImage::new(2, 2).save(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, project.join("linked.png")).unwrap();
+    let before = std::fs::read(project.join("project-config.json")).unwrap();
+    let output = run(&[
+        "project",
+        "title-card",
+        "set",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--title",
+        "标题",
+        "--background-image",
+        "linked.png",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(parse_json(&output)["code"], "INVALID_ARGUMENT");
+    assert_eq!(
+        std::fs::read(project.join("project-config.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn title_card_legacy_text_keeps_appearance_and_new_card_does_not_grow_on_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("legacy.cap");
+    write_title_card_project(&project);
+    let path = project.join("project-config.json");
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["timeline"]["textSegments"][0]["size"] = serde_json::json!({"x": 0.35, "y": 0.4});
+    config["timeline"]["textSegments"][0]["fontSize"] = 60.0.into();
+    std::fs::write(&path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let args = [
+        "project",
+        "title-card",
+        "set",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--title",
+        "新封面",
+        "--json",
+    ];
+    let preview = run(&[args.as_slice(), &["--dry-run"]].concat());
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let preview = parse_json(&preview);
+    let written = run(&[
+        args.as_slice(),
+        &["--expected-revision", preview["revision"].as_str().unwrap()],
+    ]
+    .concat());
+    assert!(written.status.success(), "{}", stderr(&written));
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(written["timeline"]["textSegments"][0]["fontSize"], 120.0);
+    assert_eq!(
+        written["timeline"]["textSegments"][0]["futureTextField"],
+        config["timeline"]["textSegments"][0]["futureTextField"]
+    );
+    let reopened = cap_project::ProjectConfiguration::load(&project).unwrap();
+    assert_eq!(
+        reopened
+            .title_card(cap_project::TitleCardRole::Intro)
+            .unwrap()
+            .font_size,
+        96.0
+    );
+    assert_eq!(reopened.timeline.unwrap().text_segments[0].font_size, 120.0);
+}
+
+#[test]
+fn title_card_retimes_unsorted_scenes_without_swapping_their_content_or_unknown_fields() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("scenes.cap");
+    write_title_card_project(&project);
+    let path = project.join("project-config.json");
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["timeline"]["sceneSegments"] = serde_json::json!([
+        {"start": 0.4, "end": 0.6, "mode": "cameraOnly", "futureSceneField": "later"},
+        {"start": 0.1, "end": 0.2, "mode": "hideCamera", "futureSceneField": "earlier"}
+    ]);
+    std::fs::write(&path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let read = parse_json(&run(&[
+        "project",
+        "title-card",
+        "get",
+        project.to_str().unwrap(),
+        "--json",
+    ]));
+    let written = run(&[
+        "project",
+        "title-card",
+        "set",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--title",
+        "封面",
+        "--expected-revision",
+        read["revision"].as_str().unwrap(),
+        "--json",
+    ]);
+    assert!(written.status.success(), "{}", stderr(&written));
+    let updated: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let scenes = updated["timeline"]["sceneSegments"].as_array().unwrap();
+    assert_eq!(scenes[0]["mode"], "cameraOnly");
+    assert_eq!(scenes[0]["futureSceneField"], "later");
+    assert_eq!(scenes[0]["start"], 2.4);
+    assert_eq!(scenes[0]["end"], 2.6);
+    assert_eq!(scenes[1]["mode"], "hideCamera");
+    assert_eq!(scenes[1]["futureSceneField"], "earlier");
+    assert_eq!(scenes[1]["start"], 2.1);
+    assert_eq!(scenes[1]["end"], 2.2);
+}
+
+#[test]
+fn title_card_rejects_image_with_valid_dimensions_but_corrupt_pixels() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let image_path = project.join("broken.png");
+    image::RgbImage::new(8, 8).save(&image_path).unwrap();
+    let mut bytes = std::fs::read(&image_path).unwrap();
+    let offset = bytes
+        .windows(4)
+        .position(|window| window == b"IDAT")
+        .unwrap();
+    bytes[offset + 4] ^= 0xff;
+    std::fs::write(&image_path, bytes).unwrap();
+    assert_eq!(image::image_dimensions(&image_path).unwrap(), (8, 8));
+    let path = project.join("project-config.json");
+    let before = std::fs::read(&path).unwrap();
+    let output = run(&[
+        "project",
+        "title-card",
+        "set",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--title",
+        "标题",
+        "--background-image",
+        "broken.png",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(parse_json(&output)["code"], "INVALID_MEDIA");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn title_card_and_caption_writes_respect_the_same_process_lock() {
+    use std::os::fd::AsRawFd;
+
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("cards.cap");
+    write_title_card_project(&project);
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(project.join(".cap-project-edit.lock"))
+        .unwrap();
+    assert_eq!(
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0
+    );
+    let path = project.join("project-config.json");
+    let before = std::fs::read(&path).unwrap();
+    let read = parse_json(&run(&[
+        "project",
+        "title-card",
+        "get",
+        project.to_str().unwrap(),
+        "--json",
+    ]));
+    for flags in [
+        vec![
+            "title-card",
+            "set",
+            project.to_str().unwrap(),
+            "--role",
+            "intro",
+            "--title",
+            "标题",
+        ],
+        vec![
+            "captions",
+            "style",
+            project.to_str().unwrap(),
+            "--size",
+            "36",
+        ],
+    ] {
+        let output = run(&[
+            &["project"][..],
+            flags.as_slice(),
+            &[
+                "--expected-revision",
+                read["revision"].as_str().unwrap(),
+                "--json",
+            ],
+        ]
+        .concat());
+        assert_eq!(output.status.code(), Some(1));
+        let result = parse_json(&output);
+        assert_eq!(result["code"], "PROJECT_BUSY");
+        assert_eq!(result["retryable"], true);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+    drop(lock);
+    let output = run(&[
+        "project",
+        "title-card",
+        "set",
+        project.to_str().unwrap(),
+        "--role",
+        "intro",
+        "--title",
+        "标题",
+        "--expected-revision",
+        read["revision"].as_str().unwrap(),
+        "--json",
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+}
+
+#[test]
+fn captions_get_projects_edited_time_without_migrating_the_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("captioned.cap");
+    write_caption_project(&project);
+    write_test_media(&project.join("content/display.mp4"));
+    let before = std::fs::read(project.join("project-config.json")).unwrap();
+    let output = run(&[
+        "project",
+        "captions",
+        "get",
+        project.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let result = parse_json(&output);
+    assert_eq!(result["timeBasis"], "edited-output-seconds");
+    assert_eq!(result["coverage"]["translated"], 1);
+    assert_eq!(result["captions"][0]["start"], 0.0);
+    assert_eq!(result["captions"][0]["end"], 0.5);
+    assert_eq!(result["captions"][0]["sourceText"], "开始录制");
+    assert_eq!(result["revision"].as_str().unwrap().len(), 64);
+    assert_eq!(
+        std::fs::read(project.join("project-config.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn captions_style_preview_revision_and_patch_preserve_unrelated_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("captioned.cap");
+    write_caption_project(&project);
+    let path = project.join("project-config.json");
+    let before = std::fs::read(&path).unwrap();
+    let args = [
+        "project",
+        "captions",
+        "style",
+        project.to_str().unwrap(),
+        "--color",
+        "#FFFFFF",
+        "--outline",
+        "true",
+        "--outline-color",
+        "#000000",
+        "--outline-width",
+        "7",
+        "--background-opacity",
+        "0",
+        "--json",
+    ];
+    let preview = cap().args(args).arg("--dry-run").output().unwrap();
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let preview = parse_json(&preview);
+    assert_eq!(preview["written"], false);
+    assert_eq!(preview["after"]["outlineWidth"], 7.0);
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let result = cap()
+        .args(args)
+        .args(["--expected-revision", preview["revision"].as_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{}", stderr(&result));
+    let changed: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(changed["futureEditorField"]["preserve"], true);
+    assert_eq!(
+        changed["captions"]["settings"]["futureCaptionField"],
+        "preserve"
+    );
+    assert_eq!(changed["captions"]["settings"]["size"], 32);
+    assert_eq!(changed["captions"]["segments"][0]["text"], "开始录制");
+    assert_eq!(
+        changed["captions"]["settings"]["translations"]["intro"]["text"],
+        "Start recording"
+    );
+    let result = cap()
+        .args(args)
+        .args(["--expected-revision", preview["revision"].as_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1));
+    assert_eq!(parse_json(&result)["code"], "REVISION_CONFLICT");
+    assert_eq!(
+        std::fs::read_dir(&project)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn captions_style_typography_changes_each_group_independently_and_preserves_unknown_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("captioned.cap");
+    write_caption_project(&project);
+    let path = project.join("project-config.json");
+    let before = std::fs::read(&path).unwrap();
+    let base = ["project", "captions", "style", project.to_str().unwrap()];
+    let translation = [
+        "--translation-font",
+        "Inter",
+        "--translation-size",
+        "24",
+        "--translation-gap",
+        "10",
+        "--bottom-margin",
+        "60",
+        "--json",
+    ];
+    let preview = cap()
+        .args(base)
+        .args(translation)
+        .arg("--dry-run")
+        .output()
+        .unwrap();
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let preview = parse_json(&preview);
+    assert_eq!(preview["after"]["font"], "Noto Sans SC");
+    assert_eq!(preview["after"]["translationGap"], 10);
+    assert_eq!(preview["after"]["bottomMargin"], 60);
+    assert_eq!(preview["after"]["size"], 32);
+    assert_eq!(
+        preview["after"]["translationStyle"],
+        serde_json::json!({"font":"Inter", "size":24})
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let apply = cap()
+        .args(base)
+        .args(translation)
+        .args(["--expected-revision", preview["revision"].as_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(apply.status.success(), "{}", stderr(&apply));
+    let mut stored: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    stored["captions"]["settings"]["translationStyle"]["futureTypography"] = "keep".into();
+    let content = stored["captions"]["segments"].clone();
+    let translations = stored["captions"]["settings"]["translations"].clone();
+    std::fs::write(&path, serde_json::to_vec_pretty(&stored).unwrap()).unwrap();
+
+    for flags in [
+        vec!["--font", "Noto Serif SC", "--size", "48"],
+        vec!["--translation-size", "40"],
+        vec!["--translation-font", "Manrope"],
+    ] {
+        let output = cap()
+            .args(base)
+            .args(&flags)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", stderr(&output));
+        stored = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(stored["captions"]["settings"]["font"], "Noto Serif SC");
+        assert_eq!(stored["captions"]["settings"]["size"], 48);
+        assert_eq!(
+            stored["captions"]["settings"]["translationStyle"]["futureTypography"],
+            "keep"
+        );
+        assert_eq!(stored["captions"]["segments"], content);
+        assert_eq!(stored["captions"]["settings"]["translations"], translations);
+        assert_eq!(stored["futureEditorField"]["preserve"], true);
+        assert_eq!(
+            stored["captions"]["settings"]["futureCaptionField"],
+            "preserve"
+        );
+        if flags[0] == "--font" {
+            assert_eq!(
+                stored["captions"]["settings"]["translationStyle"]["font"],
+                "Inter"
+            );
+            assert_eq!(
+                stored["captions"]["settings"]["translationStyle"]["size"],
+                24
+            );
+        }
+    }
+    assert_eq!(
+        stored["captions"]["settings"]["translationStyle"]["font"],
+        "Manrope"
+    );
+    assert_eq!(
+        stored["captions"]["settings"]["translationStyle"]["size"],
+        40
+    );
+}
+
+#[test]
+fn captions_style_typography_source_edit_freezes_legacy_translation_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("captioned.cap");
+    write_caption_project(&project);
+    let output = run(&[
+        "project",
+        "captions",
+        "style",
+        project.to_str().unwrap(),
+        "--font",
+        "Noto Serif SC",
+        "--size",
+        "48",
+        "--json",
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let after = &parse_json(&output)["after"];
+    assert_eq!(after["font"], "Noto Serif SC");
+    assert_eq!(after["size"], 48);
+    assert_eq!(
+        after["translationStyle"],
+        serde_json::json!({"font":"Noto Sans SC", "size":32})
+    );
+}
+
+#[test]
+fn captions_export_previews_bilingual_srt_vtt_and_never_overwrites() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("captioned.cap");
+    write_caption_project(&project);
+    let media = project.join("content/display.mp4");
+    write_test_media(&media);
+    let source_before = std::fs::read(&media).unwrap();
+    let config_before = std::fs::read(project.join("project-config.json")).unwrap();
+    for format in ["srt", "vtt"] {
+        let output_path = dir.path().join(format!("bilingual.{format}"));
+        let args = [
+            "project",
+            "captions",
+            "export",
+            project.to_str().unwrap(),
+            "--subtitle-format",
+            format,
+            "--display-mode",
+            "bilingual",
+            "--output",
+            output_path.to_str().unwrap(),
+            "--json",
+        ];
+        let preview = cap().args(args).arg("--dry-run").output().unwrap();
+        assert!(preview.status.success(), "{}", stderr(&preview));
+        assert!(!output_path.exists());
+        let preview = parse_json(&preview);
+        assert_eq!(preview["cueCount"], 1);
+        assert!(
+            preview["content"]
+                .as_str()
+                .unwrap()
+                .contains("开始录制\nStart recording")
+        );
+        let output = run(&args);
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(
+            std::fs::read_to_string(&output_path).unwrap(),
+            preview["content"]
+        );
+        let duplicate = run(&args);
+        assert_eq!(duplicate.status.code(), Some(1));
+        assert_eq!(parse_json(&duplicate)["code"], "OUTPUT_EXISTS");
+        assert_eq!(
+            std::fs::read_to_string(&output_path).unwrap(),
+            preview["content"]
+        );
+    }
+    assert_eq!(std::fs::read(&media).unwrap(), source_before);
+    assert_eq!(
+        std::fs::read(project.join("project-config.json")).unwrap(),
+        config_before
+    );
+}
+
+#[test]
+fn captions_style_rejects_invalid_values_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("captioned.cap");
+    write_caption_project(&project);
+    let before = std::fs::read(project.join("project-config.json")).unwrap();
+    for (flag, value) in [
+        ("--size", "0"),
+        ("--translation-size", "0"),
+        ("--translation-size", "101"),
+        ("--translation-gap", "201"),
+        ("--bottom-margin", "401"),
+        ("--translation-font", " "),
+        ("--outline-width", "NaN"),
+        ("--shadow-size", "31"),
+        ("--color", "white"),
+        ("--font", " "),
+    ] {
+        let output = run(&[
+            "project",
+            "captions",
+            "style",
+            project.to_str().unwrap(),
+            flag,
+            value,
+            "--json",
+        ]);
+        assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+        assert_eq!(parse_json(&output)["code"], "INVALID_ARGUMENT");
+    }
+    assert_eq!(
+        std::fs::read(project.join("project-config.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn captions_translation_modes_reject_stale_translations_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("captioned.cap");
+    write_caption_project(&project);
+    write_test_media(&project.join("content/display.mp4"));
+    let path = project.join("project-config.json");
+    let mut config: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["captions"]["settings"]["translations"]["intro"]["sourceText"] = "过期文本".into();
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let output_path = dir.path().join("bilingual.srt");
+    for command in ["style", "export"] {
+        let mut args = vec![
+            "project",
+            "captions",
+            command,
+            project.to_str().unwrap(),
+            "--display-mode",
+            "bilingual",
+            "--json",
+        ];
+        if command == "export" {
+            args.extend(["--output", output_path.to_str().unwrap()]);
+        }
+        let output = run(&args);
+        assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+        assert_eq!(parse_json(&output)["code"], "NO_TRANSLATIONS");
+    }
+    assert!(!output_path.exists());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    config["captions"]["segments"] = serde_json::json!([]);
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let output = run(&[
+        "project",
+        "captions",
+        "export",
+        project.to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(parse_json(&output)["code"], "NO_CAPTIONS");
+    assert!(!output_path.exists());
 }

@@ -1,7 +1,6 @@
 use super::*;
 use cap_project::{
-    BackgroundSource, ImageSegment, MaskKind, MaskSegment, OverlayTrack, OverlayTrackKind,
-    ShapeAnimation, ShapeKind, ShapeSegment,
+    BackgroundSource, ImageSegment, MaskKind, MaskSegment, ShapeAnimation, ShapeKind, ShapeSegment,
 };
 
 const WIDTH: u32 = 160;
@@ -604,16 +603,10 @@ async fn a_mask_ordered_above_an_image_still_hides_it_during_a_transition() {
     if let Some(timeline) = project.timeline.as_mut() {
         timeline.mask_segments[0].pixelation = 1080.0;
     }
-    project.overlay_order = vec![
-        OverlayTrack {
-            kind: OverlayTrackKind::Mask,
-            track: 0,
-        },
-        OverlayTrack {
-            kind: OverlayTrackKind::Image,
-            track: 0,
-        },
-    ];
+    if let Some(timeline) = project.timeline.as_mut() {
+        timeline.mask_segments[0].track = 1;
+        timeline.image_segments[0].track = 0;
+    }
     fixture.project = Arc::new(project);
     let cursor = CursorEvents::default();
     let sides = sides(&fixture, &cursor);
@@ -660,16 +653,10 @@ async fn a_highlight_ordered_above_an_image_dims_each_frame_once() {
         timeline.mask_segments[0].darkness = 0.6;
         timeline.image_segments[0].size = XY::new(0.4, 0.4);
     }
-    project.overlay_order = vec![
-        OverlayTrack {
-            kind: OverlayTrackKind::Mask,
-            track: 0,
-        },
-        OverlayTrack {
-            kind: OverlayTrackKind::Image,
-            track: 0,
-        },
-    ];
+    if let Some(timeline) = project.timeline.as_mut() {
+        timeline.mask_segments[0].track = 1;
+        timeline.image_segments[0].track = 0;
+    }
     fixture.project = Arc::new(project);
     let cursor = CursorEvents::default();
     let sides = sides(&fixture, &cursor);

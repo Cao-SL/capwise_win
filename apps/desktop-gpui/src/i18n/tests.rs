@@ -13,11 +13,54 @@ const CAPWISE_KEYS: &[&str] = &[
     "ai.",
     "asr.",
     "brand.",
+    "dialog.teleprompter.assist.",
+    "dialog.teleprompter.follow.",
+    "editor.assets.",
+    "editor.cover.",
+    "editor.review.",
+    "editor.setup.",
+    "editor.title_card_library.",
+    "editor.title_cards.",
+    "editor.translation.",
+    "editor.voiceover.",
+    "menu.file.open_dialog_failed",
+    "menu.file.open_failed_title",
+    "menu.file.open_instant_missing",
+    "menu.file.open_missing",
+    "menu.file.open_unreadable",
+    "menu.file.open_unsupported",
+    "menu.window.recorder",
     "settings.ai.",
+    "settings.cover.",
     "settings.about.",
+    "settings.general.recording.auto_captions.",
     "settings.nav.about",
+    "settings.review.",
+    "settings.stock.",
+    "settings.workflow.",
     "transcription.qwen",
 ];
+
+pub(super) fn is_capwise_key(key: &str) -> bool {
+    CAPWISE_KEYS.iter().any(|prefix| key.starts_with(prefix))
+}
+
+#[test]
+fn capwise_key_groups_are_present_and_do_not_overlap() {
+    for prefix in CAPWISE_KEYS {
+        assert!(KEYS.iter().any(|key| key.starts_with(prefix)), "{prefix}");
+    }
+    for key in KEYS {
+        assert!(
+            CAPWISE_KEYS
+                .iter()
+                .filter(|prefix| key.starts_with(**prefix))
+                .count()
+                <= 1,
+            "overlapping Capwise groups: {key}"
+        );
+    }
+}
 
 #[test]
 fn english_matches_the_literals_it_replaced() {
@@ -37,7 +80,7 @@ fn english_matches_the_literals_it_replaced() {
         (tr::menu::app::settings(), "Settings…".into()),
         (tr::menu::file::close_window(), "Close Window".into()),
         (tr::menu::file::open_file(), "Open File…".into()),
-        (tr::menu::file::open_prompt(), "Open Recording".into()),
+        (tr::menu::file::open_prompt(), "Open .cap Project".into()),
         (tr::menu::file::open_recent(), "Open Recent".into()),
         (tr::menu::file::import_media(), "Import Media…".into()),
         (tr::menu::file::title(), "File".into()),
@@ -93,7 +136,10 @@ fn english_matches_the_literals_it_replaced() {
         (tr::tray::screenshot_window(), "Screenshot Window".into()),
         (tr::tray::select_mode(), "Select Mode".into()),
         (tr::tray::settings(), "Settings".into()),
-        (tr::tray::tooltip_recording(), "Capwise - Stop Recording".into()),
+        (
+            tr::tray::tooltip_recording(),
+            "Capwise - Stop Recording".into(),
+        ),
         (
             tr::tray::view_all_recordings(),
             "View all recordings".into(),
@@ -210,9 +256,9 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::recording::window_capture::description(),
-            "How a window recording captures the window you pick. Focused window records only \
-             that window, centred and followed if it moves; Screen region records the area of \
-             the screen it covers."
+            "Focused window records only the selected window and follows it when it moves. \
+             Centering is optional. Screen region also records overlapping windows and floating \
+             panels. Instant with a camera uses screen region."
                 .into(),
         ),
         (
@@ -506,7 +552,7 @@ fn english_matches_the_literals_it_replaced() {
                 && !super::editor_panels_surface_tests::is_editor_panels_surface_key(key)
                 && !super::editor_shell_surface_tests::is_editor_shell_surface_key(key)
                 && !key.starts_with(super::messages::KEY_PREFIX)
-                && !CAPWISE_KEYS.iter().any(|prefix| key.starts_with(prefix))
+                && !is_capwise_key(key)
         })
         .count()
         // `tray.version`, `excluded_windows.missing_body`, `self_host.confirm_change`,
@@ -851,6 +897,88 @@ fn english_messages_format_like_the_literals_they_replaced() {
 }
 
 #[test]
+fn capwise_product_messages_preserve_arguments() {
+    let cases = [
+        (
+            tr::settings::workflow::copy_name("教程", 2),
+            "教程 · Copy 2",
+        ),
+        (
+            tr::editor::translation::service("DeepSeek"),
+            "Translation service: DeepSeek",
+        ),
+        (
+            tr::editor::translation::partial(2, 9),
+            "Translated 2/9 captions. Untranslated captions show the original text.",
+        ),
+        (
+            tr::editor::translation::progress(2, 9),
+            "Translated 2 of 9 captions",
+        ),
+        (
+            tr::editor::translation::review(2, 9),
+            "Review translations · 2/9",
+        ),
+        (
+            tr::editor::review::record_unreadable("permission denied"),
+            "Cannot read subtitle status: permission denied",
+        ),
+        (tr::editor::assets::retry_in(5), "Retry in 5s"),
+        (
+            tr::editor::assets::drop_at("00:12"),
+            "Release at 00:12 · Esc to cancel",
+        ),
+        (
+            tr::editor::assets::add_image("00:12"),
+            "Add overlay · 00:12",
+        ),
+        (
+            tr::editor::setup::not_persisted("disk full"),
+            "Preparation could not be saved for recovery after restarting: disk full",
+        ),
+        (
+            tr::editor::title_cards::export_size("1920 × 1080"),
+            "PNG · 1920 × 1080 pixels · Project aspect ratio",
+        ),
+        (
+            tr::editor::title_cards::export_saved("1920 × 1080", "/exports/封面.png"),
+            "Saved 1920 × 1080 PNG: /exports/封面.png",
+        ),
+        (
+            tr::editor::voiceover::position("00:12", 3),
+            "Start 00:12 · Audio track 3",
+        ),
+        (
+            tr::editor::voiceover::asset_name("00:12"),
+            "Voiceover 00:12",
+        ),
+        (
+            tr::editor::voiceover::recover_count(2),
+            "Unfinished takes (2)",
+        ),
+        (
+            tr::editor::title_card_library::details(2.5, "Demo"),
+            "2.5 sec · Demo",
+        ),
+        (
+            tr::editor::title_card_library::remove_confirm("Demo"),
+            "Remove “Demo”? Projects already using this template will keep their copies.",
+        ),
+        (
+            tr::editor::title_card_library::failed("disk full"),
+            "Could not complete this action: disk full",
+        ),
+        (
+            tr::editor::title_card_library::unreadable("invalid image"),
+            "Cannot read this template: invalid image. You can remove it and save a new copy.",
+        ),
+    ];
+    for (translated, expected) in cases {
+        assert_eq!(translated, expected);
+    }
+}
+
+#[test]
 fn prompt_buttons_keep_their_roles() {
     assert_eq!(
         gpui::PromptButton::ok(tr::common::ok()),
@@ -866,7 +994,7 @@ fn prompt_buttons_keep_their_roles() {
 fn every_key_is_used_outside_the_catalog() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let i18n = src.join("i18n");
-    let mut sources = String::new();
+    let mut sources = Vec::new();
     let mut pending = vec![src];
     while let Some(dir) = pending.pop() {
         for entry in std::fs::read_dir(&dir).unwrap() {
@@ -876,27 +1004,120 @@ fn every_key_is_used_outside_the_catalog() {
                     pending.push(path);
                 }
             } else if path.extension().is_some_and(|extension| extension == "rs") {
-                sources.push_str(&std::fs::read_to_string(&path).unwrap());
-                sources.push('\n');
+                sources.push(std::fs::read_to_string(&path).unwrap());
             }
         }
     }
-    sources.push_str(&std::fs::read_to_string(i18n.join("messages.rs")).unwrap());
+    sources.push(std::fs::read_to_string(i18n.join("messages.rs")).unwrap());
     let unused: Vec<&str> = KEYS
         .iter()
         .copied()
         .filter(|key| {
-            let accessor = format!("tr::{}", key.replace('.', "::"));
-            !sources.match_indices(&accessor).any(|(at, _)| {
-                sources[at + accessor.len()..]
-                    .chars()
-                    .next()
-                    .is_none_or(|next| !(next.is_ascii_alphanumeric() || next == '_'))
-            })
+            !sources
+                .iter()
+                .any(|source| source_uses_translation(source, key))
         })
         .collect();
     assert!(
         unused.is_empty(),
         "keys in locales/en.toml that no code reads: {unused:?}"
     );
+}
+
+fn contains_accessor(source: &str, accessor: &str) -> bool {
+    let is_identifier = |character: char| character.is_ascii_alphanumeric() || character == '_';
+    source.match_indices(accessor).any(|(at, _)| {
+        source[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|previous| !is_identifier(previous))
+            && source[at + accessor.len()..]
+                .chars()
+                .next()
+                .is_none_or(|next| !is_identifier(next))
+    })
+}
+
+fn source_uses_translation(source: &str, key: &str) -> bool {
+    let path = key.replace('.', "::");
+    if contains_accessor(source, &format!("tr::{path}")) {
+        return true;
+    }
+    if !source.contains("use tr::") {
+        return false;
+    }
+    source.lines().any(|line| {
+        let Some(import) = line
+            .trim()
+            .strip_prefix("use tr::")
+            .and_then(|line| line.strip_suffix(';'))
+        else {
+            return false;
+        };
+        let (module, alias) = import
+            .split_once(" as ")
+            .unwrap_or_else(|| (import, import.rsplit("::").next().unwrap_or(import)));
+        let Some(suffix) = path
+            .strip_prefix(module)
+            .and_then(|suffix| suffix.strip_prefix("::"))
+        else {
+            return false;
+        };
+        contains_accessor(source, &format!("{alias}::{suffix}"))
+    })
+}
+
+#[test]
+fn translation_usage_resolves_module_aliases_without_accepting_unused_children() {
+    let source = "use tr::dialog::teleprompter::assist as copy;\ncopy::write();\ncopy::current();";
+    assert!(source_uses_translation(
+        source,
+        "dialog.teleprompter.assist.write"
+    ));
+    assert!(source_uses_translation(
+        source,
+        "dialog.teleprompter.assist.current"
+    ));
+    assert!(!source_uses_translation(
+        source,
+        "dialog.teleprompter.assist.restore"
+    ));
+    assert!(!source_uses_translation(
+        "use tr::settings::workflow as text;",
+        "settings.workflow.title"
+    ));
+    assert!(source_uses_translation(
+        "use tr::settings::workflow;\nworkflow::title();",
+        "settings.workflow.title"
+    ));
+}
+
+#[test]
+fn translation_usage_does_not_leak_aliases_between_files_or_accessor_names() {
+    let sources = [
+        "use tr::one as text;\ntext::title();",
+        "use tr::two as text;\ntext::other();",
+    ];
+    assert!(
+        !sources
+            .iter()
+            .any(|source| source_uses_translation(source, "two.title"))
+    );
+    assert!(
+        sources
+            .iter()
+            .any(|source| source_uses_translation(source, "one.title"))
+    );
+    assert!(!source_uses_translation(
+        "tr::one::title_suffix();",
+        "one.title"
+    ));
+    assert!(!source_uses_translation(
+        "other_tr::one::title();",
+        "one.title"
+    ));
+    assert!(!source_uses_translation(
+        "use tr::one as text;\nother_text::title();",
+        "one.title"
+    ));
 }

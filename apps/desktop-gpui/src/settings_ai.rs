@@ -23,8 +23,23 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModelKind {
+    Asr,
+    Llm,
+}
+
+impl ModelKind {
+    fn store_kind(self) -> Kind {
+        match self {
+            Self::Asr => Kind::Asr,
+            Self::Llm => Kind::Llm,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Target {
-    kind: Kind,
+    kind: ModelKind,
     id: &'static str,
 }
 
@@ -33,6 +48,41 @@ enum Status {
     Idle,
     Testing,
     Failed(String),
+}
+
+#[derive(Default)]
+struct ModelDiscovery {
+    generation: u64,
+    target: Option<Target>,
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    loading: bool,
+    models: Vec<llm::DiscoveredModel>,
+    notice: Option<String>,
+}
+
+impl ModelDiscovery {
+    fn invalidate(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        if let Some(cancel) = self.cancel.take() {
+            let _ = cancel.send(());
+        }
+        self.target = None;
+        self.loading = false;
+        self.models.clear();
+        self.notice = None;
+    }
+
+    fn accepts(&self, target: Target, generation: u64) -> bool {
+        self.target == Some(target) && self.generation == generation && self.loading
+    }
+}
+
+impl Drop for ModelDiscovery {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.cancel.take() {
+            let _ = cancel.send(());
+        }
+    }
 }
 
 pub(crate) struct AiState {
@@ -44,18 +94,51 @@ pub(crate) struct AiState {
     /// The round trip of the last successful test, shown on its row.
     tested: Option<(Target, u128)>,
     download_poll: Option<gpui::Task<()>>,
+    review_prompt: Entity<ui::TextInputState>,
+    review_open: bool,
+    review_notice: Option<String>,
+    more_asr_open: bool,
+    discovery: ModelDiscovery,
+    _discovery_subscriptions: Vec<gpui::Subscription>,
 }
 
 impl AiState {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<SettingsWindow>) -> Self {
+        let key = cx.new(|cx| {
+            let mut input = ui::TextInputState::single_line(window, cx);
+            input.set_secret(true, cx);
+            input
+        });
+        let address = cx.new(|cx| ui::TextInputState::single_line(window, cx));
+        let subscriptions = [&key, &address]
+            .into_iter()
+            .map(|input| {
+                cx.subscribe(input, |this, _input, event, cx| {
+                    if *event == ui::TextInputEvent::Changed {
+                        this.pages.ai.discovery.invalidate();
+                        cx.notify();
+                    }
+                })
+            })
+            .collect();
         Self {
-            key: cx.new(|cx| ui::TextInputState::single_line(window, cx)),
-            address: cx.new(|cx| ui::TextInputState::single_line(window, cx)),
+            key,
+            address,
             model: cx.new(|cx| ui::TextInputState::single_line(window, cx)),
             editing: None,
             status: Status::Idle,
             tested: None,
             download_poll: None,
+            review_prompt: cx.new(|cx| {
+                let mut input = ui::TextInputState::multi_line(window, cx);
+                input.set_text(crate::caption_review::ReviewSettings::load().prompt, cx);
+                input
+            }),
+            review_open: false,
+            review_notice: None,
+            more_asr_open: false,
+            discovery: ModelDiscovery::default(),
+            _discovery_subscriptions: subscriptions,
         }
     }
 }
@@ -63,15 +146,32 @@ impl AiState {
 const READY: u32 = 0x22c55e;
 const ERROR: u32 = 0xef4444;
 
-fn defaults(target: Target) -> (Endpoint, Option<&'static str>, &'static [&'static str], bool) {
+fn defaults(
+    target: Target,
+) -> (
+    Endpoint,
+    Option<&'static str>,
+    &'static [&'static str],
+    bool,
+) {
     match target.kind {
-        Kind::Asr => {
+        ModelKind::Asr => {
             let service = asr_cloud::service(target.id).expect("known recognition service");
-            (service.endpoint(), service.key_url, service.models, service.needs_key)
+            (
+                service.endpoint(),
+                service.key_url,
+                service.models,
+                service.needs_key,
+            )
         }
-        Kind::Llm => {
+        ModelKind::Llm => {
             let provider = llm::provider(target.id).expect("known model provider");
-            (provider.endpoint(), provider.key_url, provider.models, provider.needs_key())
+            (
+                provider.endpoint(),
+                provider.key_url,
+                provider.models,
+                provider.needs_key(),
+            )
         }
     }
 }
@@ -79,7 +179,46 @@ fn defaults(target: Target) -> (Endpoint, Option<&'static str>, &'static [&'stat
 /// The recognisers the editor can use right now, in menu order: the local
 /// models this Mac runs, then the cloud services that are set up.
 pub(crate) fn recognizer_choices() -> Vec<&'static CaptionModel> {
-    editor_tabs::available_caption_models()
+    let mut models = editor_tabs::local_caption_models();
+    models.extend(editor_tabs::CAPTION_MODELS.iter().filter(|model| {
+        asr_cloud::service(model.name).is_some_and(|service| {
+            configured_cached(Target {
+                kind: ModelKind::Asr,
+                id: service.id,
+            })
+        })
+    }));
+    models
+}
+
+fn configured_cached(target: Target) -> bool {
+    let kind = target.kind.store_kind();
+    let (_, _, _, needs_key) = defaults(target);
+    ai_store::endpoint(kind, target.id).is_some_and(|endpoint| {
+        ai_store::address_allowed(&endpoint.base_url) && !endpoint.model.trim().is_empty()
+    }) && (!needs_key || ai_store::key_available_cached(kind, target.id) != Some(false))
+}
+
+fn ready_cached(target: Target) -> bool {
+    let (_, _, _, needs_key) = defaults(target);
+    configured_cached(target)
+        && (!needs_key
+            || ai_store::key_available_cached(target.kind.store_kind(), target.id) == Some(true))
+}
+
+fn default_provider_cached() -> Option<&'static llm::LlmProvider> {
+    let available: Vec<_> = llm::configured()
+        .into_iter()
+        .filter(|provider| {
+            configured_cached(Target {
+                kind: ModelKind::Llm,
+                id: provider.id,
+            })
+        })
+        .collect();
+    ai_store::llm_default()
+        .and_then(|id| available.iter().copied().find(|provider| provider.id == id))
+        .or_else(|| available.first().copied())
 }
 
 fn selected_recognizer() -> &'static str {
@@ -96,10 +235,40 @@ fn selected_recognizer() -> &'static str {
 }
 
 fn monogram(name: &str) -> String {
-    name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default()
+    name.chars()
+        .next()
+        .map(|c| c.to_uppercase().collect())
+        .unwrap_or_default()
+}
+
+fn asr_service_visible(
+    id: &str,
+    configured: &[String],
+    selected: Option<&str>,
+    editing: Option<Target>,
+) -> bool {
+    id == "doubao"
+        || configured.iter().any(|saved| saved == id)
+        || selected == Some(id)
+        || editing.is_some_and(|target| target.kind == ModelKind::Asr && target.id == id)
 }
 
 impl SettingsWindow {
+    fn ai_model_choices(&self, target: Target) -> Vec<llm::DiscoveredModel> {
+        let discovery = &self.pages.ai.discovery;
+        if discovery.target == Some(target) && !discovery.models.is_empty() {
+            return discovery.models.clone();
+        }
+        defaults(target)
+            .2
+            .iter()
+            .map(|id| llm::DiscoveredModel {
+                id: (*id).to_string(),
+                display_name: None,
+            })
+            .collect()
+    }
+
     // ---- menus -----------------------------------------------------------
 
     pub(crate) fn ai_menu_items(&self, kind: MenuKind) -> Vec<ui::MenuItem> {
@@ -125,10 +294,17 @@ impl SettingsWindow {
                 let Some(target) = self.pages.ai.editing else {
                     return Vec::new();
                 };
-                defaults(target)
-                    .2
-                    .iter()
-                    .map(|model| ui::MenuItem::new(*model, false))
+                self.ai_model_choices(target)
+                    .into_iter()
+                    .map(|model| {
+                        ui::MenuItem::new(
+                            SharedString::from(match model.display_name {
+                                Some(name) => format!("{name} · {}", model.id),
+                                None => model.id,
+                            }),
+                            false,
+                        )
+                    })
                     .collect()
             }
             MenuKind::AiLlmAdd => {
@@ -150,13 +326,22 @@ impl SettingsWindow {
                     .collect()
             }
             MenuKind::AiLlmDefault => {
-                let current = llm::default_provider().map(|p| p.id);
+                let current = default_provider_cached().map(|p| p.id);
                 llm::configured()
                     .into_iter()
-                    .filter(|provider| provider.ready())
+                    .filter(|provider| {
+                        configured_cached(Target {
+                            kind: ModelKind::Llm,
+                            id: provider.id,
+                        })
+                    })
                     .map(|provider| {
                         ui::MenuItem::new(
-                            SharedString::from(format!("{} · {}", (provider.name)(), provider.endpoint().model)),
+                            SharedString::from(format!(
+                                "{} · {}",
+                                (provider.name)(),
+                                provider.endpoint().model
+                            )),
                             Some(provider.id) == current,
                         )
                     })
@@ -185,9 +370,12 @@ impl SettingsWindow {
             }
             MenuKind::AiModel => {
                 if let Some(target) = self.pages.ai.editing
-                    && let Some(model) = defaults(target).2.get(index)
+                    && let Some(model) = self.ai_model_choices(target).get(index)
                 {
-                    self.pages.ai.model.update(cx, |input, cx| input.set_text(*model, cx));
+                    self.pages
+                        .ai
+                        .model
+                        .update(cx, |input, cx| input.set_text(model.id.clone(), cx));
                 }
             }
             MenuKind::AiLlmAdd => {
@@ -197,13 +385,25 @@ impl SettingsWindow {
                     .filter(|provider| !saved.iter().any(|id| id == provider.id))
                     .nth(index)
                 {
-                    self.ai_edit(Target { kind: Kind::Llm, id: provider.id }, window, cx);
+                    self.ai_edit(
+                        Target {
+                            kind: ModelKind::Llm,
+                            id: provider.id,
+                        },
+                        window,
+                        cx,
+                    );
                 }
             }
             MenuKind::AiLlmDefault => {
                 if let Some(provider) = llm::configured()
                     .into_iter()
-                    .filter(|provider| provider.ready())
+                    .filter(|provider| {
+                        configured_cached(Target {
+                            kind: ModelKind::Llm,
+                            id: provider.id,
+                        })
+                    })
                     .nth(index)
                 {
                     ai_store::set_llm_default(provider.id);
@@ -219,25 +419,40 @@ impl SettingsWindow {
     fn ai_edit(&mut self, target: Target, window: &mut Window, cx: &mut Context<Self>) {
         let (endpoint, ..) = defaults(target);
         let state = &mut self.pages.ai;
+        state.discovery.invalidate();
         state.editing = Some(target);
         state.status = Status::Idle;
         state.key.update(cx, |input, cx| input.set_text("", cx));
-        state.address.update(cx, |input, cx| input.set_text(endpoint.base_url, cx));
-        state.model.update(cx, |input, cx| input.set_text(endpoint.model, cx));
+        state
+            .address
+            .update(cx, |input, cx| input.set_text(endpoint.base_url, cx));
+        state
+            .model
+            .update(cx, |input, cx| input.set_text(endpoint.model, cx));
         let focus = state.key.read(cx).focus_handle();
         window.focus(&focus, cx);
         cx.notify();
     }
 
     fn ai_cancel(&mut self, cx: &mut Context<Self>) {
+        self.pages.ai.discovery.invalidate();
+        self.pages
+            .ai
+            .key
+            .update(cx, |input, cx| input.set_text("", cx));
         self.pages.ai.editing = None;
         self.pages.ai.status = Status::Idle;
         cx.notify();
     }
 
     fn ai_remove(&mut self, target: Target, cx: &mut Context<Self>) {
-        ai_store::remove(target.kind, target.id);
+        self.pages.ai.discovery.invalidate();
+        ai_store::remove(target.kind.store_kind(), target.id);
         if self.pages.ai.editing == Some(target) {
+            self.pages
+                .ai
+                .key
+                .update(cx, |input, cx| input.set_text("", cx));
             self.pages.ai.editing = None;
         }
         cx.notify();
@@ -247,12 +462,8 @@ impl SettingsWindow {
         let Some(target) = self.pages.ai.editing else {
             return;
         };
+        self.pages.ai.discovery.invalidate();
         let typed = self.pages.ai.key.read(cx).text().trim().to_string();
-        let key = if typed.is_empty() {
-            ai_store::key(target.kind, target.id).unwrap_or_default()
-        } else {
-            typed.clone()
-        };
         let endpoint = Endpoint {
             base_url: self.pages.ai.address.read(cx).text().trim().to_string(),
             model: self.pages.ai.model.read(cx).text().trim().to_string(),
@@ -264,23 +475,36 @@ impl SettingsWindow {
             window,
             cx,
             async move {
-                let key_for_test = key.clone();
-                tokio::task::spawn_blocking(move || match target.kind {
-                    Kind::Asr => asr_cloud::test(target.id, &key_for_test, &tested_endpoint),
-                    Kind::Llm => llm::test(target.id, &key_for_test, &tested_endpoint),
+                let typed_for_test = typed.clone();
+                tokio::task::spawn_blocking(move || {
+                    let key_for_test = if typed_for_test.is_empty() {
+                        ai_store::key(target.kind.store_kind(), target.id).unwrap_or_default()
+                    } else {
+                        typed_for_test
+                    };
+                    match target.kind {
+                        ModelKind::Asr => {
+                            asr_cloud::test(target.id, &key_for_test, &tested_endpoint)
+                        }
+                        ModelKind::Llm => llm::test(target.id, &key_for_test, &tested_endpoint),
+                    }
                 })
                 .await
                 .unwrap_or_else(|error| Err(error.to_string()))
                 .and_then(|ms| {
                     if !typed.is_empty() {
-                        ai_store::set_key(target.kind, target.id, &typed)?;
+                        ai_store::set_key(target.kind.store_kind(), target.id, &typed)?;
                     }
-                    ai_store::set_endpoint(target.kind, target.id, &endpoint);
+                    ai_store::set_endpoint(target.kind.store_kind(), target.id, &endpoint);
                     Ok(ms)
                 })
             },
-            move |this, result, _window, _cx| match result {
+            move |this, result, _window, cx| match result {
                 Ok(ms) => {
+                    this.pages
+                        .ai
+                        .key
+                        .update(cx, |input, cx| input.set_text("", cx));
                     this.pages.ai.editing = None;
                     this.pages.ai.status = Status::Idle;
                     this.pages.ai.tested = Some((target, ms));
@@ -288,6 +512,74 @@ impl SettingsWindow {
                 Err(error) => this.pages.ai.status = Status::Failed(error),
             },
         );
+    }
+
+    fn ai_discover_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(target) = self
+            .pages
+            .ai
+            .editing
+            .filter(|target| target.kind == ModelKind::Llm)
+        else {
+            return;
+        };
+        if self.pages.ai.status == Status::Testing {
+            return;
+        }
+        if self.pages.ai.discovery.loading {
+            self.pages.ai.discovery.invalidate();
+            cx.notify();
+            return;
+        }
+        let draft_key = self.pages.ai.key.read(cx).text().trim().to_string();
+        let address = self.pages.ai.address.read(cx).text().trim().to_string();
+        let discovery = &mut self.pages.ai.discovery;
+        discovery.invalidate();
+        let generation = discovery.generation;
+        let (cancel, cancelled) = tokio::sync::oneshot::channel();
+        discovery.target = Some(target);
+        discovery.loading = true;
+        discovery.cancel = Some(cancel);
+        self.spawn_tokio(
+            window,
+            cx,
+            async move {
+                let key = if draft_key.is_empty() {
+                    tokio::task::spawn_blocking(move || {
+                        ai_store::key(Kind::Llm, target.id).unwrap_or_default()
+                    })
+                    .await
+                    .unwrap_or_default()
+                } else {
+                    draft_key
+                };
+                tokio::select! {
+                    _ = cancelled => None,
+                    result = llm::discover_models(target.id, &address, &key) => Some(result),
+                }
+            },
+            move |this, result, _window, _cx| {
+                let discovery = &mut this.pages.ai.discovery;
+                if this.pages.ai.editing != Some(target) || !discovery.accepts(target, generation) {
+                    return;
+                }
+                discovery.cancel = None;
+                discovery.loading = false;
+                match result {
+                    Some(Ok(models)) => {
+                        discovery.notice = Some(if models.is_empty() {
+                            tr::ai::discovery_empty().to_string()
+                        } else {
+                            tr::ai::discovery_found(models.len())
+                        });
+                        discovery.models = models;
+                    }
+                    Some(Err(error)) => discovery.notice = Some(error.message()),
+                    None => discovery.invalidate(),
+                }
+            },
+        );
+        cx.notify();
     }
 
     // ---- local models --------------------------------------------------------
@@ -303,7 +595,9 @@ impl SettingsWindow {
     fn ai_poll_downloads(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pages.ai.download_poll = Some(cx.spawn_in(window, async move |this, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_millis(300)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(300))
+                    .await;
                 let active = transcription::download_active();
                 if !active {
                     transcription::refresh_downloaded_models();
@@ -339,6 +633,7 @@ impl SettingsWindow {
     // ---- the page ------------------------------------------------------------
 
     pub(crate) fn ai_page_shown(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        editor_tabs::migrate_caption_model_selection();
         transcription::refresh_downloaded_models();
         if transcription::download_active() {
             self.ai_poll_downloads(window, cx);
@@ -370,12 +665,11 @@ impl SettingsWindow {
             .gap(px(6.))
             .text_size(px(12.))
             .text_color(theme.settings_muted())
-            .child(
-                div()
-                    .size(px(7.))
-                    .rounded_full()
-                    .bg(if ready { gpui::rgb(READY).into() } else { theme.settings_border() }),
-            )
+            .child(div().size(px(7.)).rounded_full().bg(if ready {
+                gpui::rgb(READY).into()
+            } else {
+                theme.settings_border()
+            }))
             .child(label)
     }
 
@@ -455,37 +749,73 @@ impl SettingsWindow {
     fn ai_editor(&self, target: Target, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
         let state = &self.pages.ai;
-        let (_, key_url, models, needs_key) = defaults(target);
+        let (_, key_url, _, needs_key) = defaults(target);
+        let has_models = !self.ai_model_choices(target).is_empty();
+        let discovered =
+            state.discovery.target == Some(target) && !state.discovery.models.is_empty();
         let testing = state.status == Status::Testing;
-        let saved_tail = ai_store::key_tail(target.kind, target.id);
-        let saved = ai_store::endpoint(target.kind, target.id).is_some();
+        let saved_tail = ai_store::cached_key_tail(target.kind.store_kind(), target.id);
+        let saved = ai_store::endpoint(target.kind.store_kind(), target.id).is_some();
         let key_placeholder: SharedString = match &saved_tail {
-            Some(tail) => tr::settings::ai::key_saved(tail).into(),
-            None if !needs_key => tr::settings::ai::key_optional().into(),
-            None => tr::settings::ai::key_placeholder().into(),
+            Some(Some(tail)) => tr::settings::ai::key_saved(tail).into(),
+            _ if !needs_key => tr::settings::ai::key_optional().into(),
+            None if saved => tr::settings::ai::key_unverified().into(),
+            _ => tr::settings::ai::key_placeholder().into(),
         };
-        state.key.update(cx, |input, _| input.set_placeholder(key_placeholder));
-        state.address.update(cx, |input, _| input.set_placeholder("https://…"));
-        state.model.update(cx, |input, _| input.set_placeholder(tr::settings::ai::model_placeholder()));
+        state
+            .key
+            .update(cx, |input, _| input.set_placeholder(key_placeholder));
+        state
+            .address
+            .update(cx, |input, _| input.set_placeholder("https://…"));
+        state.model.update(cx, |input, _| {
+            input.set_placeholder(tr::settings::ai::model_placeholder())
+        });
 
         let model_input = div()
             .flex()
             .flex_row()
             .items_center()
             .gap(px(8.))
-            .child(div().flex_1().min_w_0().child(self.pages_input("ai-model", &state.model)))
-            .when(!models.is_empty(), |row| {
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(self.pages_input("ai-model", &state.model)),
+            )
+            .when(has_models, |row| {
                 row.child(self.select(
                     "ai-common-models",
-                    tr::settings::ai::common_models(),
+                    if discovered {
+                        tr::ai::discovery_choices()
+                    } else {
+                        tr::settings::ai::common_models()
+                    },
                     MenuKind::AiModel,
                     cx,
+                ))
+            })
+            .when(target.kind == ModelKind::Llm, |row| {
+                row.child(self.button(
+                    "ai-discover-models",
+                    (ui::ButtonVariant::Gray, None),
+                    if state.discovery.loading {
+                        tr::common::cancel()
+                    } else {
+                        tr::ai::discovery_fetch()
+                    },
+                    testing,
+                    cx,
+                    |this, window, cx| this.ai_discover_models(window, cx),
                 ))
             });
 
         let status = match &state.status {
             Status::Failed(error) => Some((error.clone(), Hsla::from(gpui::rgb(ERROR)))),
-            Status::Testing => Some((tr::settings::ai::testing().to_string(), theme.settings_muted())),
+            Status::Testing => Some((
+                tr::settings::ai::testing().to_string(),
+                theme.settings_muted(),
+            )),
             Status::Idle => None,
         };
 
@@ -502,13 +832,42 @@ impl SettingsWindow {
                 tr::settings::ai::field_key(),
                 self.pages_input("ai-key", &state.key).into_any_element(),
             ))
+            .child(
+                self.ai_field(
+                    tr::settings::ai::field_address(),
+                    self.pages_input("ai-address", &state.address)
+                        .into_any_element(),
+                ),
+            )
             .child(self.ai_field(
-                tr::settings::ai::field_address(),
-                self.pages_input("ai-address", &state.address).into_any_element(),
+                tr::settings::ai::field_model(),
+                model_input.into_any_element(),
             ))
-            .child(self.ai_field(tr::settings::ai::field_model(), model_input.into_any_element()))
+            .when(target.kind == ModelKind::Llm, |editor| {
+                editor.child(
+                    div()
+                        .text_size(px(12.))
+                        .line_height(px(18.))
+                        .text_color(theme.settings_muted())
+                        .child(if state.discovery.loading {
+                            tr::ai::discovery_loading().to_string()
+                        } else {
+                            state
+                                .discovery
+                                .notice
+                                .clone()
+                                .unwrap_or_else(|| tr::ai::discovery_hint().to_string())
+                        }),
+                )
+            })
             .when_some(status, |editor, (text, color)| {
-                editor.child(div().text_size(px(12.)).line_height(px(18.)).text_color(color).child(text))
+                editor.child(
+                    div()
+                        .text_size(px(12.))
+                        .line_height(px(18.))
+                        .text_color(color)
+                        .child(text),
+                )
             })
             .child(
                 div()
@@ -519,7 +878,11 @@ impl SettingsWindow {
                     .child(self.button(
                         "ai-save",
                         (ui::ButtonVariant::Primary, None),
-                        if testing { tr::settings::ai::testing() } else { tr::settings::ai::save() },
+                        if testing {
+                            tr::settings::ai::testing()
+                        } else {
+                            tr::settings::ai::save()
+                        },
                         testing,
                         cx,
                         |this, window, cx| this.ai_save(window, cx),
@@ -558,12 +921,18 @@ impl SettingsWindow {
     }
 
     /// The right side of a service row: its state, and the button that opens it.
-    fn ai_service_right(&self, target: Target, ready: bool, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn ai_service_right(
+        &self,
+        target: Target,
+        ready: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let label: SharedString = match self.pages.ai.tested {
             Some((tested, ms)) if tested == target && ready => {
                 tr::settings::ai::ready_ms(ms).into()
             }
             _ if ready => tr::settings::ai::ready().into(),
+            _ if configured_cached(target) => tr::settings::ai::key_unverified().into(),
             _ => tr::settings::ai::not_set().into(),
         };
         let open = self.pages.ai.editing == Some(target);
@@ -575,9 +944,13 @@ impl SettingsWindow {
             .child(self.ai_status(ready, label))
             .when(!open, |row| {
                 row.child(self.button(
-                    SharedString::from(format!("ai-open-{}-{}", matches!(target.kind, Kind::Llm), target.id)),
+                    SharedString::from(format!(
+                        "ai-open-{}-{}",
+                        matches!(target.kind, ModelKind::Llm),
+                        target.id
+                    )),
                     (ui::ButtonVariant::Gray, None),
-                    if ready || ai_store::endpoint(target.kind, target.id).is_some() {
+                    if ready || ai_store::endpoint(target.kind.store_kind(), target.id).is_some() {
                         tr::settings::ai::edit()
                     } else {
                         tr::settings::ai::configure()
@@ -606,12 +979,14 @@ impl SettingsWindow {
             Some(tr::settings::ai::recognizer_description()),
             None,
             vec![
-                self.rows(vec![self.setting_row(
-                    tr::settings::ai::default_label(),
-                    Some(note),
-                    self.select("ai-recognizer", label, MenuKind::AiRecognizer, cx)
-                        .into_any_element(),
-                )])
+                self.rows(vec![
+                    self.setting_row(
+                        tr::settings::ai::default_label(),
+                        Some(note),
+                        self.select("ai-recognizer", label, MenuKind::AiRecognizer, cx)
+                            .into_any_element(),
+                    ),
+                ])
                 .into_any_element(),
             ],
         )
@@ -633,7 +1008,10 @@ impl SettingsWindow {
                 let right = if let Some(download) = downloading {
                     self.ai_status(
                         false,
-                        tr::settings::ai::downloading(download.progress.clamp(0.0, 100.0).round() as u32).into(),
+                        tr::settings::ai::downloading(
+                            download.progress.clamp(0.0, 100.0).round() as u32
+                        )
+                        .into(),
                     )
                     .into_any_element()
                 } else if downloaded {
@@ -667,7 +1045,12 @@ impl SettingsWindow {
                     monogram(model.model_name),
                     (model.label)().into(),
                     (name == crate::local_qwen::MODEL).then(tr::settings::ai::recommended),
-                    format!("{} · {}", (model.description)(), crate::i18n::decimal(model.size)).into(),
+                    format!(
+                        "{} · {}",
+                        (model.description)(),
+                        crate::i18n::decimal(model.size)
+                    )
+                    .into(),
                     right,
                 )
                 .into_any_element()
@@ -699,17 +1082,32 @@ impl SettingsWindow {
     }
 
     fn ai_cloud_section(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let configured = ai_store::saved_ids(Kind::Asr);
+        let selected = store::store_section(transcription::GPUI_STORE_SECTION)
+            .get(transcription::SELECTED_MODEL_KEY)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let primary =
+            |id| asr_service_visible(id, &configured, selected.as_deref(), self.pages.ai.editing);
+        let more_count = asr_cloud::SERVICES
+            .iter()
+            .filter(|service| !primary(service.id))
+            .count();
         let rows = asr_cloud::SERVICES
             .iter()
+            .filter(|service| self.pages.ai.more_asr_open || primary(service.id))
             .map(|service| {
-                let target = Target { kind: Kind::Asr, id: service.id };
+                let target = Target {
+                    kind: ModelKind::Asr,
+                    id: service.id,
+                };
                 let tag = (service.id == "doubao").then(tr::settings::ai::recommended);
                 let row = self.ai_row(
                     monogram((service.name)()),
                     (service.name)().into(),
                     tag,
                     (service.note)().into(),
-                    self.ai_service_right(target, service.ready(), cx),
+                    self.ai_service_right(target, ready_cached(target), cx),
                 );
                 div()
                     .flex()
@@ -721,33 +1119,70 @@ impl SettingsWindow {
                     .into_any_element()
             })
             .collect();
+        let mut children = vec![self.rows(rows).into_any_element()];
+        if more_count > 0 {
+            children.push(
+                self.button(
+                    "ai-more-speech-services",
+                    (
+                        ui::ButtonVariant::Gray,
+                        Some(if self.pages.ai.more_asr_open {
+                            "icons/chevron-up.svg"
+                        } else {
+                            "icons/chevron-down.svg"
+                        }),
+                    ),
+                    if self.pages.ai.more_asr_open {
+                        tr::ai::fewer_speech_services().to_string()
+                    } else {
+                        tr::ai::more_speech_services(more_count)
+                    },
+                    false,
+                    cx,
+                    |this, _, cx| {
+                        this.pages.ai.more_asr_open = !this.pages.ai.more_asr_open;
+                        cx.notify();
+                    },
+                )
+                .into_any_element(),
+            );
+        }
         self.section(
             tr::settings::ai::cloud_title(),
             Some(tr::settings::ai::cloud_description()),
             None,
-            vec![self.rows(rows).into_any_element()],
+            children,
         )
         .into_any_element()
     }
 
     fn ai_llm_section(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
-        let editing_new = self
-            .pages
-            .ai
-            .editing
-            .filter(|target| target.kind == Kind::Llm && ai_store::endpoint(Kind::Llm, target.id).is_none());
+        let editing_new = self.pages.ai.editing.filter(|target| {
+            target.kind == ModelKind::Llm && ai_store::endpoint(Kind::Llm, target.id).is_none()
+        });
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
-        let ready: Vec<_> = llm::configured().into_iter().filter(|p| p.ready()).collect();
+        let ready: Vec<_> = llm::configured()
+            .into_iter()
+            .filter(|p| {
+                configured_cached(Target {
+                    kind: ModelKind::Llm,
+                    id: p.id,
+                })
+            })
+            .collect();
         if !ready.is_empty() {
-            let default = llm::default_provider()
-                .map_or(SharedString::default(), |p| format!("{} · {}", (p.name)(), p.endpoint().model).into());
-            rows.push(self.setting_row(
-                tr::settings::ai::llm_default(),
-                None,
-                self.select("ai-llm-default", default, MenuKind::AiLlmDefault, cx)
-                    .into_any_element(),
-            ));
+            let default = default_provider_cached().map_or(SharedString::default(), |p| {
+                format!("{} · {}", (p.name)(), p.endpoint().model).into()
+            });
+            rows.push(
+                self.setting_row(
+                    tr::settings::ai::llm_default(),
+                    None,
+                    self.select("ai-llm-default", default, MenuKind::AiLlmDefault, cx)
+                        .into_any_element(),
+                ),
+            );
         }
         let providers = llm::configured()
             .into_iter()
@@ -757,7 +1192,10 @@ impl SettingsWindow {
             let Some(provider) = llm::provider(id) else {
                 continue;
             };
-            let target = Target { kind: Kind::Llm, id };
+            let target = Target {
+                kind: ModelKind::Llm,
+                id,
+            };
             let endpoint = provider.endpoint();
             let note: SharedString = if endpoint.model.is_empty() {
                 tr::settings::ai::model_placeholder().into()
@@ -773,7 +1211,7 @@ impl SettingsWindow {
                         (provider.name)().into(),
                         None,
                         note,
-                        self.ai_service_right(target, provider.ready(), cx),
+                        self.ai_service_right(target, ready_cached(target), cx),
                     ))
                     .when(self.pages.ai.editing == Some(target), |column| {
                         column.child(self.ai_editor(target, cx))
@@ -794,8 +1232,13 @@ impl SettingsWindow {
             tr::settings::ai::llm_title(),
             Some(tr::settings::ai::llm_description()),
             Some(
-                self.select("ai-llm-add", tr::settings::ai::llm_add(), MenuKind::AiLlmAdd, cx)
-                    .into_any_element(),
+                self.select(
+                    "ai-llm-add",
+                    tr::settings::ai::llm_add(),
+                    MenuKind::AiLlmAdd,
+                    cx,
+                )
+                .into_any_element(),
             ),
             vec![body],
         )
@@ -807,9 +1250,231 @@ impl SettingsWindow {
             self.ai_recognizer_section(cx),
             self.ai_local_section(cx),
             self.ai_cloud_section(cx),
+            self.ai_llm_section(cx),
+            self.render_cover_settings(cx),
+            self.ai_review_section(cx),
         ];
         sections.extend(self.render_transcription(cx));
-        sections.push(self.ai_llm_section(cx));
         sections
+    }
+
+    fn ai_review_section(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let settings = crate::caption_review::ReviewSettings::load();
+        let theme = self.theme;
+        let mut body = self
+            .card(true)
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(tr::settings::review::enabled())
+                    .child(self.toggle(
+                        "ai-review-enabled",
+                        tr::settings::review::enabled(),
+                        settings.enabled,
+                        cx,
+                        |this, cx| {
+                            let mut settings = crate::caption_review::ReviewSettings::load();
+                            settings.enabled = !settings.enabled;
+                            if !settings.save() {
+                                this.pages.ai.review_notice =
+                                    Some(tr::settings::review::save_failed().into());
+                            }
+                            cx.notify();
+                        },
+                    )),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(theme.settings_muted())
+                    .child(tr::settings::review::description()),
+            )
+            .child(
+                ui::Button::plain(
+                    &theme,
+                    "ai-review-rules",
+                    ui::ButtonVariant::Gray,
+                    ui::ButtonSize::Sm,
+                )
+                .label(tr::settings::review::edit_rules())
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.pages.ai.review_open = !this.pages.ai.review_open;
+                    cx.notify();
+                })),
+            );
+        if self.pages.ai.review_open {
+            body = body
+                .child(
+                    ui::TextInput::plain(&theme, "ai-review-prompt", &self.pages.ai.review_prompt)
+                        .height(px(180.))
+                        .line_height(px(20.))
+                        .padding_y(px(10.)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .child(
+                            ui::Button::plain(
+                                &theme,
+                                "ai-review-save",
+                                ui::ButtonVariant::Primary,
+                                ui::ButtonSize::Sm,
+                            )
+                            .label(tr::settings::review::save())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let mut settings = crate::caption_review::ReviewSettings::load();
+                                settings.prompt = this
+                                    .pages
+                                    .ai
+                                    .review_prompt
+                                    .read(cx)
+                                    .text()
+                                    .trim()
+                                    .to_string();
+                                this.pages.ai.review_notice = Some(
+                                    if settings.save() {
+                                        tr::settings::review::saved()
+                                    } else {
+                                        tr::settings::review::save_failed()
+                                    }
+                                    .into(),
+                                );
+                                cx.notify();
+                            })),
+                        )
+                        .child(
+                            ui::Button::plain(
+                                &theme,
+                                "ai-review-restore",
+                                ui::ButtonVariant::Gray,
+                                ui::ButtonSize::Sm,
+                            )
+                            .label(tr::settings::review::restore())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let mut settings = crate::caption_review::ReviewSettings::load();
+                                settings.prompt = crate::caption_review::DEFAULT_PROMPT.into();
+                                if settings.save() {
+                                    this.pages.ai.review_prompt.update(cx, |input, cx| {
+                                        input.set_text(settings.prompt, cx)
+                                    });
+                                    this.pages.ai.review_notice =
+                                        Some(tr::settings::review::saved().into());
+                                } else {
+                                    this.pages.ai.review_notice =
+                                        Some(tr::settings::review::save_failed().into());
+                                }
+                                cx.notify();
+                            })),
+                        ),
+                );
+        }
+        if let Some(notice) = &self.pages.ai.review_notice {
+            body = body.child(div().text_size(px(12.)).child(notice.clone()));
+        }
+        self.section(
+            tr::settings::review::title(),
+            None,
+            None,
+            vec![body.into_any_element()],
+        )
+        .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod discovery_tests {
+    use super::*;
+
+    #[test]
+    fn collapsed_speech_services_keep_configured_defaults_and_open_editors_visible() {
+        let configured = vec!["siliconflow".to_string()];
+        let editing = Some(Target {
+            kind: ModelKind::Asr,
+            id: "custom",
+        });
+        let visible: Vec<_> = asr_cloud::SERVICES
+            .iter()
+            .filter(|service| asr_service_visible(service.id, &configured, Some("groq"), editing))
+            .map(|service| service.id)
+            .collect();
+        assert_eq!(visible, ["doubao", "siliconflow", "groq", "custom"]);
+        assert!(asr_service_visible("groq", &[], Some("groq"), None));
+        assert!(!asr_service_visible(
+            "openai",
+            &[],
+            None,
+            Some(Target {
+                kind: ModelKind::Llm,
+                id: "openai"
+            })
+        ));
+    }
+
+    #[test]
+    fn fresh_speech_settings_show_doubao_without_removing_alternative_services() {
+        let visible: Vec<_> = asr_cloud::SERVICES
+            .iter()
+            .filter(|service| asr_service_visible(service.id, &[], None, None))
+            .map(|service| service.id)
+            .collect();
+        assert_eq!(visible, ["doubao"]);
+        assert!(asr_cloud::service("local-server").is_some());
+        assert!(asr_cloud::service("custom").is_some());
+    }
+
+    #[test]
+    fn edited_credentials_cancel_and_reject_late_results_even_for_same_provider() {
+        let target = Target {
+            kind: ModelKind::Llm,
+            id: "deepseek",
+        };
+        let (cancel, mut cancelled) = tokio::sync::oneshot::channel();
+        let mut discovery = ModelDiscovery {
+            generation: 4,
+            target: Some(target),
+            cancel: Some(cancel),
+            loading: true,
+            models: vec![llm::DiscoveredModel {
+                id: "previous-account-model".into(),
+                display_name: None,
+            }],
+            notice: None,
+        };
+        assert!(discovery.accepts(target, 4));
+        assert!(!discovery.accepts(
+            Target {
+                kind: ModelKind::Llm,
+                id: "openai"
+            },
+            4
+        ));
+        discovery.invalidate();
+        assert_eq!(cancelled.try_recv(), Ok(()));
+        assert!(discovery.models.is_empty());
+        discovery.target = Some(target);
+        discovery.loading = true;
+        assert!(!discovery.accepts(target, 4));
+        assert!(discovery.accepts(target, 5));
+    }
+
+    #[test]
+    fn closing_settings_cancels_discovery_instead_of_leaving_background_work() {
+        let (cancel, mut cancelled) = tokio::sync::oneshot::channel();
+        let discovery = ModelDiscovery {
+            generation: 0,
+            target: None,
+            cancel: Some(cancel),
+            loading: true,
+            models: Vec::new(),
+            notice: None,
+        };
+        drop(discovery);
+        assert_eq!(cancelled.try_recv(), Ok(()));
     }
 }

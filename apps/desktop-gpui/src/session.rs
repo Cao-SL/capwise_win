@@ -671,6 +671,21 @@ impl RecordingSession {
             .is_some_and(|active| active.mic_mute.is_some())
     }
 
+    pub(crate) fn mic_tap_route(
+        &self,
+    ) -> Option<(
+        kameo::actor::ActorRef<cap_recording::feeds::microphone::MicrophoneFeed>,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+        u64,
+    )> {
+        let active = self.active.as_ref()?;
+        Some((
+            active.mic_tap_actor.clone()?,
+            active.mic_mute.clone()?,
+            self.recording_generation,
+        ))
+    }
+
     /// Flip the recording-scoped mic mute. No-op without a live mic.
     pub fn toggle_mic_mute(&mut self, cx: &mut Context<Self>) {
         let Some(mute) = self

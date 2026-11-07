@@ -1062,6 +1062,7 @@ mod tests {
                 text: (*text).to_string(),
                 start: *start,
                 end: *end,
+                hidden: false,
             })
             .collect()
     }

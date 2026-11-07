@@ -66,6 +66,7 @@ resvg = "0.45"
 rodio = { version = "0.19.0", default-features = false, features = [
     "mp3",
     "vorbis",
+    "symphonia-aac",
 ] }
 # The editor stack. `cap-rendering` is not a new subtree -- cap-recording
 # already depends on it, so wgpu 25 and its vendored wgpu-hal have been built
@@ -120,6 +121,7 @@ sys-locale = "0.3"
 unicode-segmentation = "1"
 # spawn_blocking for finalize; the runtime itself comes from gpui_tokio.
 tokio = { version = "1", features = ["rt", "time"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 # The crate 0.6.0's global-shortcut plugin wrapped, at the same pin: stored
 # bindings are W3C `KeyboardEvent.code` strings and this owns the platform
 # mapping (Carbon RegisterEventHotKey on macOS).
@@ -152,6 +154,7 @@ rfd = { version = "0.15", default-features = false, features = [
 tiny-skia = "0.11"
 cosmic-text = "0.14"
 sha2 = "0.10"
+tempfile = "3"
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -184,6 +187,7 @@ cc = "1.4"
 tauri-winres = "0.3.5"
 
 [dev-dependencies]
+cap-recording = { path = "../../crates/recording", features = ["test-utils"] }
 gpui = { git = "https://github.com/wingleeio/zed", rev = "5d1f83d9f27a19bec1fb241dc33b42238af9cf8d", features = ["test-support"] }
 # The editor smoke (`tests/editor_frame0.rs`) drives `EditorInstance`, whose
 # decoders, renderer and preview tasks are all tokio-spawned -- a current-thread
@@ -200,7 +204,6 @@ tokio = { version = "1", features = [
 # Caption oracles (`src/transcription/verify_tests.rs`): fixture projects and
 # audio markers for the fake transcriber.
 cap-verify = { path = "../../crates/verify" }
-tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

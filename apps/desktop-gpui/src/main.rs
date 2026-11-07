@@ -5,21 +5,26 @@
 
 mod ai_store;
 mod app_sounds;
-mod asr_cloud;
 mod app_windows;
+mod asr_cloud;
+mod asset_library;
 mod assets;
 mod auth;
 mod blur_recovery;
 #[cfg(target_os = "macos")]
 mod camera_bench;
-mod caption_replace;
 #[cfg(target_os = "macos")]
 mod camera_blur;
 #[cfg(any(not(target_os = "macos"), test))]
 mod camera_blur_portable;
 mod camera_loading;
 mod camera_window;
+mod caption_replace;
+mod caption_review;
+mod caption_breaks;
+mod caption_translation;
 mod controls_window;
+mod cover_generation;
 mod crash_capture;
 mod deeplink;
 mod dev_restore;
@@ -27,11 +32,13 @@ mod devices;
 mod diagnostics;
 mod doodle;
 mod draw_bench;
+mod editor_assets;
 mod editor_audio;
 mod editor_bench;
 mod editor_canvas;
 mod editor_clips;
 mod editor_color;
+mod editor_cover;
 mod editor_crop;
 mod editor_edits;
 mod editor_export;
@@ -44,9 +51,15 @@ mod editor_shapes;
 mod editor_sidebar;
 mod editor_tabs;
 mod editor_timeline;
+mod editor_title_card_presets;
+mod editor_title_cards;
+mod editor_voiceover;
 mod editor_window;
 mod feeds;
 mod focus_border;
+mod foreign_window;
+#[cfg(debug_assertions)]
+mod glass_probe;
 mod hotkeys;
 mod i18n;
 mod import;
@@ -61,9 +74,12 @@ mod linux_display;
 mod linux_portal_id;
 #[cfg(target_os = "linux")]
 mod linux_wallpaper;
+mod llm;
+mod local_qwen;
 mod main_window;
 mod media_access;
 mod menus;
+mod mic_tap;
 mod mode_select_window;
 mod onboarding_audio;
 mod onboarding_doodles;
@@ -75,17 +91,17 @@ mod permissions_ui;
 #[cfg(test)]
 mod picker_benchmark;
 #[cfg(debug_assertions)]
-mod glass_probe;
-#[cfg(debug_assertions)]
 mod picker_probe;
 #[cfg(debug_assertions)]
 mod picker_ui_benchmark;
 mod platform;
 mod power;
 mod presets;
-mod style_presets;
 mod project_save;
 mod recording;
+mod recording_autocaptions;
+mod recording_defaults;
+mod recording_setup;
 mod screenshot;
 mod screenshot_annotations;
 mod screenshot_crop;
@@ -93,29 +109,34 @@ mod screenshot_editor;
 mod screenshot_export;
 mod script_text;
 mod session;
-mod llm;
-mod local_qwen;
 mod settings_about;
 mod settings_ai;
+mod settings_cover;
 mod settings_pages;
+mod settings_stock;
 mod settings_window;
 mod sign_in;
 mod single_instance;
 #[cfg(debug_assertions)]
 mod snapshot;
+mod stock_media;
 mod store;
+mod style_presets;
 mod target_overlay;
 mod target_thumbnails;
+pub mod teleprompter_follow;
 mod teleprompter_window;
 mod theme;
+mod title_card_presets;
 mod transcript;
 mod transcription;
 mod tray;
 mod ui;
 mod updates;
 mod upload;
-mod foreign_window;
+pub mod voiceover_recording;
 mod window_arrange;
+mod workflow_presets;
 
 use gpui::{App, AppContext as _, Bounds, WindowBounds, WindowOptions, px, size};
 
@@ -958,7 +979,9 @@ mod logging_tests {
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
                 .with_writer(move || writer.clone())
-                .with_filter(tracing_subscriber::EnvFilter::new(super::DEFAULT_LOG_FILTER)),
+                .with_filter(tracing_subscriber::EnvFilter::new(
+                    super::DEFAULT_LOG_FILTER,
+                )),
         );
         tracing::subscriber::with_default(subscriber, || {
             tracing::warn!(target: "zbus::proxy", "Failed to populate properties cache");
@@ -967,9 +990,15 @@ mod logging_tests {
             tracing::info!(target: "cap_gpui::session", "recording started");
         });
         let logged = String::from_utf8(lines.0.lock().unwrap().clone()).unwrap();
-        assert!(!logged.contains("Failed to populate properties cache"), "{logged}");
+        assert!(
+            !logged.contains("Failed to populate properties cache"),
+            "{logged}"
+        );
         assert!(logged.contains("a zbus error still shows"), "{logged}");
-        assert!(logged.contains("other zbus warnings still show"), "{logged}");
+        assert!(
+            logged.contains("other zbus warnings still show"),
+            "{logged}"
+        );
         assert!(logged.contains("recording started"), "{logged}");
     }
 

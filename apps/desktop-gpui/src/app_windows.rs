@@ -1704,6 +1704,69 @@ pub fn set_recording_mode(mode: Mode, cx: &mut App) {
 
 // -- Teleprompter -----------------------------------------------------------
 
+fn teleprompter_placement(
+    saved: Option<[f32; 4]>,
+    preferred: Size<Pixels>,
+    cx: &App,
+) -> (Bounds<Pixels>, Option<gpui::DisplayId>) {
+    let target = saved
+        .and_then(|saved| {
+            let center = point(px(saved[0] + saved[2] / 2.), px(saved[1] + saved[3] / 2.));
+            scap_targets::Display::list().into_iter().find(|display| {
+                capture_display_bounds(display).is_some_and(|bounds| bounds.contains(&center))
+            })
+        })
+        .or_else(scap_targets::Display::get_containing_cursor);
+    let Some(available) = display_work_area(target.as_ref(), cx).map(inset_work_area) else {
+        return opening_window_placement(preferred, cx);
+    };
+    let bounds = saved.map_or_else(
+        || Bounds {
+            origin: point(
+                available.center().x - preferred.width / 2.,
+                available.origin.y,
+            ),
+            size: preferred,
+        },
+        |saved| Bounds {
+            origin: point(px(saved[0]), px(saved[1])),
+            size: size(px(saved[2]), px(saved[3])),
+        },
+    );
+    (
+        fit_window_bounds(bounds, available),
+        gpui_display_id(target.as_ref(), cx),
+    )
+}
+
+fn place_teleprompter_frame(native: &platform::NativeWindow, bounds: Bounds<Pixels>) {
+    let x = f64::from(f32::from(bounds.origin.x));
+    let y = f64::from(f32::from(bounds.origin.y));
+    let width = f64::from(f32::from(bounds.size.width));
+    let height = f64::from(f32::from(bounds.size.height));
+    #[cfg(target_os = "macos")]
+    {
+        let primary_height = scap_targets::Display::primary()
+            .logical_size()
+            .map(|size| size.height())
+            .unwrap_or(height);
+        platform::set_window_frame(native, x, primary_height - y - height, width, height);
+    }
+    #[cfg(target_os = "windows")]
+    platform::set_window_logical_frame(native, x, y, width, height);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = (native, x, y, width, height);
+}
+
+pub(crate) fn position_teleprompter_near_camera(window: &gpui::Window, cx: &mut App) {
+    let Some(native) = platform::native_window(window) else {
+        return;
+    };
+    let (bounds, _) = teleprompter_placement(None, window.bounds().size, cx);
+    cx.spawn(async move |_| place_teleprompter_frame(&native, bounds))
+        .detach();
+}
+
 /// Open (or re-show) the teleprompter -- `openTeleprompter()` in
 /// `utils/teleprompter.ts`, which reuses a live window with
 /// `unminimize()`/`show()`/`setFocus()` and otherwise builds a new one.
@@ -1726,7 +1789,8 @@ pub fn open_teleprompter(cx: &mut App) {
         return;
     }
 
-    let (bounds, display_id) = opening_window_placement(
+    let (bounds, display_id) = teleprompter_placement(
+        crate::store::TeleprompterState::load().window_bounds,
         size(
             px(teleprompter_window::TELEPROMPTER_WIDTH),
             px(teleprompter_window::TELEPROMPTER_HEIGHT),
@@ -1819,6 +1883,7 @@ pub fn open_teleprompter(cx: &mut App) {
 
     cx.spawn(async move |cx| {
         if let Some(native) = &native {
+            place_teleprompter_frame(native, bounds);
             // `applyMacOSWindowMaterial("teleprompter")`: radius 22 on glass.
             let kind = platform::install_window_material(
                 native,
@@ -5802,7 +5867,9 @@ fn load_editor_project_candidate(
                 view.set_summary(summary, window, cx);
                 view.set_project(config, window, cx);
                 view.set_instance(instance.clone());
+                view.show_recording_setup(cx);
                 view.refine_caption_timings(window, cx);
+                view.start_recording_captions(false, window, cx);
             })
             .is_err()
         {
@@ -6714,6 +6781,22 @@ async fn delete_after_editor_cleanup(
 /// not just refocus the dying window, and the main window never flashes in
 /// between.
 pub fn reload_editor(project_path: &Path, cx: &mut App) {
+    reload_editor_inner(project_path, None, cx);
+}
+
+pub(crate) fn reload_editor_with_history(
+    project_path: &Path,
+    history: crate::editor_edits::ProjectHistory,
+    cx: &mut App,
+) {
+    reload_editor_inner(project_path, Some(history), cx);
+}
+
+fn reload_editor_inner(
+    project_path: &Path,
+    history: Option<crate::editor_edits::ProjectHistory>,
+    cx: &mut App,
+) {
     let key = editor_key(project_path);
     if cx.global::<AppWindows>().deleting_editors.contains(&key) {
         return;
@@ -6727,6 +6810,25 @@ pub fn reload_editor(project_path: &Path, cx: &mut App) {
         handle
             .update(cx, |view, _window, _cx| view.timeline_transform())
             .ok()
+    });
+    let asset_lanes = handle.and_then(|handle| {
+        handle
+            .update(cx, |view, _, _| (view.tracks.overlay, view.tracks.audio))
+            .ok()
+    });
+    let playhead = handle.and_then(|handle| {
+        handle
+            .update(cx, |view, _, cx| {
+                view.stop_playback(cx);
+                view.playhead
+            })
+            .ok()
+    });
+    let asset_browser = handle.and_then(|handle| {
+        handle
+            .update(cx, |view, _, cx| view.take_asset_browser_snapshot(cx))
+            .ok()
+            .flatten()
     });
 
     if let Some(handle) = handle {
@@ -6747,6 +6849,36 @@ pub fn reload_editor(project_path: &Path, cx: &mut App) {
 
     tracing::info!(path = %key.display(), "reloading editor after import");
     open_editor(key.clone(), cx);
+    if let Some(lanes) = asset_lanes
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, _, _| view.restore_import_asset_lanes(lanes))
+            .ok();
+    }
+    if let Some(playhead) = playhead
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, _, cx| view.restore_import_playhead(playhead, cx))
+            .ok();
+    }
+    if let Some(snapshot) = asset_browser
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, window, cx| {
+                view.restore_asset_browser(snapshot, window, cx)
+            })
+            .ok();
+    }
+    if let Some(history) = history
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, _, _| view.restore_import_history(history))
+            .ok();
+    }
     if let Some(transform) = transform
         && let Some(handle) = editor_window_handle(&key, cx)
     {

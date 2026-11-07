@@ -31,6 +31,7 @@ pub struct TabRailItem {
     pub label: SharedString,
     pub selected: bool,
     pub disabled: bool,
+    pub context: bool,
 }
 
 impl TabRailItem {
@@ -45,7 +46,13 @@ impl TabRailItem {
             label: label.into(),
             selected,
             disabled,
+            context: false,
         }
+    }
+
+    pub fn context(mut self, context: bool) -> Self {
+        self.context = context;
+        self
     }
 }
 
@@ -67,6 +74,7 @@ pub struct TabRail {
     hover: Hsla,
     selected_icon: Hsla,
     idle_icon: Hsla,
+    context_bg: Hsla,
     theme: Theme,
     on_select: Option<TabHandler>,
 }
@@ -89,10 +97,15 @@ impl TabRail {
             icon_size: px(16.),
             bg: panel_bg,
             border: Hsla::from(theme.editor.line),
-            indicator: Hsla::from(theme.editor.ctl_hover),
+            indicator: {
+                let mut tint = Hsla::from(theme.editor.accent);
+                tint.a = 0.14;
+                tint
+            },
             hover: Hsla::from(theme.editor.ctl),
-            selected_icon: Hsla::from(theme.editor.text_1),
+            selected_icon: Hsla::from(theme.editor.accent),
             idle_icon: Hsla::from(theme.editor.text_2),
+            context_bg: Hsla::from(theme.editor.ctl),
             theme: *theme,
             on_select: None,
         }
@@ -126,6 +139,7 @@ impl RenderOnce for TabRail {
             hover,
             selected_icon,
             idle_icon,
+            context_bg,
             theme,
             on_select,
         } = self;
@@ -155,6 +169,7 @@ impl RenderOnce for TabRail {
                 let handler = handler.clone();
                 let selected = item.selected;
                 let disabled = item.disabled;
+                let context = item.context && !selected;
                 let label = item.label.clone();
 
                 div()
@@ -168,6 +183,7 @@ impl RenderOnce for TabRail {
                     .rounded(px(9.))
                     .when(disabled, |this| this.opacity(0.6))
                     .when(selected, |this| this.bg(indicator))
+                    .when(context, |this| this.bg(context_bg))
                     .when(!selected && !disabled, |this| {
                         this.cursor_pointer().hover(move |style| style.bg(hover))
                     })
@@ -177,7 +193,13 @@ impl RenderOnce for TabRail {
                         svg()
                             .path(item.icon)
                             .size(icon_size)
-                            .text_color(if selected { selected_icon } else { idle_icon }),
+                            .text_color(if selected {
+                                selected_icon
+                            } else if context {
+                                Hsla::from(theme.editor.text_1)
+                            } else {
+                                idle_icon
+                            }),
                     )
                     .when_some(handler.filter(|_| !disabled), |this, handler| {
                         this.on_click(move |_, window, cx| handler(&index, window, cx))

@@ -333,6 +333,18 @@ impl PreparingAudioPlayTicket {
         self.generation
     }
 
+    pub(crate) fn poll_started(&self) -> Option<bool> {
+        if self.request.is_cancelled() {
+            self.cancel();
+            return Some(false);
+        }
+        match *self.request.status.borrow() {
+            PreparingAudioStatus::Started => Some(true),
+            PreparingAudioStatus::Pending | PreparingAudioStatus::AwaitingCallback => None,
+            _ => Some(false),
+        }
+    }
+
     pub(crate) fn output_handle(&self) -> Option<PreparingAudioOutputHandle> {
         self.request
             .output
@@ -1776,6 +1788,40 @@ mod native_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn music_start_ticket_poll_is_nonblocking_and_handles_cancel_failure_and_timeout() {
+        let (control_tx, control_rx) = std_mpsc::channel();
+        let ticket = PreparingAudioPlayTicket {
+            generation: 7,
+            request: Arc::new(PreparingAudioRequest::new(Duration::from_secs(1))),
+            control_tx: control_tx.clone(),
+        };
+        assert_eq!(ticket.poll_started(), None);
+        ticket.request.awaiting_callback();
+        assert_eq!(ticket.poll_started(), None);
+        ticket.request.complete(true);
+        assert_eq!(ticket.poll_started(), Some(true));
+        drop(ticket);
+        assert!(matches!(
+            control_rx.try_recv(),
+            Ok(ControlMsg::StopPlayback { generation: 7 })
+        ));
+
+        let ticket = PreparingAudioPlayTicket {
+            generation: 8,
+            request: Arc::new(PreparingAudioRequest::new(Duration::from_secs(1))),
+            control_tx: control_tx.clone(),
+        };
+        ticket.request.complete(false);
+        assert_eq!(ticket.poll_started(), Some(false));
+        let ticket = PreparingAudioPlayTicket {
+            generation: 9,
+            request: Arc::new(PreparingAudioRequest::new(Duration::ZERO)),
+            control_tx,
+        };
+        assert_eq!(ticket.poll_started(), Some(false));
+    }
 
     pub(super) fn source(sample_rate: u32) -> (ActiveSource<f32>, watch::Sender<f64>) {
         source_with_info(

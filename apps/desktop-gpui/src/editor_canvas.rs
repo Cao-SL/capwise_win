@@ -724,7 +724,7 @@ impl EditorWindow {
                 }
             }
             for (index, segment) in timeline.text_segments.iter().enumerate() {
-                if exclude == CanvasSelection::Text(index) {
+                if exclude == CanvasSelection::Text(index) || segment.title_card.is_some() {
                     continue;
                 }
                 if !(t >= segment.start && t < segment.end && segment.enabled) {
@@ -800,7 +800,7 @@ impl EditorWindow {
             | CanvasSelection::Text(_)
             | CanvasSelection::Image(_)
             | CanvasSelection::Captions => true,
-            | CanvasSelection::Shape(_) => true,
+            CanvasSelection::Shape(_) => true,
         };
         if !draggable {
             cx.notify();
@@ -1373,6 +1373,9 @@ impl EditorWindow {
                     return Some(rect);
                 }
                 let segment = self.project.timeline.as_ref()?.text_segments.get(index)?;
+                if segment.title_card.is_some() {
+                    return None;
+                }
                 Some(NormRect {
                     x: segment.center.x - segment.size.x / 2.,
                     y: segment.center.y - segment.size.y / 2.,
@@ -1484,6 +1487,17 @@ impl EditorWindow {
     /// letterboxed frame's own space -- `CanvasElementsOverlay` is mounted
     /// inside `size()` (`Player.tsx:636`), not the player pane.
     pub(crate) fn render_canvas_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let time = self.preview_or_playhead();
+        if self.project.timeline.as_ref().is_some_and(|timeline| {
+            timeline.text_segments.iter().any(|segment| {
+                segment.title_card.is_some()
+                    && segment.enabled
+                    && time >= segment.start
+                    && time < segment.end
+            })
+        }) {
+            return None;
+        }
         if !self.canvas_overlay_visible()
             || (!self.player_panel_hovered
                 && self.canvas_drag.is_none()

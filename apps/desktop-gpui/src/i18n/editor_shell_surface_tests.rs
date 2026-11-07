@@ -19,7 +19,13 @@ pub(super) fn is_editor_shell_surface_key(key: &str) -> bool {
 }
 
 const FORMATTED: &[&str] = &[
-    "editor.transcript.fillers.remove_all",
+    "editor.tabs.captions.auto_draft.running",
+    "editor.tabs.captions.auto_draft.skip_failed",
+    "editor.transcript.fillers.needs_review",
+    "editor.transcript.fillers.occurrences",
+    "editor.transcript.fillers.shorter_by",
+    "editor.transcript.fillers.suggestion_summary",
+    "editor.transcript.fillers.term_suggestion",
     "editor.transcript.pauses.summary",
     "editor.transcript.replaced",
     "editor.transcript.restore_hint",
@@ -43,6 +49,7 @@ const FORMATTED: &[&str] = &[
     "editor.clips.error.source_failed",
     "editor.clips.error.unsupported_video",
     "editor.clips.import_error",
+    "editor.clips.importing_progress",
     "editor.clips.prepare_controls_failed",
     "editor.clips.save_before_recording_failed",
     "editor.clips.split",
@@ -58,6 +65,9 @@ const FORMATTED: &[&str] = &[
     "editor.export.estimate.seconds_range",
     "editor.export.fps",
     "editor.export.frames",
+    "editor.export.resource_detail.disk_warning",
+    "editor.export.resource_detail.disk_estimate",
+    "editor.export.resource_detail.disk_stop",
     "editor.export.stats.output_value",
     "editor.tabs.captions.download",
     "editor.tabs.captions.downloading",
@@ -166,7 +176,8 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::clips::import_error_title(), "Import Error"),
         (tr::editor::clips::import_existing(), "Existing recording"),
         (tr::editor::clips::import_mp4(), "MP4 Video…"),
-        (tr::editor::clips::importing(), "Importing…"),
+        (tr::editor::clips::cancel_import(), "Cancel import"),
+        (tr::editor::clips::title_cards(), "Intro & outro"),
         (tr::editor::clips::mp4_filter(), "MP4 Video"),
         (tr::editor::clips::record_new(), "Record a new clip"),
         (tr::editor::clips::title(), "Clips"),
@@ -200,6 +211,59 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Exports as a transparent MOV. Files are large and best for compositing or editing.",
         ),
         (tr::editor::export::back(), "Back to editor"),
+        (
+            tr::editor::export::captions::waiting(),
+            "Preparing captions before export",
+        ),
+        (
+            tr::editor::export::captions::needs_attention(),
+            "Captions need attention",
+        ),
+        (
+            tr::editor::export::captions::recognizing(),
+            "Transcribing speech…",
+        ),
+        (
+            tr::editor::export::captions::aligning(),
+            "Aligning caption timing…",
+        ),
+        (
+            tr::editor::export::captions::reviewing(),
+            "Reviewing captions…",
+        ),
+        (
+            tr::editor::export::captions::translating(),
+            "Translating captions…",
+        ),
+        (
+            tr::editor::export::captions::current(),
+            "Export with current captions",
+        ),
+        (
+            tr::editor::export::captions::current_note(),
+            "Export now uses the captions currently saved. Caption processing continues in the background.",
+        ),
+        (
+            tr::editor::export::captions::cancel_wait(),
+            "Cancel waiting",
+        ),
+        (tr::editor::export::captions::check(), "Check captions"),
+        (
+            tr::editor::export::captions::setup_required(),
+            "Finish the recording setup before waiting for captions.",
+        ),
+        (
+            tr::editor::export::captions::cancelled(),
+            "Caption processing was cancelled. Check captions or export the current version.",
+        ),
+        (
+            tr::editor::export::captions::not_started(),
+            "Caption processing did not start. Check its settings or export the current version.",
+        ),
+        (
+            tr::editor::export::captions::project_changed(),
+            "The project changed while preparing the export. Start export again to use the latest version.",
+        ),
         (tr::editor::export::cta::cancel_sign_in(), "Cancel Sign In"),
         (tr::editor::export::cta::clipboard(), "Export to Clipboard"),
         (
@@ -213,10 +277,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::export::destination::file(), "File"),
         (tr::editor::export::destination::link(), "Shareable Link"),
         (tr::editor::export::done::copy_link(), "Copy link"),
-        (
-            tr::editor::export::done::instant_hint(),
-            "Use Instant Mode for your next recording if you want a link the moment you stop.",
-        ),
         (tr::editor::export::done::link_copied(), "Link copied"),
         (tr::editor::export::done::open_file(), "Open File"),
         (tr::editor::export::done::open_link(), "Open link"),
@@ -318,6 +378,30 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::export::resources::title(),
             "Check export resources",
         ),
+        (
+            tr::editor::export::resource_detail::export_drive(),
+            "the export drive",
+        ),
+        (
+            tr::editor::export::resource_detail::recording_drive(),
+            "the recording drive",
+        ),
+        (
+            tr::editor::export::resource_detail::system_drive(),
+            "the system drive",
+        ),
+        (
+            tr::editor::export::resource_detail::memory_critical(),
+            "The system reports critically high memory pressure. Close other applications before exporting.",
+        ),
+        (
+            tr::editor::export::resource_detail::warning_footer(),
+            "Exporting may fail if resources run out. Resources are monitored during export, which may stop if they become critically low.",
+        ),
+        (
+            tr::editor::export::resource_detail::memory_stop(),
+            "Export stopped because memory pressure stayed critically high. Close other applications or choose a lower export resolution and try again. Your original recording has been kept.",
+        ),
         (tr::editor::export::reupload(), "Reupload"),
         (
             tr::editor::export::reupload_tooltip(),
@@ -385,7 +469,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "More isolation for noisy spaces. May change voice texture.",
         ),
         (tr::editor::tabs::audio::mic_volume(), "Microphone Volume"),
-        (tr::editor::tabs::audio::mute(), "Mute Audio"),
+        (tr::editor::tabs::audio::mute(), "Play audio"),
         (tr::editor::tabs::audio::stereo::mono_left(), "Mono L"),
         (tr::editor::tabs::audio::stereo::mono_right(), "Mono R"),
         (tr::editor::tabs::audio::stereo::stereo(), "Stereo"),
@@ -405,7 +489,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::tabs::audio::system_volume(),
             "System Audio Volume",
         ),
-        (tr::editor::tabs::audio::title(), "Audio Controls"),
         (
             tr::editor::tabs::audio::use_for_new(),
             "Use for new recordings",
@@ -427,7 +510,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::tabs::camera::custom_position(),
             "Custom position (dragged on canvas)",
         ),
-        (tr::editor::tabs::camera::hide(), "Hide Camera"),
         (
             tr::editor::tabs::camera::keep_size_during_zoom(),
             "Keep original size during zoom",
@@ -445,12 +527,12 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::camera::shape::source(), "Source"),
         (tr::editor::tabs::camera::shape::square(), "Square"),
         (tr::editor::tabs::camera::shape_label(), "Shape"),
+        (tr::editor::tabs::camera::skin_smoothing(), "Skin Smoothing"),
         (
             tr::editor::tabs::camera::size_during_zoom(),
             "Size During Zoom",
         ),
         (tr::editor::tabs::camera::size_label(), "Size"),
-        (tr::editor::tabs::camera::title(), "Camera"),
         (
             tr::editor::tabs::captions::active_word_highlight(),
             "Active Word Highlight",
@@ -475,7 +557,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::tabs::captions::background_settings(),
             "Background Settings",
         ),
-        (tr::editor::tabs::captions::beta(), "Beta"),
         (tr::editor::tabs::captions::delete(), "Delete"),
         (tr::editor::tabs::captions::deleting(), "Deleting..."),
         (
@@ -485,6 +566,24 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::captions::fade_duration(), "Fade Duration"),
         (tr::editor::tabs::captions::font_family(), "Font Family"),
         (tr::editor::tabs::captions::font_settings(), "Font Settings"),
+        (tr::editor::tabs::captions::source_style(), "Original"),
+        (
+            tr::editor::tabs::captions::translation_gap(),
+            "Bilingual gap",
+        ),
+        (tr::editor::tabs::captions::bottom_margin(), "Bottom margin"),
+        (
+            tr::editor::tabs::captions::adjust_bottom_margin(),
+            "Adjust…",
+        ),
+        (
+            tr::editor::tabs::captions::spacing_scale_note(),
+            "Spacing uses 1080p pixels and scales with the video.",
+        ),
+        (
+            tr::editor::tabs::captions::translation_style(),
+            "Translation",
+        ),
         (tr::editor::tabs::captions::font_weight(), "Font Weight"),
         (tr::editor::tabs::captions::generate(), "Generate Captions"),
         (tr::editor::tabs::captions::generating(), "Generating..."),
@@ -505,10 +604,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (
             tr::editor::tabs::captions::horizontal_position(),
             "Horizontal Position",
-        ),
-        (
-            tr::editor::tabs::captions::intel_unavailable(),
-            "Parakeet caption models are unavailable on Intel Macs. Whisper models remain available.",
         ),
         (
             tr::editor::tabs::captions::keep_open(),
@@ -542,17 +637,12 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::captions::language::zh(), "Chinese"),
         (tr::editor::tabs::captions::language_label(), "Language"),
         (
-            tr::editor::tabs::captions::model::high_accuracy(),
-            "Parakeet v3 (full)",
+            tr::editor::tabs::captions::model::medium(),
+            "Whisper Medium",
         ),
-        (
-            tr::editor::tabs::captions::model::high_accuracy_description(),
-            "Most accurate Parakeet · European languages only",
-        ),
-        (tr::editor::tabs::captions::model::medium(), "Whisper Medium"),
         (
             tr::editor::tabs::captions::model::medium_description(),
-            "Slower, more accurate · supports Chinese",
+            "Larger model · local multilingual recognition",
         ),
         (
             tr::editor::tabs::captions::cloud_ready(),
@@ -563,38 +653,42 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::tabs::captions::cloud_setup(),
             "Set up cloud recognition",
         ),
-        (tr::editor::tabs::captions::manage_models(), "Manage models…"),
-        (tr::editor::tabs::captions::find_replace(), "Find and replace"),
+        (
+            tr::editor::tabs::captions::manage_models(),
+            "Manage models…",
+        ),
+        (
+            tr::editor::tabs::captions::find_replace(),
+            "Find and replace",
+        ),
         (tr::editor::transcript::replace(), "Replace"),
         (tr::editor::transcript::replace_all(), "Replace all"),
-        (tr::editor::transcript::replace_placeholder(), "Replace with"),
+        (
+            tr::editor::transcript::replace_placeholder(),
+            "Replace with",
+        ),
         (tr::editor::tabs::captions::model::qwen(), "Qwen3-ASR 0.6B"),
         (
             tr::editor::tabs::captions::model::qwen_description(),
-            "Best local model for Chinese · 30 languages and 22 Chinese dialects",
+            "For Chinese narration · runs locally",
         ),
         (tr::editor::tabs::font::source_han_sans(), "Source Han Sans"),
         (tr::editor::tabs::font::smiley_sans(), "Smiley Sans"),
         (tr::editor::tabs::font::lxgw_wenkai(), "LXGW WenKai"),
-        (
-            tr::editor::tabs::captions::model::recommended(),
-            "Parakeet v3 (quantized)",
-        ),
-        (
-            tr::editor::tabs::captions::model::recommended_description(),
-            "Fast and accurate · 25 European languages, no Chinese",
-        ),
         (tr::editor::tabs::captions::model::small(), "Whisper Small"),
         (
             tr::editor::tabs::captions::model::small_description(),
-            "Smallest download · supports Chinese",
+            "Smaller download · local multilingual recognition",
         ),
         (tr::editor::tabs::captions::model_label(), "Model"),
         (tr::editor::tabs::captions::position(), "Position"),
-        (tr::editor::tabs::captions::preset::classic(), "Classic"),
+        (
+            tr::editor::tabs::captions::preset::classic(),
+            "Soft black background",
+        ),
         (
             tr::editor::tabs::captions::preset::classic_description(),
-            "Clean text on a solid rounded background.",
+            "White text on a subtle black background",
         ),
         (tr::editor::tabs::captions::preset::highlight(), "Highlight"),
         (
@@ -628,14 +722,25 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::tabs::captions::reset_position(),
             "Reset Position",
         ),
+        (tr::editor::tabs::captions::outline(), "Outline"),
+        (tr::editor::tabs::captions::resplit(), "Re-break captions"),
         (
-            tr::editor::tabs::captions::show_filler_words(),
-            "Show Filler Words",
+            tr::editor::tabs::captions::resplit_local(),
+            "No model is set up, so the built-in rules broke the captions",
         ),
+        (
+            tr::editor::tabs::captions::resplit_partial(),
+            "The model gave no usable answer for some passages; those were broken by the built-in rules",
+        ),
+        (
+            tr::editor::tabs::captions::resplitting(),
+            "Re-breaking captions…",
+        ),
+        (tr::editor::tabs::captions::shadow(), "Shadow"),
+        (tr::editor::tabs::captions::show_background(), "Background"),
         (tr::editor::tabs::captions::size_label(), "Size"),
         (tr::editor::tabs::captions::style(), "Style"),
         (tr::editor::tabs::captions::text_color(), "Text Color"),
-        (tr::editor::tabs::captions::title(), "Captions"),
         (tr::editor::tabs::captions::uppercase(), "Uppercase"),
         (
             tr::editor::tabs::captions::vertical_position(),
@@ -701,27 +806,14 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Background Settings",
         ),
         (tr::editor::tabs::keyboard::behavior(), "Behavior"),
-        (tr::editor::tabs::keyboard::beta(), "Beta"),
         (
             tr::editor::tabs::keyboard::changed_during_generation(),
             "The timeline or keyboard settings changed during generation. Try again.",
-        ),
-        (
-            tr::editor::tabs::keyboard::empty_description(),
-            "Click \"Generate Keyboard Segments\" to create segments from recorded keyboard presses.",
-        ),
-        (
-            tr::editor::tabs::keyboard::empty_title(),
-            "No keyboard segments yet.",
         ),
         (tr::editor::tabs::keyboard::fade_duration(), "Fade Duration"),
         (tr::editor::tabs::keyboard::font_family(), "Font Family"),
         (tr::editor::tabs::keyboard::font_settings(), "Font Settings"),
         (tr::editor::tabs::keyboard::font_weight(), "Font Weight"),
-        (
-            tr::editor::tabs::keyboard::generate(),
-            "Generate Keyboard Segments",
-        ),
         (
             tr::editor::tabs::keyboard::generating(),
             "Generating Keyboard Segments...",
@@ -761,7 +853,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::tabs::keyboard::timeline_unreadable(),
             "The project timeline could not be read.",
         ),
-        (tr::editor::tabs::keyboard::title(), "Show keyboard"),
         (tr::editor::tabs::keyboard::uppercase(), "Uppercase"),
         (tr::editor::tabs::position::bottom_center(), "Bottom Center"),
         (tr::editor::tabs::position::bottom_left(), "Bottom Left"),
@@ -924,21 +1015,33 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::timeline::track::clip(), "Clip"),
         (tr::editor::timeline::track::image(), "Image"),
         (tr::editor::timeline::track::keyboard(), "Keyboard"),
+        (tr::editor::timeline::track::layer(), "Layer"),
         (tr::editor::timeline::track::mask(), "Mask"),
         (tr::editor::timeline::track::scene(), "Scene"),
         (tr::editor::timeline::track::style(), "Style"),
         (tr::editor::timeline::track::text_track(), "Text"),
         (tr::editor::timeline::track::video(), "Video"),
+        (
+            tr::editor::window::track_menu::caption_settings(),
+            "Caption settings",
+        ),
+        (tr::editor::window::track_menu::mixed(), "Mixed"),
+        (tr::editor::window::track_menu::more(), "More options"),
+        (
+            tr::editor::window::track_menu::remove_fillers(),
+            "Remove pauses and filler words",
+        ),
         (tr::editor::timeline::track::zoom(), "Zoom"),
-        (tr::editor::window::add_track::button(), "Add track"),
+        (tr::editor::window::add_track::button(), "Add"),
         (
             tr::editor::window::add_track::hide_3d(),
             "Hide the 3D track.",
         ),
         (
             tr::editor::window::add_track::hint(),
-            "Choose a track to add to your timeline.",
+            "Adds at the playhead, in front of everything there. Rows appear as needed.",
         ),
+        (tr::editor::window::add_track::more(), "More"),
         (tr::editor::window::aspect::auto(), "Auto"),
         (tr::editor::window::aspect::classic(), "Classic"),
         (tr::editor::window::aspect::classic_ratio(), "Classic ⋅4:3"),
@@ -1018,6 +1121,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         ),
         (tr::editor::window::clip_menu::rename(), "Rename clip"),
         (tr::editor::window::clip_menu::speed(), "SPEED"),
+        (tr::editor::window::clip_menu::more(), "More settings"),
         (tr::editor::window::clip_menu::split(), "Split at playhead"),
         (
             tr::editor::window::clip_menu::split_hint(),
@@ -1098,41 +1202,34 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Filler phrases",
         ),
         (
-            tr::editor::transcript::fillers::discourse_hint(),
-            "like, you know, so",
-        ),
-        (
             tr::editor::transcript::fillers::false_start(),
             "False starts",
         ),
-        (
-            tr::editor::transcript::fillers::false_start_hint(),
-            "we should, we need",
-        ),
         (tr::editor::transcript::fillers::hesitation(), "Hesitations"),
-        (
-            tr::editor::transcript::fillers::hesitation_hint(),
-            "um, uh, hmm",
-        ),
-        (tr::editor::transcript::fillers::keep(), "Keep this one"),
         (tr::editor::transcript::fillers::listen(), "Listen"),
         (
             tr::editor::transcript::fillers::none(),
             "No filler words left in these categories",
         ),
-        (tr::editor::transcript::fillers::remove(), "Remove this one"),
         (
             tr::editor::transcript::fillers::repetition(),
             "Repeated words",
         ),
-        (
-            tr::editor::transcript::fillers::repetition_hint(),
-            "the the, I I",
-        ),
         (tr::editor::transcript::fillers::title(), "Filler words"),
+        (tr::editor::transcript::fillers::action_cut(), "Cut"),
+        (
+            tr::editor::transcript::fillers::action_hide(),
+            "Hide caption",
+        ),
+        (tr::editor::transcript::fillers::action_keep(), "Keep"),
+        (
+            tr::editor::transcript::fillers::apply_suggestions(),
+            "Apply suggestions",
+        ),
+        (tr::editor::transcript::fillers::by_term(), "Adjust by word"),
         (
             tr::editor::transcript::hint(),
-            "Click a word to jump to it. Select words and press Delete to cut them from the video.",
+            "Click a word to jump. Select words, then press Delete to cut them from the video or H to hide them from captions.",
         ),
         (tr::editor::transcript::next_match(), "Next match"),
         (
@@ -1267,7 +1364,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::window::transport::play_pause(),
             "Play/Pause video",
         ),
-        (tr::editor::window::transport::speed(), "Preview speed"),
+        (tr::editor::window::transport::speed(), "Video speed"),
         (tr::editor::window::transport::split(), "Split"),
         (tr::editor::markers::title(), "Markers"),
         (tr::editor::markers::add(), "Add marker"),
@@ -1378,6 +1475,95 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::timeline::picker::shape(),
             "Draw arrows, boxes, circles and highlights over your recording.",
         ),
+        (
+            tr::editor::tabs::captions::outline_width(),
+            "Outline thickness",
+        ),
+        (
+            tr::editor::tabs::captions::shadow_opacity(),
+            "Shadow strength",
+        ),
+        (tr::editor::tabs::captions::shadow_size(), "Shadow spread"),
+        (tr::editor::tabs::captions::more_styles(), "More styles"),
+        (tr::editor::tabs::captions::undo_style(), "Undo"),
+        (
+            tr::editor::tabs::captions::preview_original(),
+            "清晰表达每一步",
+        ),
+        (
+            tr::editor::tabs::captions::preview_translation(),
+            "Make every step clear",
+        ),
+        (
+            tr::editor::tabs::captions::preset::dark_background(),
+            "Soft black background",
+        ),
+        (
+            tr::editor::tabs::captions::preset::light_background(),
+            "Clean white background",
+        ),
+        (
+            tr::editor::tabs::captions::preset::white_outline(),
+            "White · black outline",
+        ),
+        (
+            tr::editor::tabs::captions::preset::black_outline(),
+            "Black · white outline",
+        ),
+        (
+            tr::editor::tabs::captions::auto_draft::queued(),
+            "Preparing a local caption draft…",
+        ),
+        (
+            tr::editor::tabs::captions::auto_draft::needs_model(),
+            "Automatic captions need a local model. Select Qwen, Whisper Small or Medium below, download it, then retry local captions.",
+        ),
+        (
+            tr::editor::tabs::captions::auto_draft::interrupted(),
+            "Caption generation was interrupted. Retry local captions.",
+        ),
+        (
+            tr::editor::tabs::captions::auto_draft::retry(),
+            "Retry local captions",
+        ),
+        (
+            tr::editor::tabs::captions::auto_draft::skip(),
+            "Skip automatic captions for this project",
+        ),
+        (
+            tr::editor::tabs::font::source_han_serif(),
+            "Source Han Serif",
+        ),
+        (tr::editor::tabs::font::songgu_hei(), "SongGu Hei"),
+        (tr::editor::tabs::font::songgu_rounded(), "SongGu Rounded"),
+        (tr::editor::tabs::font::sarasa_gothic(), "Sarasa Gothic"),
+        (
+            tr::editor::tabs::font::gensen_rounded_tw(),
+            "GenSen Rounded · Traditional Chinese",
+        ),
+        (tr::editor::tabs::font::inter(), "Inter"),
+        (tr::editor::tabs::font::montserrat(), "Montserrat"),
+        (tr::editor::tabs::font::source_serif(), "Source Serif 4"),
+        (
+            tr::editor::window::audio_import::move_playhead(),
+            "Choose a valid timeline position before adding audio.",
+        ),
+        (
+            tr::editor::window::audio_import::unreadable(),
+            "This audio file cannot be read. Choose an audio file that plays correctly.",
+        ),
+        (tr::editor::window::track_menu::add_music(), "Add music"),
+        (tr::editor::window::track_menu::hide_row(), "Hide this row"),
+        (tr::editor::window::track_menu::show_row(), "Show this row"),
+        (tr::editor::window::track_menu::mute_row(), "Mute this row"),
+        (
+            tr::editor::window::track_menu::unmute_row(),
+            "Unmute this row",
+        ),
+        (
+            tr::editor::window::track_menu::audio_settings(),
+            "Volume & fades",
+        ),
     ];
     for (translated, literal) in pairs {
         assert_eq!(translated, literal);
@@ -1392,9 +1578,29 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         plain_keys,
         "every plain key has a literal above"
     );
+    assert_eq!(
+        tr::editor::tabs::captions::auto_draft::running("Qwen"),
+        "Generating captions locally with Qwen. You can keep editing."
+    );
+    assert_eq!(
+        tr::editor::tabs::captions::auto_draft::skip_failed("disk full"),
+        "Could not save your choice to skip automatic captions. This recognition result will not be applied. Retry: disk full"
+    );
     for key in FORMATTED {
         assert!(KEYS.contains(key), "{key}");
     }
+    assert_eq!(
+        tr::editor::export::resource_detail::disk_warning("the export drive", "1.25"),
+        "Free space on the export drive is low: 1.25 GiB remaining."
+    );
+    assert_eq!(
+        tr::editor::export::resource_detail::disk_estimate("2.50"),
+        "This export may need approximately 2.50 GiB, including temporary files."
+    );
+    assert_eq!(
+        tr::editor::export::resource_detail::disk_stop("the system drive", "0.25"),
+        "Export stopped because the system drive has only 0.25 GiB available. Free up disk space and try again. Your original recording has been kept."
+    );
     assert_eq!(tr::editor::markers::button(1), "1 marker");
     assert_eq!(tr::editor::markers::button(12), "12 markers");
     assert_eq!(tr::editor::markers::default_name(3), "Marker 3");
@@ -1678,7 +1884,7 @@ fn selection_headers_read_as_whole_sentences() {
             if count == 1 { "" } else { "s" }
         )
     };
-    for count in [0, 1, 2, 5] {
+    for count in [0, 2, 5] {
         for noun in [
             "style", "image", "text", "caption", "audio", "mask", "keyboard", "3D", "scene",
         ] {
@@ -1692,6 +1898,19 @@ fn selection_headers_read_as_whole_sentences() {
                 format!("{count} segments selected")
             }
         );
+    }
+    for (noun, single) in [
+        ("style", "Style"),
+        ("image", "Image"),
+        ("text", "Text"),
+        ("caption", "Captions"),
+        ("audio", "Audio"),
+        ("mask", "Mask"),
+        ("keyboard", "Keyboard"),
+        ("3D", "3D"),
+        ("scene", "Scene"),
+    ] {
+        assert_eq!(crate::ui::selection_label(noun, 1), single);
     }
     let old_zoom = |count: usize, total: usize| {
         if total > 1 && count == total {

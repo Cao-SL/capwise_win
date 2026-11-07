@@ -70,7 +70,7 @@ use gpui::{
 use crate::i18n::tr;
 use crate::theme::LocaleFont as _;
 use crate::{
-    editor_audio::{AudioImportRequest, probe_audio_duration, replace_audio_asset},
+    editor_audio::{AudioImportRequest, replace_audio_asset, validate_audio_duration},
     editor_edits::{self as edits, DragBounds, Hit, ProjectHistory, SPLIT_SNAP_PX, Selection},
     editor_export::ExportUi,
     project_save::PendingProjectSave,
@@ -118,7 +118,7 @@ pub const TRAFFIC_LIGHTS: Option<Point<Pixels>> = Some(point(px(20.), px(20.)));
 /// on the `preview_tx` tuple, so the app owns it.
 pub const EDITOR_PREVIEW_FPS: u32 = 60;
 
-const PREVIEW_SPEED_BUTTON_WIDTH: f32 = 46.;
+const VIDEO_SPEED_BUTTON_WIDTH: f32 = 46.;
 
 /// `OUTPUT_SIZE = { x: 1920, y: 1080 }` (`context.ts:150-153`,
 /// `lib.rs:147`).
@@ -261,10 +261,10 @@ fn transcript_row_width(viewport_width: f32) -> f32 {
 // ---------------------------------------------------------------------------
 
 use crate::editor_timeline::{
-    self as timeline, ADD_TRACK_OPTIONS, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT, START_SNAP_PX,
-    TIMELINE_BOTTOM_PADDING, TIMELINE_CARD_BORDER, TIMELINE_HEADER_HEIGHT, TIMELINE_PADDING,
-    TIMELINE_SLOT_PADDING, TIMELINE_TOP_PADDING, TRACK_GUTTER, TRACK_ICON_WIDTH, TRACK_ROW_GAP,
-    TimelineModel, TimelineView, TrackKind, TrackLanes, TrackRow, Transform,
+    self as timeline, ADD_TRACK_MORE, ADD_TRACK_OPTIONS, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT,
+    START_SNAP_PX, TIMELINE_BOTTOM_PADDING, TIMELINE_CARD_BORDER, TIMELINE_HEADER_HEIGHT,
+    TIMELINE_PADDING, TIMELINE_SLOT_PADDING, TIMELINE_TOP_PADDING, TRACK_GUTTER, TRACK_ICON_WIDTH,
+    TRACK_ROW_GAP, TimelineModel, TimelineView, TrackKind, TrackLanes, TrackRow, Transform,
 };
 
 // ---------------------------------------------------------------------------
@@ -305,6 +305,47 @@ fn frame_seconds(frame: u32) -> f64 {
 /// The new end of a timeline that an edit shortened past the playhead.
 fn playhead_past_end(playhead: f64, total: f64) -> Option<f64> {
     (total > 0.0 && playhead > total).then_some(total)
+}
+
+fn initial_track_lanes(
+    project: &ProjectConfiguration,
+    has_camera: bool,
+    imported_asset_lanes: Option<(u32, u32)>,
+) -> TrackLanes {
+    let mut lanes = TrackLanes::from_project(project, has_camera);
+    if let Some((overlay, audio)) = imported_asset_lanes {
+        lanes.overlay = overlay;
+        lanes.audio = audio;
+    }
+    lanes
+}
+
+fn lane_minimum_after_delete(kind: TrackKind, current: u32, removed: u32, used: u32) -> u32 {
+    if kind == TrackKind::Audio {
+        current.saturating_sub(u32::from(removed < current))
+    } else {
+        used.max(current.saturating_sub(1))
+    }
+}
+
+fn restore_import_transport(
+    pending: &mut Option<f64>,
+    transport: Option<&TransportHandle>,
+    total: f64,
+) -> Option<f64> {
+    let transport = transport?;
+    if !total.is_finite() || total < 0.0 {
+        return None;
+    }
+    let time = pending
+        .take()
+        .filter(|time| time.is_finite())?
+        .clamp(0.0, total);
+    let frame = ((time * f64::from(EDITOR_PREVIEW_FPS)).round() as u32)
+        .min(((total * f64::from(EDITOR_PREVIEW_FPS)).ceil() as u32).saturating_sub(1));
+    transport.pause();
+    transport.seek(frame);
+    Some(frame_seconds(frame))
 }
 
 /// Where a seek leaves the playhead. Paused, the engine echoes the seek back
@@ -358,6 +399,9 @@ pub struct ProjectSummary {
     /// The camera tab is disabled when every segment has `camera === null`
     /// (`ConfigSidebar.tsx:602-604`).
     pub has_camera: bool,
+    /// A camera-only recording has no camera track, only the skin smoothing
+    /// control applies to its display track.
+    pub display_is_camera: bool,
     /// The cursor tab is disabled on `!meta().hasRecordedCursorData`
     /// (`ConfigSidebar.tsx:610`).
     pub has_cursor_data: bool,
@@ -513,6 +557,7 @@ pub fn preflight(path: &std::path::Path) -> Result<ProjectSummary, String> {
         timeline,
         duration: duration.max(0.0),
         has_camera,
+        display_is_camera: meta.display_is_camera(),
         has_cursor_data: has_recorded_cursor_data(&meta, studio.as_ref()),
         recorded_cursor_family: recorded_cursor_family(studio.as_ref()),
         clip_display_durations: recordings
@@ -533,7 +578,7 @@ pub fn preflight(path: &std::path::Path) -> Result<ProjectSummary, String> {
     })
 }
 
-fn load_recording_clicks(
+pub(crate) fn load_recording_clicks(
     project_path: &std::path::Path,
 ) -> Vec<Vec<cap_project::CursorClickEvent>> {
     let Ok(meta) = RecordingMeta::load_for_project(project_path) else {
@@ -1351,6 +1396,8 @@ struct Drag {
     press_time: f64,
     /// Whether this drag took `projectHistory.pause()` and owes a resume.
     paused: bool,
+    lane: u32,
+    lane_target: Option<edits::LaneTarget>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1416,6 +1463,7 @@ pub struct EditorWindow {
     pub(crate) playing: bool,
     /// `editorState.playbackTime`, in seconds.
     pub(crate) playhead: f64,
+    pending_import_playhead: Option<f64>,
     last_playhead_redraw: Instant,
     /// Whether the current play epoch has applied at least one engine sample.
     /// Every path that (re)starts the engine clears it -- `start_playback`,
@@ -1469,6 +1517,8 @@ pub struct EditorWindow {
     pub(crate) project: ProjectConfiguration,
     /// `projectHistory` (`ED/context.ts:1724`).
     pub(crate) history: ProjectHistory,
+    pending_import_history: Option<ProjectHistory>,
+    pending_import_asset_lanes: Option<(u32, u32)>,
     /// `editorState.timeline.selection`.
     pub(crate) selection: Option<Selection>,
     /// `editorState.timeline.interactMode === "split"`.
@@ -1482,6 +1532,7 @@ pub struct EditorWindow {
     /// The gutter chip under the pointer, which is what reveals the red
     /// per-track delete button (`TL/index.tsx:1516-1546`, `group/icon`).
     hovered_gutter: Option<(TrackKind, u32)>,
+    hovered_row: Option<(TrackKind, u32)>,
     /// The live segment drag, if any.
     drag: Option<Drag>,
     lane_reorder: Option<LaneReorder>,
@@ -1498,6 +1549,7 @@ pub struct EditorWindow {
     pub(crate) generating_keyboard: bool,
     pub(crate) keyboard_generation_message: Option<String>,
     clip_speed: Option<ClipSpeedMenu>,
+    track_menu: Option<OpenTrackMenu>,
     markers: markers::MarkersState,
     transition_popover: Option<TransitionPopover>,
     /// The timeline as it was when a transition drag began; every step of the
@@ -1621,7 +1673,7 @@ pub struct EditorWindow {
     pub(crate) shape_clipboard: Vec<cap_project::ShapeSegment>,
 
     preview_quality: crate::store::EditorPreviewQuality,
-    preview_speed: cap_editor::PreviewSpeed,
+    // Image/audio minima preserve explicit empty rows; segment-derived rows must remain undoable.
     pub(crate) tracks: TrackLanes,
     toolbar_menu: Option<OpenToolbarMenu>,
     text_menu: Option<OpenTextMenu>,
@@ -1629,10 +1681,13 @@ pub struct EditorWindow {
     frame_controls: frame::FrameControls,
     add_track: Option<AddTrackMenu>,
     add_track_opens: usize,
+    pub(crate) voiceover: crate::editor_voiceover::VoiceoverUi,
     pub(crate) audio_picker: Option<crate::editor_audio::AudioPicker>,
+    pub(crate) library_audition: Option<crate::editor_audio::LibraryAudition>,
+    pub(crate) audio_library: crate::editor_audio::AudioLibraryState,
     pub(crate) audio_picker_generation: u64,
     pub(crate) audio_import_pending: Option<u64>,
-    audio_picker_request: Option<AudioImportRequest>,
+    pub(crate) audio_picker_request: Option<AudioImportRequest>,
     /// A transient line over the player: the one place an action that cannot
     /// apply says so (the editor has no toast host of its own).
     pub(crate) notice: Option<EditorNotice>,
@@ -1661,6 +1716,7 @@ pub struct EditorWindow {
     /// The Clips layout mode (`ClipsSidebar.tsx`): while open, the config
     /// sidebar's column draws the clips sidebar instead.
     pub(crate) clips: crate::editor_clips::ClipsState,
+    pub(crate) assets: crate::editor_assets::AssetLibraryState,
     pub(crate) transcript: crate::transcript::TranscriptState,
     transcript_view: Entity<EditorSectionView>,
 }
@@ -1705,6 +1761,8 @@ struct AddTrackMenu {
 const ADD_TRACK_TRAY_ANIMATION: Duration = Duration::from_millis(620);
 const ADD_TRACK_TRAY_IN_MS: f32 = 220.;
 const ADD_TRACK_TRAY_SLIDE: f32 = 12.;
+const ADD_TRACK_HINT_HEIGHT: f32 = 2. * 15. + 16.;
+const ADD_TRACK_TRAY_WIDTH: f32 = 4. * 64. + 3. * 4. + 12. + 2.;
 const ADD_TRACK_TILE_DELAY_MS: f32 = 60.;
 const ADD_TRACK_TILE_STAGGER_MS: f32 = 24.;
 const ADD_TRACK_TILE_IN_MS: f32 = 320.;
@@ -1737,6 +1795,8 @@ fn add_track_tile_progress(delta: f32, index: usize) -> f32 {
 }
 
 const CLIP_MENU_WIDTH: f32 = 300.;
+const TRACK_MENU_WIDTH: f32 = 264.;
+const TRACK_MENU_SPEEDS: [f64; 6] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 /// `DEFAULT_CLIP_TRANSITION_DURATION` (`ED/clip-transitions.ts`).
 const DEFAULT_CLIP_TRANSITION_DURATION: f64 = 0.5;
 /// Lengths longer than half the shorter clip are left out of the menu.
@@ -1786,6 +1846,13 @@ const CLIP_MENU_HEIGHT_ESTIMATE: f32 = 440.;
 
 /// The clip settings menu (`ClipSettingsControl`, `TL/ClipTrack.tsx`), opened
 /// from the clip's cog or by right-clicking the clip.
+#[derive(Clone, Copy)]
+struct OpenTrackMenu {
+    kind: TrackKind,
+    lane: u32,
+    placement: ClipSpeedMenu,
+}
+
 #[derive(Clone, Copy)]
 struct ClipSpeedMenu {
     index: usize,
@@ -1842,6 +1909,53 @@ fn format_clip_speed(speed: f64) -> String {
     } else {
         format!("{speed}x")
     }
+}
+
+fn clip_menu_chip(
+    theme: &Theme,
+    id: SharedString,
+    selected: bool,
+    label: String,
+) -> gpui::Stateful<gpui::Div> {
+    let hover_text = Hsla::from(theme.editor.text_1);
+    div()
+        .id(id)
+        .flex_1()
+        .rounded(px(6.))
+        .px(px(6.))
+        .py(px(4.))
+        .text_size(px(11.5))
+        .text_center()
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .bg(if selected {
+            Hsla::from(theme.editor.ctl_active)
+        } else {
+            gpui::transparent_black()
+        })
+        .text_color(Hsla::from(if selected {
+            theme.editor.text_1
+        } else {
+            theme.editor.text_2
+        }))
+        .hover(move |this| this.text_color(hover_text))
+        .child(label)
+}
+
+fn clip_menu_chip_row(theme: &Theme) -> gpui::Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(2.))
+        .rounded(px(8.))
+        .bg(Hsla::from(theme.editor.ctl))
+        .p(px(2.))
+}
+
+/// Zoom, 3D and scene lanes have nothing to offer until they hold a segment.
+fn track_has_menu(kind: TrackKind, has_segments: bool) -> bool {
+    !matches!(kind, TrackKind::Zoom | TrackKind::ThreeD | TrackKind::Scene) || has_segments
 }
 
 fn clip_menu_section(theme: &Theme, label: &'static str) -> gpui::Div {
@@ -1996,7 +2110,7 @@ fn clip_menu_row(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolbarMenu {
     AspectRatio,
-    PreviewSpeed,
+    VideoSpeed,
 }
 
 struct OpenToolbarMenu {
@@ -2013,8 +2127,23 @@ struct OpenTextMenu {
 impl EditorWindow {
     pub fn new(project_path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         crate::theme::bind_window(window, cx);
+        Self::new_state(
+            project_path,
+            Theme::for_window(window, cx, false),
+            window,
+            cx,
+        )
+    }
+
+    fn new_state(
+        project_path: PathBuf,
+        theme: Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() {
+                this.cancel_asset_drag(cx);
                 let minimap_canceled = this.minimap_drag.take().is_some();
                 let lane_reorder_canceled = this.lane_reorder.is_some();
                 if lane_reorder_canceled {
@@ -2033,8 +2162,15 @@ impl EditorWindow {
         let path = project_path.clone();
         let window_id = window.window_handle().window_id();
         window.on_window_should_close(cx, move |window, cx| {
+            if let Some(editor) = window.root::<Self>().flatten()
+                && editor.read(cx).voiceover.is_busy()
+            {
+                editor.update(cx, |editor, cx| editor.close_voiceover(window, cx));
+                return false;
+            }
             let blocked = window.root::<Self>().flatten().and_then(|editor| {
                 editor.update(cx, |editor, cx| {
+                    editor.cancel_caption_export_wait(cx);
                     if let Some(reason) = editor.busy_reason() {
                         return Some(reason.to_string());
                     }
@@ -2165,7 +2301,7 @@ impl EditorWindow {
             // in the `(window-chrome)` layout and `/editor` is not one of its
             // routes, and `is_transparent()` (`windows.rs:1069-1082`) does not
             // list Editor. The root paints `bg-gray-2 dark:bg-gray-1`.
-            theme: Theme::for_window(window, cx, false),
+            theme,
             sharing: RecordingMeta::load_for_project(&project_path)
                 .ok()
                 .and_then(|meta| meta.sharing),
@@ -2195,6 +2331,7 @@ impl EditorWindow {
             focus: cx.focus_handle(),
             playing: false,
             playhead: 0.0,
+            pending_import_playhead: None,
             last_playhead_redraw: Instant::now().checked_sub(Duration::from_secs(1)).unwrap(),
             playhead_epoch_live: false,
             playhead_epoch_start: 0,
@@ -2212,12 +2349,15 @@ impl EditorWindow {
             zoom_slider_drag: false,
             project: ProjectConfiguration::default(),
             history: ProjectHistory::new(ProjectConfiguration::default()),
+            pending_import_history: None,
+            pending_import_asset_lanes: None,
             selection: None,
             split_mode: false,
             split_preview: None,
             hovered_segment: None,
             scene_preview_time: None,
             hovered_gutter: None,
+            hovered_row: None,
             drag: None,
             lane_reorder: None,
             playback_tick: 0,
@@ -2229,6 +2369,7 @@ impl EditorWindow {
             generating_keyboard: false,
             keyboard_generation_message: None,
             clip_speed: None,
+            track_menu: None,
             markers: markers_state,
             transition_popover: None,
             transition_drag_base: None,
@@ -2278,7 +2419,6 @@ impl EditorWindow {
             last_shape_kind: cap_project::ShapeKind::Arrow,
             shape_clipboard: Vec::new(),
             preview_quality: crate::store::GeneralSettings::load().editor_preview_quality,
-            preview_speed: crate::store::GeneralSettings::load().editor_preview_speed,
             tracks: TrackLanes::from_project(&ProjectConfiguration::default(), false),
             toolbar_menu: None,
             text_menu: None,
@@ -2286,7 +2426,10 @@ impl EditorWindow {
             frame_controls: frame::FrameControls::default(),
             add_track: None,
             add_track_opens: 0,
+            voiceover: Default::default(),
             audio_picker: None,
+            library_audition: None,
+            audio_library: Default::default(),
             audio_picker_generation: 0,
             audio_import_pending: None,
             audio_picker_request: None,
@@ -2304,6 +2447,7 @@ impl EditorWindow {
             caption_sync_signature: None,
             export: None,
             clips: crate::editor_clips::ClipsState::default(),
+            assets: crate::editor_assets::AssetLibraryState::default(),
             transcript: crate::transcript::TranscriptState::new(cx.focus_handle()),
             transcript_view,
         }
@@ -2415,8 +2559,15 @@ impl EditorWindow {
         self.project = config;
         self.synchronize_caption_track(true);
         self.transcript.dirty = true;
-        self.history = ProjectHistory::new(self.project.clone());
-        self.tracks = TrackLanes::from_project(&self.project, self.has_camera);
+        self.history = self
+            .pending_import_history
+            .take()
+            .unwrap_or_else(|| ProjectHistory::new(self.project.clone()));
+        self.tracks = initial_track_lanes(
+            &self.project,
+            self.has_camera,
+            self.pending_import_asset_lanes.take(),
+        );
         self.rebuild_timeline();
         // The sidebar's own signals are seeded from the config the instance
         // actually loaded, not the pre-flight's: `backgroundSourceTab`'s
@@ -2424,8 +2575,26 @@ impl EditorWindow {
         self.flush_animated_gradient_selection();
         self.sidebar = crate::editor_sidebar::SidebarState::new(&self.project);
         self.sidebar_loaded(window, cx);
+        self.restore_pending_asset_browser(window, cx);
         cx.notify();
         window.refresh();
+    }
+
+    pub(crate) fn restore_import_history(&mut self, history: ProjectHistory) {
+        if self.project_ready() {
+            self.history = history;
+        } else {
+            self.pending_import_history = Some(history);
+        }
+    }
+
+    pub(crate) fn restore_import_asset_lanes(&mut self, lanes: (u32, u32)) {
+        if self.project_ready() {
+            (self.tracks.overlay, self.tracks.audio) = lanes;
+            self.rebuild_timeline();
+        } else {
+            self.pending_import_asset_lanes = Some(lanes);
+        }
     }
 
     /// Re-derive the drawn model from the live config. Runs after every edit;
@@ -2433,6 +2602,13 @@ impl EditorWindow {
     /// carried across.
     fn rebuild_timeline(&mut self) {
         self.dismiss_transient_menus();
+        if let Some(timeline) = self.project.timeline.as_ref() {
+            self.tracks.overlay = self.tracks.overlay.min(timeline.overlay_layer_count());
+            self.tracks.style = self
+                .tracks
+                .style
+                .min(edits::used_lane_count(&timeline.style_segments));
+        }
         let mic = std::mem::take(&mut self.timeline.mic_waveforms);
         let system = std::mem::take(&mut self.timeline.system_waveforms);
         let imported = std::mem::take(&mut self.timeline.imported_waveforms);
@@ -2616,6 +2792,9 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.voiceover.is_busy() {
+            return false;
+        }
         if !change(&mut self.project) {
             return false;
         }
@@ -2647,15 +2826,48 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.voiceover.is_busy() {
+            return false;
+        }
         self.end_field_edit(cx);
         self.close_color_picker(cx);
         self.dismiss_frame_controls(cx);
         if !change(&mut self.project) {
             return false;
         }
+        if let Err(message) = self.normalize_title_card_edit() {
+            self.title_card_error(message, window, cx);
+            self.rebuild_timeline();
+            return false;
+        }
         self.set_selection(None, cx);
         self.project_changed(window, cx);
         true
+    }
+
+    fn normalize_title_card_edit(&mut self) -> Result<(), String> {
+        let Some(instance) = &self.instance else {
+            return Ok(());
+        };
+        let previous = instance.project_config.1.borrow();
+        let has_cards = |project: &ProjectConfiguration| {
+            project.timeline.as_ref().is_some_and(|timeline| {
+                timeline
+                    .text_segments
+                    .iter()
+                    .any(|segment| segment.title_card.is_some())
+            })
+        };
+        if !has_cards(&previous) && !has_cards(&self.project) {
+            return Ok(());
+        }
+        let previous = previous.clone();
+        crate::editor_title_cards::normalize_edit(
+            &mut self.project,
+            &previous,
+            self.sidebar.title_cards.applying,
+        )
+        .map_err(|error| crate::editor_title_cards::edit_error_message(&error))
     }
 
     /// One line per *committed* edit, at `info`, for the same reason
@@ -2736,6 +2948,11 @@ impl EditorWindow {
         if !self.project_ready() {
             return;
         }
+        if let Err(message) = self.normalize_title_card_edit() {
+            self.title_card_error(message, window, cx);
+            self.rebuild_timeline();
+            return;
+        }
         self.synchronize_caption_track(false);
         self.history.record(&self.project);
         self.transcript.dirty = true;
@@ -2753,6 +2970,17 @@ impl EditorWindow {
 
     pub(crate) fn project_changed_live(&mut self, cx: &mut Context<Self>) {
         if !self.project_ready() {
+            return;
+        }
+        if let Err(message) = self.normalize_title_card_edit() {
+            self.sidebar.title_cards.error = Some(message.clone());
+            self.notice_seq += 1;
+            self.notice = Some(EditorNotice {
+                id: self.notice_seq,
+                message: message.into(),
+            });
+            self.rebuild_timeline();
+            cx.notify();
             return;
         }
         self.synchronize_caption_track(false);
@@ -2886,6 +3114,9 @@ impl EditorWindow {
     /// store. The playhead is not moved and the selection is not restored;
     /// neither is in the snapshot (`editorState` is a separate store).
     pub(crate) fn undo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.voiceover.is_busy() {
+            return;
+        }
         self.close_frame_controls(window, cx);
         self.end_field_edit(cx);
         self.close_color_picker(cx);
@@ -2898,6 +3129,9 @@ impl EditorWindow {
     }
 
     pub(crate) fn redo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.voiceover.is_busy() {
+            return;
+        }
         self.close_frame_controls(window, cx);
         self.end_field_edit(cx);
         self.close_color_picker(cx);
@@ -3264,7 +3498,6 @@ impl EditorWindow {
         if instance.preparing_adoption().is_some() {
             self.ordinary_handoff_frame = None;
         }
-        instance.set_preview_speed(self.preview_speed);
         self.instance = Some(instance);
     }
 
@@ -3278,6 +3511,31 @@ impl EditorWindow {
 
     pub fn restore_timeline_transform(&mut self, transform: Transform) {
         self.restore_transform = Some(transform);
+    }
+
+    pub(crate) fn restore_import_playhead(&mut self, time: f64, cx: &mut Context<Self>) {
+        self.pending_import_playhead = Some(time);
+        if self.apply_import_playhead() {
+            cx.notify();
+        }
+    }
+
+    fn apply_import_playhead(&mut self) -> bool {
+        let total = self.total_duration();
+        let Some(time) = restore_import_transport(
+            &mut self.pending_import_playhead,
+            self.transport.as_ref(),
+            total,
+        ) else {
+            return false;
+        };
+        self.playhead = time;
+        self.view.playhead = time;
+        self.playing = false;
+        self.view.playing = false;
+        self.play_until = None;
+        self.playback_follow.reset();
+        true
     }
 
     /// Hand the window its transport, the pump's counters, and the duration
@@ -3296,6 +3554,7 @@ impl EditorWindow {
         if total > 0.0 {
             self.total = total;
         }
+        self.apply_import_playhead();
         let initial_frame = self.initial_frame_number();
         self.ordinary_handoff_frame = self.preparing_presentation.as_ref().map(|_| initial_frame);
         self.playhead = self.preparing_presentation.as_ref().map_or(
@@ -3438,6 +3697,10 @@ impl EditorWindow {
     }
 
     fn start_playback(&mut self, from: f64, cx: &mut Context<Self>) {
+        if self.voiceover.is_busy() {
+            return;
+        }
+        self.library_audition = None;
         let Some(transport) = &self.transport else {
             return;
         };
@@ -3578,8 +3841,57 @@ impl EditorWindow {
     /// (`PlaybackHandle::seek`), so a scrub during playback holds the last
     /// picture for one decode instead of paying a warmup per tick.
     pub fn seek_to_time(&mut self, time: f64, cx: &mut Context<Self>) {
+        if self.voiceover.is_busy() {
+            return;
+        }
         if self.apply_seek(time) {
             self.transcript_sync_active(true, cx);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn reveal_timeline_row(
+        &mut self,
+        kind: TrackKind,
+        lane: u32,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self
+            .timeline
+            .rows
+            .iter()
+            .position(|row| row.kind == kind && row.lane == lane)
+        else {
+            return;
+        };
+        let viewport = f32::from(self.timeline_scroll.bounds().size.height);
+        if viewport <= 0.0 || !viewport.is_finite() {
+            return;
+        }
+        let height = self.timeline.track_height();
+        let stride = height + TRACK_ROW_GAP;
+        let top = index as f32 * stride;
+        let offset = self.timeline_scroll.offset();
+        let current = f32::from(offset.y);
+        let next = if top + current < TRACK_ROW_GAP {
+            TRACK_ROW_GAP - top
+        } else if top + height + current > viewport - TRACK_ROW_GAP {
+            viewport - TRACK_ROW_GAP - top - height
+        } else {
+            return;
+        };
+        let content = self.timeline.rows.len() as f32 * stride - TRACK_ROW_GAP;
+        self.timeline_scroll.set_offset(point(
+            offset.x,
+            px(next.clamp(-(content - viewport).max(0.0), 0.0)),
+        ));
+        cx.notify();
+    }
+
+    pub(crate) fn reveal_timeline_range(&mut self, start: f64, end: f64, cx: &mut Context<Self>) {
+        let total = self.total_duration();
+        if self.view.transform.reveal_range(start, end, total) {
+            self.note_transform("reveal-selection", Some(start));
             cx.notify();
         }
     }
@@ -3820,6 +4132,15 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.voiceover.is_open() {
+            return;
+        }
+        if self.export.is_some() {
+            return;
+        }
+        if self.asset_dragging() {
+            return;
+        }
         if !self.visual_ready() {
             let key = &event.keystroke;
             let close = (key.key == "w" && (key.modifiers.platform || key.modifiers.control))
@@ -3864,6 +4185,27 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.voiceover.is_open() {
+            if event.keystroke.key == "escape" && !event.is_held {
+                self.close_voiceover(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.export.is_some() {
+            if event.keystroke.key == "escape" && !event.is_held {
+                self.close_export(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.asset_dragging() {
+            if event.keystroke.key == "escape" {
+                self.cancel_asset_drag(cx);
+            }
+            cx.stop_propagation();
+            return;
+        }
         if self.frame_controls.is_open() && event.keystroke.key == "escape" {
             self.close_frame_controls(window, cx);
             cx.stop_propagation();
@@ -4009,6 +4351,12 @@ impl EditorWindow {
             cx.notify();
             return;
         }
+        if self.track_menu.is_some() && event.keystroke.key.as_str() == "escape" {
+            self.track_menu = None;
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
         if self.clip_speed.is_some() && event.keystroke.key.as_str() == "escape" {
             self.clip_speed = None;
             cx.stop_propagation();
@@ -4147,11 +4495,11 @@ impl EditorWindow {
             }
             return;
         }
-        if let Some(faster) = preview_speed_shortcut(keystroke)
+        if let Some(faster) = video_speed_shortcut(keystroke)
             && !self.has_open_menu()
         {
             cx.stop_propagation();
-            self.step_preview_speed(faster, window, cx);
+            self.step_video_speed(faster, window, cx);
             return;
         }
         if keystroke.modifiers.platform
@@ -4182,6 +4530,7 @@ impl EditorWindow {
                     || self.text_menu.is_some()
                     || self.add_track.is_some()
                     || self.clip_speed.is_some()
+                    || self.track_menu.is_some()
                     || self.transition_popover.is_some()
                     || self.sidebar.color_picker.is_some()
                     || self.presets_menu.is_some()
@@ -4439,6 +4788,9 @@ impl EditorWindow {
     /// while paused, the pointer's time becomes `previewTime`; outside the
     /// content column, and at all times while playing, it is cleared.
     pub(crate) fn timeline_hover(&mut self, x: f32, window: &mut Window, cx: &mut Context<Self>) {
+        if self.voiceover.is_open() {
+            return;
+        }
         // `if (editorState.playing) return;` -- the handler bails *before* it
         // writes, so a preview time set while paused survives a play rather
         // than being cleared. The ghost is hidden by the render's own
@@ -4456,6 +4808,9 @@ impl EditorWindow {
     }
 
     fn timeline_hover_leave(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.voiceover.is_open() {
+            return;
+        }
         if self.playing || self.view.preview_time.is_none() {
             return;
         }
@@ -4541,6 +4896,9 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.voiceover.is_open() {
+            return;
+        }
         if self.scrub != Some(Scrub::Ruler) {
             return;
         }
@@ -4653,7 +5011,13 @@ impl EditorWindow {
                 let index = selection.indices[0];
                 match selection.track {
                     TrackKind::Image => Some(crate::editor_canvas::CanvasSelection::Image(index)),
-                    TrackKind::Text => Some(crate::editor_canvas::CanvasSelection::Text(index)),
+                    TrackKind::Text => self
+                        .project
+                        .timeline
+                        .as_ref()
+                        .and_then(|timeline| timeline.text_segments.get(index))
+                        .filter(|segment| segment.title_card.is_none())
+                        .map(|_| crate::editor_canvas::CanvasSelection::Text(index)),
                     TrackKind::Mask => Some(crate::editor_canvas::CanvasSelection::Mask(index)),
                     TrackKind::Shape => Some(crate::editor_canvas::CanvasSelection::Shape(index)),
                     _ => None,
@@ -4705,6 +5069,16 @@ impl EditorWindow {
 
     fn select_lane_header(&mut self, kind: TrackKind, lane: u32, cx: &mut Context<Self>) {
         let time = self.preview_or_playhead();
+        let kind = if kind.is_overlay() {
+            let spans = self.timeline.lane_spans(kind, lane);
+            spans
+                .iter()
+                .find(|(_, _, start, end)| time >= *start && time < *end)
+                .or(spans.first())
+                .map_or(kind, |(kind, _, _, _)| *kind)
+        } else {
+            kind
+        };
         let segments = self.timeline.segments(kind);
         let mut active = segments.iter().enumerate().filter(|(_, segment)| {
             segment.lane == lane && time >= segment.start && time < segment.end
@@ -4732,6 +5106,37 @@ impl EditorWindow {
         }
     }
 
+    fn row_hit(
+        &self,
+        kind: TrackKind,
+        lane: u32,
+        x: f64,
+        position: f64,
+        secs_per_pixel: f64,
+    ) -> (TrackKind, Hit) {
+        let candidates: &[TrackKind] = if kind.is_overlay() {
+            timeline::OVERLAY_KINDS
+        } else {
+            std::slice::from_ref(&kind)
+        };
+        candidates
+            .iter()
+            .map(|candidate| {
+                (
+                    *candidate,
+                    edits::hit_test(
+                        self.timeline.segments(*candidate),
+                        lane,
+                        x,
+                        position,
+                        secs_per_pixel,
+                    ),
+                )
+            })
+            .find(|(_, hit)| !matches!(hit, Hit::Empty))
+            .unwrap_or((kind, Hit::Empty))
+    }
+
     /// A press on a track row. Whatever it lands on decides everything:
     /// a handle trims, a body moves (or splits, in split mode), and bare track
     /// falls through to the timeline container's own press-to-seek -- except on
@@ -4757,13 +5162,7 @@ impl EditorWindow {
         let x = self.content_x(f32::from(event.position.x));
         let position = self.view.transform.position;
         let total = self.total_duration();
-        let hit = edits::hit_test(
-            self.timeline.segments(kind),
-            lane,
-            x,
-            position,
-            secs_per_pixel,
-        );
+        let (kind, hit) = self.row_hit(kind, lane, x, position, secs_per_pixel);
         let press_time = self.time_at(f32::from(event.position.x), viewport_width);
         // The whole geometry of the press, so a scripted click's predicted
         // seconds can be checked against what the app actually resolved.
@@ -4848,6 +5247,22 @@ impl EditorWindow {
         // `onMouseDown`, and inside `createMouseDownDrag`).
         cx.stop_propagation();
 
+        if kind == TrackKind::Text
+            && self
+                .project
+                .timeline
+                .as_ref()
+                .and_then(|timeline| timeline.text_segments.get(index))
+                .is_some_and(|segment| segment.title_card.is_some())
+        {
+            self.set_selection(Some(Selection::single(kind, index)), cx);
+            self.seek_to_time(press_time, cx);
+            if self.split_mode || matches!(hit, Hit::Handle { .. }) {
+                self.show_notice(tr::editor::title_cards::dedicated_controls(), window, cx);
+            }
+            return;
+        }
+
         if self.split_mode {
             self.split_at_pointer(
                 kind,
@@ -4901,7 +5316,8 @@ impl EditorWindow {
             (TrackKind::Clip, Hit::Body { .. }) => None,
             (_, Hit::Handle { start: true, .. }) => {
                 let min = edits::min_segment_duration(kind, secs_per_pixel);
-                let bounds = edits::trim_start_bounds(segments, lane, index, min, total);
+                let neighbours = self.timeline.family_neighbour_segments(kind);
+                let bounds = edits::trim_start_bounds(&neighbours, lane, index, min, total);
                 Some(DragKind::TrimStart {
                     start,
                     bounds: audio_segment.map_or(bounds, |segment| {
@@ -4911,7 +5327,22 @@ impl EditorWindow {
             }
             (_, Hit::Handle { start: false, .. }) => {
                 let min = edits::min_segment_duration(kind, secs_per_pixel);
-                let bounds = edits::trim_end_bounds(segments, lane, index, min, total);
+                let editable_end = if matches!(kind, TrackKind::Image | TrackKind::Shape) {
+                    f64::INFINITY
+                } else {
+                    audio_segment
+                        .and_then(|segment| {
+                            segment
+                                .duration
+                                .filter(|duration| duration.is_finite() && *duration > 0.)
+                                .map(|duration| {
+                                    (segment.start + duration - segment.trim_start).max(total)
+                                })
+                        })
+                        .unwrap_or(total)
+                };
+                let neighbours = self.timeline.family_neighbour_segments(kind);
+                let bounds = edits::trim_end_bounds(&neighbours, lane, index, min, editable_end);
                 Some(DragKind::TrimEnd {
                     end,
                     bounds: audio_segment.map_or(bounds, |segment| {
@@ -4922,7 +5353,16 @@ impl EditorWindow {
             (_, Hit::Body { .. }) => Some(DragKind::Move {
                 start,
                 end,
-                bounds: edits::move_bounds(segments, lane, index, total),
+                bounds: edits::move_bounds(
+                    &self.timeline.family_neighbour_segments(kind),
+                    lane,
+                    index,
+                    if matches!(kind, TrackKind::Audio | TrackKind::Image | TrackKind::Shape) {
+                        f64::INFINITY
+                    } else {
+                        total
+                    },
+                ),
             }),
             (_, Hit::Empty) => None,
         };
@@ -4963,8 +5403,104 @@ impl EditorWindow {
             multi: modifiers.1,
             press_time,
             paused: true,
+            lane,
+            lane_target: None,
         });
         cx.notify();
+    }
+
+    fn toggle_row_hidden(
+        &mut self,
+        kind: TrackKind,
+        lane: u32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let hidden = self
+            .project
+            .timeline
+            .as_ref()
+            .is_some_and(|timeline| edits::row_hidden(timeline, kind, lane));
+        if self.edit(
+            |timeline| edits::set_row_enabled(timeline, kind, lane, hidden),
+            window,
+            cx,
+        ) {
+            self.note_edit("row-visibility", Some(kind));
+        }
+    }
+
+    fn segment_lane_target(
+        &self,
+        kind: TrackKind,
+        source_lane: u32,
+        pointer_y: f32,
+    ) -> Option<edits::LaneTarget> {
+        if !(kind.is_overlay() || matches!(kind, TrackKind::Audio | TrackKind::Style)) {
+            return None;
+        }
+        let bounds = self.timeline_scroll.bounds();
+        let content_y =
+            pointer_y - f32::from(bounds.origin.y) - f32::from(self.timeline_scroll.offset().y);
+        let height = self.timeline.track_height();
+        let stride = height + TRACK_ROW_GAP;
+        let family = self
+            .timeline
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.kind.same_family(kind))
+            .collect::<Vec<_>>();
+        let (first_index, first) = family.first().copied()?;
+        let (last_index, _) = family.last().copied()?;
+        let top = first_index as f32 * stride;
+        let bottom = last_index as f32 * stride + height;
+        if content_y < top {
+            return (content_y >= top - stride)
+                .then_some(edits::LaneTarget::Insert(first.lane + 1));
+        }
+        if content_y >= bottom {
+            return (content_y < bottom + stride).then_some(edits::LaneTarget::Insert(0));
+        }
+        let index = ((content_y + TRACK_ROW_GAP / 2.) / stride).floor() as usize;
+        let row = family
+            .iter()
+            .find(|(row_index, _)| *row_index == index)
+            .map(|(_, row)| **row)?;
+        (row.lane != source_lane).then_some(edits::LaneTarget::Existing(row.lane))
+    }
+
+    fn drop_segment_on_lane(
+        &mut self,
+        kind: TrackKind,
+        index: usize,
+        target: edits::LaneTarget,
+        cx: &mut Context<Self>,
+    ) {
+        let mut moved = None;
+        self.edit_live(
+            |timeline| {
+                moved = edits::move_segment_to_lane(timeline, kind, index, target);
+                moved.is_some()
+            },
+            cx,
+        );
+        let Some(next) = moved else {
+            return;
+        };
+        if let Some(timeline) = self.project.timeline.as_ref() {
+            match kind {
+                TrackKind::Audio => {
+                    self.tracks.audio = edits::used_lane_count(&timeline.audio_segments).max(1)
+                }
+                TrackKind::Style => {
+                    self.tracks.style = edits::used_lane_count(&timeline.style_segments)
+                }
+                _ => self.tracks.overlay = timeline.overlay_layer_count(),
+            }
+        }
+        self.rebuild_timeline();
+        self.set_selection(Some(Selection::single(kind, next)), cx);
     }
 
     fn lane_reorderable(kind: TrackKind) -> bool {
@@ -5021,6 +5557,21 @@ impl EditorWindow {
                 content_y < *index as f32 * stride + self.timeline.track_height() / 2.
             })
             .unwrap_or(remaining.len())
+    }
+
+    pub(crate) fn asset_drop_geometry(
+        &self,
+        window: &Window,
+    ) -> crate::editor_assets::AssetDropGeometry<'_> {
+        crate::editor_assets::AssetDropGeometry {
+            bounds: self.timeline_scroll.bounds(),
+            scroll_y: self.timeline_scroll.offset().y,
+            row_height: self.timeline.track_height(),
+            rows: &self.timeline.rows,
+            viewport_width: f32::from(window.viewport_size().width),
+            transform: self.view.transform,
+            total: self.total_duration(),
+        }
     }
 
     fn lane_reorder_position_valid(&self, source: TrackRow, x: f32, y: f32) -> bool {
@@ -5197,24 +5748,20 @@ impl EditorWindow {
             return;
         }
         let rows = self.lane_reorder_rows(reorder.source);
-        let changed = if let Some(from) = reorder.source.kind.overlay_track(reorder.source.lane) {
-            let available = rows
-                .iter()
-                .filter_map(|row| row.kind.overlay_track(row.lane))
-                .collect::<Vec<_>>();
-            edits::reorder_overlay_track(&mut self.project, &available, from, reorder.target_index)
-        } else {
-            rows.get(reorder.target_index).is_some_and(|target| {
-                self.project.timeline.as_mut().is_some_and(|timeline| {
+        let changed = rows.get(reorder.target_index).is_some_and(|target| {
+            self.project.timeline.as_mut().is_some_and(|timeline| {
+                if reorder.source.kind.is_overlay() {
+                    edits::reorder_overlay_layer(timeline, reorder.source.lane, target.lane)
+                } else {
                     edits::reorder_track_lane(
                         timeline,
                         reorder.source.kind,
                         reorder.source.lane,
                         target.lane,
                     )
-                })
+                }
             })
-        };
+        });
         if changed {
             self.project_changed(window, cx);
             self.note_edit("reorder-lane", Some(reorder.source.kind));
@@ -5299,6 +5846,8 @@ impl EditorWindow {
             multi: false,
             press_time: preview,
             paused: true,
+            lane: 0,
+            lane_target: None,
         });
         cx.notify();
     }
@@ -5366,6 +5915,7 @@ impl EditorWindow {
     fn drag_mouse_move(
         &mut self,
         x: f32,
+        y: f32,
         snap_disabled: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -5398,6 +5948,23 @@ impl EditorWindow {
 
         match drag.kind {
             DragKind::Move { start, end, bounds } => {
+                let target = self.segment_lane_target(drag.track, drag.lane, y);
+                let bounds = if target.is_some() {
+                    let limit = if matches!(
+                        drag.track,
+                        TrackKind::Audio | TrackKind::Image | TrackKind::Shape
+                    ) {
+                        f64::INFINITY
+                    } else {
+                        self.total_duration()
+                    };
+                    edits::DragBounds {
+                        min: -start,
+                        max: limit - end,
+                    }
+                } else {
+                    bounds
+                };
                 let raw = bounds.clamp(delta);
                 let mut shift = raw;
                 let mut engaged = None;
@@ -5422,6 +5989,16 @@ impl EditorWindow {
                     },
                     cx,
                 );
+                let resolved = target.and_then(|target| {
+                    let timeline = self.project.timeline.as_ref()?;
+                    Some(edits::resolve_lane_target(timeline, track, index, target))
+                });
+                if let Some(drag) = self.drag.as_mut()
+                    && drag.lane_target != resolved
+                {
+                    drag.lane_target = resolved;
+                    cx.notify();
+                }
             }
             DragKind::TrimStart { start, bounds } => {
                 let (snapped, engaged) =
@@ -5995,10 +6572,24 @@ impl EditorWindow {
         change: impl FnOnce(&mut TimelineConfiguration) -> bool,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.voiceover.is_busy() {
+            return false;
+        }
         let Some(timeline) = self.project.timeline.as_mut() else {
             return false;
         };
         if !change(timeline) {
+            return false;
+        }
+        if let Err(message) = self.normalize_title_card_edit() {
+            self.sidebar.title_cards.error = Some(message.clone());
+            self.notice_seq += 1;
+            self.notice = Some(EditorNotice {
+                id: self.notice_seq,
+                message: message.into(),
+            });
+            self.rebuild_timeline();
+            cx.notify();
             return false;
         }
         self.history.record(&self.project);
@@ -6017,6 +6608,8 @@ impl EditorWindow {
             &self.project,
         );
         self.set_selection(None, cx);
+        self.audio_library.placement = Default::default();
+        self.load_audio_library(false, cx);
         cx.notify();
     }
 
@@ -6028,14 +6621,20 @@ impl EditorWindow {
             self.audio_picker_generation,
             &self.project,
         );
+        self.load_audio_library(false, cx);
         cx.notify();
     }
 
     fn begin_audio_import(
         &mut self,
+        start: f64,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AudioImportRequest> {
+        if self.asset_import_busy() || self.voiceover.is_busy() || !self.project_ready() {
+            self.show_notice(tr::editor::assets::busy(), window, cx);
+            return None;
+        }
         self.audio_picker?;
         if self.audio_import_pending == Some(self.audio_picker_generation) {
             return None;
@@ -6049,7 +6648,19 @@ impl EditorWindow {
             self.close_stale_audio_picker(window, cx);
             return None;
         }
-        let request = request.clone();
+        let Some(request) =
+            request
+                .clone()
+                .capture_start(start, self.total_duration(), &self.project)
+        else {
+            self.show_notice(
+                tr::editor::window::audio_import::move_playhead(),
+                window,
+                cx,
+            );
+            return None;
+        };
+        self.audio_picker_request = Some(request.clone());
         self.audio_import_pending = Some(request.generation);
         cx.notify();
         Some(request)
@@ -6068,30 +6679,58 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(request) = self.begin_audio_import(window, cx) else {
+        let Some(metadata) = self
+            .audio_library
+            .tracks
+            .get(id)
+            .and_then(|result| result.as_ref().ok())
+            .cloned()
+        else {
+            self.load_audio_library(true, cx);
+            return;
+        };
+        let start = self.audio_library.placement.start(self.playhead);
+        let Some(request) = self.begin_audio_import(start, window, cx) else {
             return;
         };
         let project_path = self.project_path.clone();
         cx.spawn_in(window, async move |this, cx| {
             let imported = cx
                 .background_executor()
-                .spawn(
-                    async move { crate::editor_audio::copy_library_track(&project_path, id, name) },
-                )
+                .spawn(async move {
+                    crate::editor_audio::prepare_library_track(&project_path, id, name, &metadata)
+                })
                 .await;
             this.update_in(cx, |this, window, cx| {
-                this.finish_audio_import(
-                    request,
-                    imported.map(|(path, name, duration)| {
-                        Some(ImportedAudio {
-                            path,
-                            name,
-                            duration,
-                        })
-                    }),
-                    window,
-                    cx,
-                );
+                if !this.accepts_audio_import(&request) {
+                    this.finish_audio_import(request, Ok(None), window, cx);
+                    return;
+                }
+                match imported.and_then(crate::editor_audio::PreparedLibraryTrack::publish) {
+                    Ok(mut track) => {
+                        let imported = ImportedAudio {
+                            path: track.path.clone(),
+                            name: track.name.clone(),
+                            duration: track.duration,
+                        };
+                        let applied =
+                            this.finish_audio_import(request, Ok(Some(imported)), window, cx);
+                        if applied
+                            || this.project.timeline.as_ref().is_some_and(|timeline| {
+                                timeline
+                                    .audio_segments
+                                    .iter()
+                                    .any(|segment| segment.path == track.path)
+                            })
+                        {
+                            track.keep();
+                        }
+                    }
+                    Err(error) => {
+                        this.finish_audio_import(request, Err(error), window, cx);
+                        this.load_audio_library(true, cx);
+                    }
+                }
             })
             .ok();
         })
@@ -6099,10 +6738,22 @@ impl EditorWindow {
     }
 
     pub(crate) fn import_audio_from_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(request) = self.begin_audio_import(window, cx) else {
+        let Some(request) = self.begin_audio_import(self.playhead, window, cx) else {
             return;
         };
         self.import_audio_from_file(request, window, cx);
+    }
+
+    fn accepts_audio_import(&self, request: &AudioImportRequest) -> bool {
+        self.audio_import_pending == Some(request.generation)
+            && self.project_ready()
+            && !self.voiceover.is_busy()
+            && request.accepts(
+                self.audio_picker,
+                self.audio_picker_generation,
+                &self.project,
+            )
+            && request.accepts_total(self.total_duration())
     }
 
     fn finish_audio_import(
@@ -6111,54 +6762,67 @@ impl EditorWindow {
         imported: Result<Option<ImportedAudio>, String>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         if self.audio_import_pending != Some(request.generation) {
-            return;
+            return false;
         }
+        let accepts = self.accepts_audio_import(&request);
         self.audio_import_pending = None;
-        if !request.accepts(
-            self.audio_picker,
-            self.audio_picker_generation,
-            &self.project,
-        ) {
+        if !accepts {
             if self.audio_picker == Some(request.picker)
                 && self.audio_picker_generation == request.generation
             {
-                self.close_stale_audio_picker(window, cx);
+                self.audio_picker = None;
+                self.audio_picker_request = None;
+                self.show_notice(tr::editor::audio::library::timing_changed(), window, cx);
             } else {
                 cx.notify();
             }
-            return;
+            return false;
         }
         let imported = match imported {
             Ok(Some(imported)) => imported,
             Ok(None) => {
                 cx.notify();
-                return;
+                return false;
             }
             Err(error) => {
                 tracing::error!("importing audio failed: {error}");
-                cx.notify();
-                return;
+                self.show_notice(error, window, cx);
+                return false;
             }
         };
-        match request.picker {
-            crate::editor_audio::AudioPicker::Add { lane } => {
-                self.commit_audio_import(lane, imported, window, cx);
+        let record = match crate::editor_audio::record_audio_asset(
+            &self.project_path,
+            &imported.path,
+            &imported.name,
+        ) {
+            Ok(record) => record,
+            Err(error) => {
+                self.show_notice(error, window, cx);
+                return false;
             }
-            crate::editor_audio::AudioPicker::Replace { index } => {
-                self.replace_audio_segment(
-                    index,
-                    imported.path,
-                    imported.name,
-                    imported.duration,
-                    window,
-                    cx,
-                );
+        };
+        let applied = match request.picker {
+            crate::editor_audio::AudioPicker::Add { .. } => {
+                self.commit_audio_request(&request, imported, window, cx)
             }
+            crate::editor_audio::AudioPicker::Replace { index } => self.replace_audio_segment(
+                index,
+                imported.path,
+                imported.name,
+                imported.duration,
+                window,
+                cx,
+            ),
+        };
+        if !applied {
+            return false;
         }
         self.audio_picker = None;
+        self.remember_project_asset(record, cx);
         cx.notify();
+        true
     }
 
     fn import_audio_from_file(
@@ -6181,14 +6845,7 @@ impl EditorWindow {
             let imported = match source {
                 Some(source)
                     if this
-                        .update_in(cx, |this, _, _| {
-                            this.audio_import_pending == Some(request.generation)
-                                && request.accepts(
-                                    this.audio_picker,
-                                    this.audio_picker_generation,
-                                    &this.project,
-                                )
-                        })
+                        .update_in(cx, |this, _, _| this.accepts_audio_import(&request))
                         .unwrap_or(false) =>
                 {
                     cx.background_executor()
@@ -6214,7 +6871,7 @@ impl EditorWindow {
         duration: f64,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         let changed = self.edit(
             |timeline| replace_audio_asset(timeline, index, path, name, duration),
             window,
@@ -6223,6 +6880,7 @@ impl EditorWindow {
         if changed {
             self.note_edit("replace-audio", Some(TrackKind::Audio));
         }
+        changed
     }
 
     /// `handleGenerateZoomSegments` (`TL/ZoomTrack.tsx:84-93`): read the
@@ -6272,6 +6930,8 @@ impl EditorWindow {
                     cx,
                 );
                 if applied {
+                    this.tracks.zoom = true;
+                    this.rebuild_timeline();
                     this.note_edit("generate-zoom", Some(TrackKind::Zoom));
                 }
             })
@@ -6338,33 +6998,12 @@ impl EditorWindow {
             return;
         };
         let placement = match kind {
-            TrackKind::Text => {
-                let lane_segments: Vec<_> = timeline
-                    .text_segments
-                    .iter()
-                    .filter(|segment| segment.track == lane)
-                    .cloned()
-                    .collect();
-                edits::find_placement(&lane_segments, time, length, total)
-            }
-            TrackKind::Mask => {
-                let lane_segments: Vec<_> = timeline
-                    .mask_segments
-                    .iter()
-                    .filter(|segment| segment.track == lane)
-                    .cloned()
-                    .collect();
-                edits::find_placement(&lane_segments, time, length, total)
-            }
-            TrackKind::Shape => {
-                let lane_segments: Vec<_> = timeline
-                    .shape_segments
-                    .iter()
-                    .filter(|segment| segment.track == lane)
-                    .cloned()
-                    .collect();
-                edits::find_placement(&lane_segments, time, length, total)
-            }
+            TrackKind::Text | TrackKind::Mask | TrackKind::Shape => edits::find_placement(
+                &edits::overlay_lane_spans(timeline, lane),
+                time,
+                length,
+                total,
+            ),
             TrackKind::Scene => timeline::new_scene_segment(&self.timeline, time),
             _ => None,
         };
@@ -6372,9 +7011,9 @@ impl EditorWindow {
             return;
         };
         match kind {
-            TrackKind::Text => self.tracks.text = self.tracks.text.max(lane + 1),
-            TrackKind::Mask => self.tracks.mask = self.tracks.mask.max(lane + 1),
-            TrackKind::Shape => self.tracks.shape = self.tracks.shape.max(lane + 1),
+            TrackKind::Text | TrackKind::Mask | TrackKind::Shape => {
+                self.tracks.overlay = self.tracks.overlay.max(lane + 1)
+            }
             TrackKind::Scene => self.tracks.scene = true,
             _ => {}
         }
@@ -6490,6 +7129,13 @@ impl EditorWindow {
             self.publish_project();
         }
 
+        if drag.moved
+            && matches!(drag.kind, DragKind::Move { .. })
+            && let Some(target) = drag.lane_target
+        {
+            self.drop_segment_on_lane(drag.track, drag.index, target, cx);
+        }
+
         if drag.paused {
             let config = self.project.clone();
             self.history.resume(&config);
@@ -6555,13 +7201,7 @@ impl EditorWindow {
         let secs_per_pixel = self.secs_per_pixel(viewport_width);
         let x = self.content_x(window_x);
         let position = self.view.transform.position;
-        let hit = edits::hit_test(
-            self.timeline.segments(kind),
-            lane,
-            x,
-            position,
-            secs_per_pixel,
-        );
+        let (kind, hit) = self.row_hit(kind, lane, x, position, secs_per_pixel);
 
         let hovered = match hit {
             Hit::Body { index } | Hit::Handle { index, .. } => Some((kind, lane, index)),
@@ -6717,7 +7357,11 @@ impl EditorWindow {
         let Some(selection) = self.selection.clone() else {
             return;
         };
-        let deleted = if selection.track == TrackKind::Caption {
+        let deleted = if let Some(deleted) =
+            self.delete_title_card_selection(&selection, window, cx)
+        {
+            deleted
+        } else if selection.track == TrackKind::Caption {
             self.edit_caption_project(
                 |project| delete_caption_segments(project, &selection.indices),
                 window,
@@ -6746,52 +7390,53 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if kind.is_overlay()
+            && self.project.timeline.as_ref().is_some_and(|timeline| {
+                timeline
+                    .text_segments
+                    .iter()
+                    .any(|segment| segment.track == lane && segment.title_card.is_some())
+            })
+        {
+            self.title_card_error(
+                tr::editor::title_cards::dedicated_controls().into(),
+                window,
+                cx,
+            );
+            return;
+        }
         if self
             .selection
             .as_ref()
-            .is_some_and(|selection| selection.track == kind)
+            .is_some_and(|selection| selection.track.same_family(kind))
         {
             self.set_selection(None, cx);
         }
-        let available = self
-            .timeline
-            .rows
-            .iter()
-            .filter_map(|row| row.kind.overlay_track(row.lane))
-            .collect::<Vec<_>>();
         self.edit_timeline_project(
-            |project| edits::delete_track_lane_and_order(project, &available, kind, lane),
+            |project| {
+                project.timeline.as_mut().is_some_and(|timeline| {
+                    if kind.is_overlay() {
+                        edits::delete_overlay_layer(timeline, lane)
+                    } else {
+                        edits::delete_track_lane(timeline, kind, lane)
+                    }
+                })
+            },
             window,
             cx,
         );
-        let count = match kind {
-            TrackKind::Style => &mut self.tracks.style,
-            TrackKind::Image => &mut self.tracks.image,
-            TrackKind::Text => &mut self.tracks.text,
-            TrackKind::Mask => &mut self.tracks.mask,
-            TrackKind::Shape => &mut self.tracks.shape,
-            TrackKind::Audio => &mut self.tracks.audio,
-            _ => return,
-        };
-        let current = *count;
         let used = match (kind, self.project.timeline.as_ref()) {
             (TrackKind::Style, Some(timeline)) => edits::used_lane_count(&timeline.style_segments),
-            (TrackKind::Image, Some(timeline)) => edits::used_lane_count(&timeline.image_segments),
-            (TrackKind::Text, Some(timeline)) => edits::used_lane_count(&timeline.text_segments),
-            (TrackKind::Mask, Some(timeline)) => edits::used_lane_count(&timeline.mask_segments),
-            (TrackKind::Shape, Some(timeline)) => edits::used_lane_count(&timeline.shape_segments),
             (TrackKind::Audio, Some(timeline)) => edits::used_lane_count(&timeline.audio_segments),
+            (_, Some(timeline)) if kind.is_overlay() => timeline.overlay_layer_count(),
             _ => 0,
         };
-        let next = used.max(current.saturating_sub(1));
+        let next = lane_minimum_after_delete(kind, self.tracks.count(kind), lane, used);
         match kind {
             TrackKind::Style => self.tracks.style = next,
-            TrackKind::Image => self.tracks.image = next,
-            TrackKind::Text => self.tracks.text = next,
-            TrackKind::Mask => self.tracks.mask = next,
-            TrackKind::Shape => self.tracks.shape = next,
             TrackKind::Audio => self.tracks.audio = next,
-            _ => {}
+            _ if kind.is_overlay() => self.tracks.overlay = next,
+            _ => return,
         }
         self.hovered_gutter = None;
         self.rebuild_timeline();
@@ -7537,10 +8182,18 @@ impl EditorWindow {
                     })
                     .collect()
             }
-            ToolbarMenu::PreviewSpeed => cap_editor::PreviewSpeed::ALL
-                .iter()
-                .map(|speed| ui::MenuItem::new(speed.label(), *speed == self.preview_speed))
-                .collect(),
+            ToolbarMenu::VideoSpeed => {
+                let current = self.uniform_video_speed();
+                edits::VIDEO_SPEEDS
+                    .iter()
+                    .map(|speed| {
+                        ui::MenuItem::new(
+                            format_clip_speed(*speed),
+                            current.is_some_and(|current| (current - speed).abs() < 1e-6),
+                        )
+                    })
+                    .collect()
+            }
         }
     }
 
@@ -7614,9 +8267,9 @@ impl EditorWindow {
                     true
                 });
             }
-            ToolbarMenu::PreviewSpeed => {
-                if let Some(speed) = cap_editor::PreviewSpeed::ALL.get(index) {
-                    self.set_preview_speed(*speed, window, cx);
+            ToolbarMenu::VideoSpeed => {
+                if let Some(speed) = edits::VIDEO_SPEEDS.get(index) {
+                    self.set_video_speed(*speed, window, cx);
                 }
             }
         }
@@ -7632,7 +8285,7 @@ impl EditorWindow {
             ui::Menu::editor(&self.theme, "toolbar-menu", items, &menu.state)
                 .min_width(match kind {
                     ToolbarMenu::AspectRatio => px(200.),
-                    ToolbarMenu::PreviewSpeed => px(96.),
+                    ToolbarMenu::VideoSpeed => px(96.),
                 })
                 .on_select(cx.listener(move |this, index: &usize, window, cx| {
                     this.choose_toolbar_menu(kind, *index, window, cx);
@@ -7645,31 +8298,43 @@ impl EditorWindow {
         )
     }
 
-    /// Preview only: the playback engine and the audio callback read the
-    /// shared speed on their next frame, so a running playback changes pace
-    /// in place without a restart, and export never sees it.
-    fn set_preview_speed(
-        &mut self,
-        speed: cap_editor::PreviewSpeed,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if speed == self.preview_speed {
+    fn uniform_video_speed(&self) -> Option<f64> {
+        self.project
+            .timeline
+            .as_ref()
+            .and_then(edits::uniform_clip_speed)
+    }
+
+    /// Retimes every clip, so the preview, the timeline and the export all
+    /// follow, and keeps the playhead on the same moment of the recording.
+    fn set_video_speed(&mut self, speed: f64, window: &mut Window, cx: &mut Context<Self>) {
+        let old_total = self.total_duration();
+        let time = self.playhead;
+        let was_playing = self.playing;
+        if self.uniform_video_speed() == Some(speed) {
             return;
         }
-        self.preview_speed = speed;
-        if let Some(instance) = &self.instance {
-            instance.set_preview_speed(speed);
+        if was_playing {
+            self.stop_playback(cx);
         }
-        tracing::info!(speed = speed.as_f64(), "preview speed");
-        if !crate::store::set_store_setting(
-            crate::store::GENERAL_SETTINGS,
-            crate::store::EDITOR_PREVIEW_SPEED_KEY,
-            serde_json::json!(speed.as_f64()),
-        ) {
-            tracing::warn!("failed to persist preview speed");
+        let Some(timeline) = self.project.timeline.as_mut() else {
+            return;
+        };
+        let changed = edits::set_all_clips_timescale(timeline, speed);
+        if changed {
+            self.project_changed(window, cx);
+            self.note_edit("video-speed", Some(TrackKind::Clip));
         }
-        self.invalidate_playback_chrome(window, cx);
+        let target = if old_total > 0.0 {
+            time * self.total_duration() / old_total
+        } else {
+            time
+        };
+        if was_playing {
+            self.start_playback(target, cx);
+        } else {
+            self.seek_to_time(target, cx);
+        }
         cx.notify();
     }
 
@@ -7679,6 +8344,7 @@ impl EditorWindow {
             || self.text_menu.is_some()
             || self.add_track.is_some()
             || self.clip_speed.is_some()
+            || self.track_menu.is_some()
             || self.sidebar.color_picker.is_some()
             || self.presets_menu.is_some()
             || self.preset_dialog.is_some()
@@ -7688,14 +8354,15 @@ impl EditorWindow {
             || self.frame_controls.is_open()
     }
 
-    fn step_preview_speed(&mut self, faster: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let next = if faster {
-            self.preview_speed.faster()
-        } else {
-            self.preview_speed.slower()
-        };
-        if let Some(next) = next {
-            self.set_preview_speed(next, window, cx);
+    fn step_video_speed(&mut self, faster: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self
+            .project
+            .timeline
+            .as_ref()
+            .and_then(|timeline| timeline.segments.first())
+            .map_or(1.0, |segment| segment.timescale);
+        if let Some(next) = edits::next_video_speed(current, faster) {
+            self.set_video_speed(next, window, cx);
         }
     }
 
@@ -7746,6 +8413,9 @@ impl EditorWindow {
     }
 
     pub(crate) fn busy_reason(&self) -> Option<&'static str> {
+        if self.voiceover.is_busy() {
+            return Some(tr::editor::voiceover::busy());
+        }
         if self
             .export
             .as_ref()
@@ -8015,8 +8685,22 @@ impl EditorWindow {
                     true
                 });
                 self.tracks.keyboard = next;
+                let empty = self
+                    .project
+                    .timeline
+                    .as_ref()
+                    .is_none_or(|timeline| timeline.keyboard_segments.is_empty());
+                if next && empty {
+                    self.generate_keyboard_segments_clicked(window, cx);
+                }
             }
             TrackKind::Scene => self.tracks.scene = next,
+            TrackKind::Zoom => {
+                if !next {
+                    self.clear_track_segments(kind, window, cx);
+                }
+                self.tracks.zoom = next;
+            }
             // Showing the lane is all the tile does: an empty lane draws its
             // own two openings, and hiding one that has shots keeps them.
             TrackKind::ThreeD => self.tracks.three_d = next,
@@ -8037,8 +8721,21 @@ impl EditorWindow {
 
     fn add_track_kind(&mut self, kind: TrackKind, window: &mut Window, cx: &mut Context<Self>) {
         match kind {
-            TrackKind::Style | TrackKind::Image => {
-                let lane_count = self.tracks.count(kind);
+            TrackKind::Image => {
+                let length = self.total_duration().min(3.0);
+                let lane = self.project.timeline.as_ref().map_or(0, |timeline| {
+                    edits::overlay_front_layer(timeline, self.playhead, self.playhead + length)
+                });
+                self.import_image_for_lane(lane, self.playhead, window, cx);
+            }
+            TrackKind::Style => {
+                let lane_count = self.tracks.count(kind).max(
+                    self.timeline
+                        .rows
+                        .iter()
+                        .filter(|row| row.kind == kind)
+                        .count() as u32,
+                );
                 let segments = self.timeline.segments(kind);
                 let length = self.total_duration().min(3.0);
                 let lane = (0..lane_count)
@@ -8050,11 +8747,7 @@ impl EditorWindow {
                         })
                     })
                     .unwrap_or(lane_count);
-                if kind == TrackKind::Style {
-                    self.add_style_at(lane, self.playhead, window, cx);
-                } else {
-                    self.import_image_for_lane(lane, self.playhead, window, cx);
-                }
+                self.add_style_at(lane, self.playhead, window, cx);
             }
             TrackKind::Audio => {
                 let segments = self
@@ -8098,95 +8791,14 @@ impl EditorWindow {
         let total = self.total_duration();
         let length = (1.0_f64).max(secs_per_pixel * 80.).min(total);
         let time = self.playhead.max(0.0);
-        let lane_count = match kind {
-            TrackKind::Text => self
-                .tracks
-                .text
-                .max(edits::used_lane_count(&timeline.text_segments)),
-            TrackKind::Mask => self
-                .tracks
-                .mask
-                .max(edits::used_lane_count(&timeline.mask_segments)),
-            TrackKind::Shape => self
-                .tracks
-                .shape
-                .max(edits::used_lane_count(&timeline.shape_segments)),
-            _ => return,
-        };
-
-        let mut lane = lane_count;
-        let mut placement = None;
-        for index in 0..lane_count {
-            let candidate = match kind {
-                TrackKind::Text => {
-                    let lane_segments: Vec<_> = timeline
-                        .text_segments
-                        .iter()
-                        .filter(|segment| segment.track == index)
-                        .cloned()
-                        .collect();
-                    edits::place_segment_at_time(&lane_segments, time, length, total)
-                }
-                TrackKind::Mask => {
-                    let lane_segments: Vec<_> = timeline
-                        .mask_segments
-                        .iter()
-                        .filter(|segment| segment.track == index)
-                        .cloned()
-                        .collect();
-                    edits::place_segment_at_time(&lane_segments, time, length, total)
-                }
-                TrackKind::Shape => {
-                    let lane_segments: Vec<_> = timeline
-                        .shape_segments
-                        .iter()
-                        .filter(|segment| segment.track == index)
-                        .cloned()
-                        .collect();
-                    edits::place_segment_at_time(&lane_segments, time, length, total)
-                }
-                _ => None,
-            };
-            if let Some(found) = candidate {
-                lane = index;
-                placement = Some(found);
-                break;
-            }
+        if !kind.is_overlay() {
+            return;
         }
-        if placement.is_none() {
-            placement = edits::place_segment_at_time(
-                &[] as &[cap_project::TextSegment],
-                time,
-                length,
-                total,
-            );
-        }
-        let Some((start, end)) = placement else {
-            match kind {
-                TrackKind::Text => self.tracks.text += 1,
-                TrackKind::Mask => self.tracks.mask += 1,
-                TrackKind::Shape => self.tracks.shape += 1,
-                _ => {}
-            }
-            self.rebuild_timeline();
+        let Some((lane, start, end)) = edits::place_overlay_at_time(timeline, time, length, total)
+        else {
             return;
         };
-
-        self.tracks.text = if kind == TrackKind::Text {
-            lane_count.max(lane + 1)
-        } else {
-            self.tracks.text
-        };
-        self.tracks.mask = if kind == TrackKind::Mask {
-            lane_count.max(lane + 1)
-        } else {
-            self.tracks.mask
-        };
-        self.tracks.shape = if kind == TrackKind::Shape {
-            lane_count.max(lane + 1)
-        } else {
-            self.tracks.shape
-        };
+        self.tracks.overlay = self.tracks.overlay.max(lane + 1);
 
         let new_shape =
             (kind == TrackKind::Shape).then(|| self.new_shape_segment(start, end, lane));
@@ -8372,7 +8984,8 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.sidebar.picking_image {
+        if self.asset_import_busy() {
+            self.show_notice(tr::editor::assets::busy(), window, cx);
             return;
         }
         self.end_field_edit(cx);
@@ -8450,14 +9063,31 @@ impl EditorWindow {
         cx.notify();
     }
 
-    fn commit_image_import(
+    pub(crate) fn commit_image_import(
         &mut self,
-        mut lane: u32,
+        lane: u32,
         time: f64,
         imported: crate::import::ImportedEditorImage,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let record = match crate::asset_library::ensure_record(
+            &self.project_path,
+            &crate::asset_library::AssetRecord {
+                path: imported.path.clone(),
+                name: imported.name.clone(),
+                kind: crate::asset_library::AssetKind::Photo,
+                source: None,
+                rendition: None,
+            },
+        ) {
+            Ok(record) => record,
+            Err(error) => {
+                self.sidebar.image_import_error = Some(error.clone());
+                self.show_notice(error, window, cx);
+                return;
+            }
+        };
         if !edits::ensure_timeline(&mut self.project, &self.clip_display_durations) {
             self.sidebar.image_import_error =
                 Some(tr::editor::window::image::recording_unavailable().into());
@@ -8477,21 +9107,11 @@ impl EditorWindow {
             cx.notify();
             return;
         };
-        let length = total.min(3.0);
-        let mut segments: Vec<_> = timeline
-            .image_segments
-            .iter()
-            .filter(|segment| segment.track == lane)
-            .cloned()
-            .collect();
-        if edits::find_placement(&segments, time, length, total).is_none() {
-            lane = self
-                .tracks
-                .image
-                .max(edits::used_lane_count(&timeline.image_segments));
-            segments.clear();
-        }
-        let Some((start, end)) = edits::find_placement(&segments, time, length, total) else {
+        let Some((lane, start, end)) =
+            crate::asset_library::image_placement(timeline, lane, time, total)
+        else {
+            self.sidebar.image_import_error = Some(tr::editor::assets::move_playhead().into());
+            self.show_notice(tr::editor::assets::move_playhead(), window, cx);
             return;
         };
         let output = self
@@ -8504,7 +9124,6 @@ impl EditorWindow {
         } else {
             cap_project::XY::new(0.3 * ratio, 0.3)
         };
-        self.tracks.image = self.tracks.image.max(lane + 1);
         let mut index = 0;
         if self.edit(
             |timeline| {
@@ -8528,27 +9147,108 @@ impl EditorWindow {
             self.sidebar.image_import_error = None;
             self.set_selection(Some(Selection::single(TrackKind::Image, index)), cx);
             self.seek_to_time(start, cx);
+            self.remember_project_asset(record, cx);
         }
     }
 
-    fn commit_audio_import(
+    fn commit_audio_request(
         &mut self,
-        lane: u32,
+        request: &AudioImportRequest,
         imported: ImportedAudio,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         let total = self.total_duration();
-        let has_source = imported.duration > 0.0;
-        let source_duration = if has_source { imported.duration } else { total };
-        let length = edits::MIN_AUDIO_SEGMENT_DURATION.max(source_duration.min(if total > 0.0 {
-            total
-        } else {
-            source_duration
-        }));
-        let max_start = (total - length).max(0.0);
-        let start = self.playhead.max(0.0).min(max_start);
-        let end = start + length;
+        let next_lane = self.tracks.audio;
+        let mut result = None;
+        let changed = self.edit_timeline_project(
+            |project| {
+                let added = crate::editor_audio::apply_audio_add(
+                    project,
+                    request,
+                    next_lane,
+                    total,
+                    (imported.path, imported.name, imported.duration),
+                );
+                let changed = added.is_ok();
+                result = Some(added);
+                changed
+            },
+            window,
+            cx,
+        );
+        if let Some(Err(error)) = &result {
+            self.show_notice(error.clone(), window, cx);
+        }
+        if changed && let Some(Ok(index)) = result {
+            self.set_selection(Some(Selection::single(TrackKind::Audio, index)), cx);
+            self.note_edit("add-audio", Some(TrackKind::Audio));
+        }
+        changed
+    }
+
+    pub(crate) fn commit_project_audio_asset(
+        &mut self,
+        record: crate::asset_library::AssetRecord,
+        duration: f64,
+        time: f64,
+        requested_lane: Option<u32>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        if record.kind != crate::asset_library::AssetKind::Audio {
+            return Err(tr::editor::assets::metadata_error().into());
+        }
+        let segments = self
+            .project
+            .timeline
+            .as_ref()
+            .map_or(&[][..], |timeline| timeline.audio_segments.as_slice());
+        let (lane, _) = crate::editor_audio::audio_import_placement(
+            segments,
+            requested_lane.unwrap_or(0),
+            self.tracks.audio,
+            time,
+            self.total_duration(),
+            duration,
+        )
+        .ok_or_else(|| tr::editor::assets::move_playhead().to_string())?;
+        let record = crate::editor_audio::record_audio_asset(
+            &self.project_path,
+            &record.path,
+            &record.name,
+        )?;
+        let imported = ImportedAudio {
+            path: record.path.clone(),
+            name: record.name.clone(),
+            duration,
+        };
+        if !self.commit_audio_import_at(lane, time, imported, window, cx) {
+            return Err(tr::editor::assets::move_playhead().into());
+        }
+        self.remember_project_asset(record, cx);
+        Ok(())
+    }
+
+    fn commit_audio_import_at(
+        &mut self,
+        lane: u32,
+        time: f64,
+        imported: ImportedAudio,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(range) =
+            crate::editor_audio::audio_import_range(time, self.total_duration(), imported.duration)
+        else {
+            self.show_notice(
+                tr::editor::window::audio_import::move_playhead().to_string(),
+                window,
+                cx,
+            );
+            return false;
+        };
+        let (start, end) = (range.start, range.end);
         let path = imported.path.clone();
         let inserted = self.edit(
             |timeline| {
@@ -8560,7 +9260,7 @@ impl EditorWindow {
                         lane,
                         imported.path,
                         imported.name,
-                        has_source.then_some(imported.duration),
+                        Some(imported.duration),
                     ),
                 );
                 true
@@ -8569,7 +9269,7 @@ impl EditorWindow {
             cx,
         );
         if !inserted {
-            return;
+            return false;
         }
         let segments = self
             .project
@@ -8577,7 +9277,6 @@ impl EditorWindow {
             .as_ref()
             .map(|timeline| timeline.audio_segments.as_slice())
             .unwrap_or(&[]);
-        self.tracks.audio = edits::used_lane_count(segments).max(lane + 1);
         if let Some(index) = segments.iter().rposition(|segment| {
             segment.track == lane && segment.start == start && segment.path == path
         }) {
@@ -8587,6 +9286,7 @@ impl EditorWindow {
         self.note_edit("add-audio", Some(TrackKind::Audio));
         cx.notify();
         window.refresh();
+        true
     }
 
     fn open_clip_speed(
@@ -8709,7 +9409,7 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !matches!(kind, TrackKind::Clip | TrackKind::Text)
+        if !(kind == TrackKind::Clip || kind.is_overlay())
             || self.split_mode
             || self.transport.is_none()
         {
@@ -8718,13 +9418,10 @@ impl EditorWindow {
         let viewport_width: f32 = window.viewport_size().width.into();
         let secs_per_pixel = self.secs_per_pixel(viewport_width);
         let x = self.content_x(f32::from(event.position.x));
-        let hit = edits::hit_test(
-            self.timeline.segments(kind),
-            lane,
-            x,
-            self.view.transform.position,
-            secs_per_pixel,
-        );
+        let (kind, hit) = self.row_hit(kind, lane, x, self.view.transform.position, secs_per_pixel);
+        if !matches!(kind, TrackKind::Clip | TrackKind::Text) {
+            return;
+        }
         let (Hit::Body { index } | Hit::Handle { index, .. }) = hit else {
             return;
         };
@@ -9211,6 +9908,148 @@ impl EditorWindow {
         layer.into_any_element()
     }
 
+    pub(crate) fn render_clip_panel(
+        &self,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme;
+        let Some(segment) = self
+            .project
+            .timeline
+            .as_ref()
+            .and_then(|timeline| timeline.segments.get(index))
+        else {
+            return div().into_any_element();
+        };
+        let timescale = segment.timescale;
+        let muted = edits::clip_is_muted(segment);
+        let audio_mode = segment.speed_audio_mode.unwrap_or_default();
+        let cursor_hidden = segment.hides_cursor();
+        let normal_speed = (timescale - 1.0).abs() < f64::EPSILON;
+        let title = match self.timeline.clips.get(index).map(|clip| &clip.detail) {
+            Some(timeline::SegmentDetail::Clip { name, .. }) => name.to_string(),
+            _ => self
+                .project
+                .timeline
+                .as_ref()
+                .map_or_else(String::new, |timeline| {
+                    crate::editor_clips::display_name(&timeline.segments, index)
+                }),
+        };
+        let speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
+        let audio_modes = [
+            (
+                ClipSpeedAudioMode::Mute,
+                tr::editor::window::clip_menu::mute(),
+            ),
+            (
+                ClipSpeedAudioMode::MaintainPitch,
+                tr::editor::window::clip_menu::keep_pitch(),
+            ),
+            (
+                ClipSpeedAudioMode::MatchSpeed,
+                tr::editor::window::clip_menu::match_speed(),
+            ),
+        ];
+        let section = |label: &'static str, body: gpui::AnyElement| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(clip_menu_section(&theme, label))
+                .child(body)
+        };
+        let speed_row = clip_menu_chip_row(&theme)
+            .children(speeds.into_iter().map(|speed| {
+                clip_menu_chip(
+                    &theme,
+                    SharedString::from(format!("clip-panel-speed-{speed}")),
+                    (timescale - speed).abs() < 1e-6,
+                    format_clip_speed(speed),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.set_clip_timescale(index, speed, window, cx);
+                }))
+            }))
+            .into_any_element();
+        let audio_extra = if normal_speed {
+            clip_menu_toggle_row(
+                &theme,
+                "clip-panel-mute",
+                "icons/volume-x.svg",
+                tr::editor::window::clip_menu::mute_clip(),
+                tr::editor::window::clip_menu::mute_clip_description(),
+                muted,
+            )
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.set_clip_muted(index, !muted, window, cx);
+            }))
+            .into_any_element()
+        } else {
+            clip_menu_chip_row(&theme)
+                .children(audio_modes.into_iter().map(|(mode, label)| {
+                    clip_menu_chip(
+                        &theme,
+                        SharedString::from(format!("clip-panel-audio-{label}")),
+                        audio_mode == mode || (mode == ClipSpeedAudioMode::Mute && muted),
+                        label.to_string(),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.set_clip_speed_audio_mode(index, mode, window, cx);
+                    }))
+                }))
+                .into_any_element()
+        };
+        let cursor_row = clip_menu_toggle_row(
+            &theme,
+            "clip-panel-hide-cursor",
+            "icons/mouse-pointer-ban.svg",
+            tr::editor::window::clip_menu::hide_cursor(),
+            tr::editor::window::clip_menu::hide_cursor_description(),
+            cursor_hidden,
+        )
+        .on_click(cx.listener(move |this, _, window, cx| {
+            this.set_clip_hide_cursor(index, !cursor_hidden, window, cx);
+        }))
+        .into_any_element();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .child(
+                ui::SelectionHeader::plain(&theme, "panel-clip", title)
+                    .on_done(cx.listener(|this, _, _window, cx| this.set_selection(None, cx)))
+                    .on_delete(
+                        cx.listener(|this, _, window, cx| {
+                            this.delete_selected_segments(window, cx)
+                        }),
+                    ),
+            )
+            .child(section(tr::editor::window::clip_menu::speed(), speed_row))
+            .child(section(
+                tr::editor::window::clip_menu::audio(),
+                self.slider_field_disabled(
+                    tr::editor::window::clip_menu::volume(),
+                    crate::editor_sidebar::SliderKey::ClipVolume(index),
+                    "%",
+                    muted,
+                    cx,
+                )
+                .into_any_element(),
+            ))
+            .child(self.more_settings("clip", cx, move |_, _| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.))
+                    .child(audio_extra)
+                    .child(section(tr::editor::window::clip_menu::cursor(), cursor_row))
+                    .into_any_element()
+            }))
+            .into_any_element()
+    }
+
     fn render_clip_speed_popover(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let menu = self.clip_speed?;
         let theme = self.theme;
@@ -9226,7 +10065,7 @@ impl EditorWindow {
             Some(timeline::SegmentDetail::Clip { name, .. }) => name.clone(),
             _ => SharedString::from(crate::editor_clips::display_name(&timeline.segments, index)),
         };
-        let duration = crate::editor_clips::format_clip_duration(segment.end - segment.start);
+        let duration = crate::editor_clips::format_clip_duration(segment.duration());
         let summary = if normal_speed {
             duration
         } else {
@@ -9254,7 +10093,7 @@ impl EditorWindow {
             .rename_in_progress()
             .filter(|(editing, _)| *editing == index)
             .map(|(_, input)| input);
-        let speeds = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0, 8.0];
+        let speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
         let audio_modes = [
             (
                 ClipSpeedAudioMode::Mute,
@@ -9270,39 +10109,9 @@ impl EditorWindow {
             ),
         ];
         let chip = |id: SharedString, selected: bool, label: String| {
-            div()
-                .id(id)
-                .flex_1()
-                .rounded(px(6.))
-                .px(px(6.))
-                .py(px(4.))
-                .text_size(px(11.5))
-                .text_center()
-                .whitespace_nowrap()
-                .cursor_pointer()
-                .bg(if selected {
-                    Hsla::from(theme.editor.ctl_active)
-                } else {
-                    gpui::transparent_black()
-                })
-                .text_color(Hsla::from(if selected {
-                    theme.editor.text_1
-                } else {
-                    theme.editor.text_2
-                }))
-                .hover(|this| this.text_color(Hsla::from(theme.editor.text_1)))
-                .child(label)
+            clip_menu_chip(&theme, id, selected, label)
         };
-        let chip_row = || {
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(2.))
-                .rounded(px(8.))
-                .bg(Hsla::from(theme.editor.ctl))
-                .p(px(2.))
-        };
+        let chip_row = || clip_menu_chip_row(&theme);
         let divider = || div().h(px(1.)).bg(Hsla::from(theme.editor.line));
 
         let mut card = div()
@@ -9623,6 +10432,324 @@ impl EditorWindow {
         )
     }
 
+    fn open_track_menu(
+        &mut self,
+        kind: TrackKind,
+        lane: u32,
+        origin: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.project_ready() {
+            return;
+        }
+        if self
+            .track_menu
+            .is_some_and(|menu| menu.kind == kind && menu.lane == lane)
+        {
+            self.track_menu = None;
+            cx.notify();
+            return;
+        }
+        let focus = self.focus_handle_for_menu();
+        window.focus(&focus, cx);
+        self.clip_speed = None;
+        self.text_menu = None;
+        self.toolbar_menu = None;
+        self.add_track = None;
+        self.track_menu = Some(OpenTrackMenu {
+            kind,
+            lane,
+            placement: clip_menu_placement(0, origin, window.viewport_size(), TRACK_MENU_WIDTH),
+        });
+        cx.notify();
+    }
+
+    fn delete_track_row(
+        &mut self,
+        kind: TrackKind,
+        lane: u32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match kind {
+            TrackKind::Caption | TrackKind::Keyboard => {
+                self.delete_single_track(kind, window, cx);
+            }
+            TrackKind::Text
+            | TrackKind::Shape
+            | TrackKind::Mask
+            | TrackKind::Audio
+            | TrackKind::Style
+            | TrackKind::Image => {
+                self.delete_track_lane(kind, lane, window, cx);
+            }
+            TrackKind::Zoom | TrackKind::ThreeD | TrackKind::Scene => {
+                self.clear_track_segments(kind, window, cx);
+            }
+            TrackKind::Clip => {}
+        }
+    }
+
+    fn render_track_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let menu = self.track_menu?;
+        let theme = self.theme;
+        let (kind, lane) = (menu.kind, menu.lane);
+        let mut card = div()
+            .id("track-menu")
+            .absolute()
+            .left(menu.placement.left)
+            .w(px(TRACK_MENU_WIDTH))
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .rounded(px(12.))
+            .border_1()
+            .border_color(Hsla::from(theme.editor.line))
+            .bg(Hsla::from(theme.editor.card))
+            .p(px(6.))
+            .shadow(theme.editor.pop_shadow())
+            .occlude()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, _, cx| cx.stop_propagation()),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|_, _, _, cx| cx.stop_propagation()),
+            );
+        card = match menu.placement.anchor {
+            ClipMenuAnchor::Above { bottom } => card.bottom(bottom),
+            ClipMenuAnchor::Below { top } => card.top(top),
+        };
+
+        if kind == TrackKind::Clip {
+            let current = self.uniform_video_speed();
+            card = card
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .justify_between()
+                        .pt(px(4.))
+                        .pb(px(4.))
+                        .pr(px(8.))
+                        .child(clip_menu_section(
+                            &theme,
+                            tr::editor::window::clip_menu::speed(),
+                        ))
+                        .when(current.is_none(), |this| {
+                            this.child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(Hsla::from(theme.editor.text_3))
+                                    .child(tr::editor::window::track_menu::mixed()),
+                            )
+                        }),
+                )
+                .child(
+                    clip_menu_chip_row(&theme).children(TRACK_MENU_SPEEDS.map(|speed| {
+                        let selected =
+                            current.is_some_and(|current| (current - speed).abs() < 1e-6);
+                        clip_menu_chip(
+                            &theme,
+                            SharedString::from(format!("track-menu-speed-{speed}")),
+                            selected,
+                            format_clip_speed(speed),
+                        )
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.set_video_speed(speed, window, cx);
+                            },
+                        ))
+                    })),
+                )
+                .child(div().h(px(4.)))
+                .child(
+                    clip_menu_row(
+                        &theme,
+                        "track-menu-remove-fillers",
+                        "icons/scissors.svg",
+                        tr::editor::window::track_menu::remove_fillers(),
+                        ClipMenuTrailing::None,
+                        true,
+                        false,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.track_menu = None;
+                        this.open_transcript_cleanup(window, cx);
+                    })),
+                )
+                .when(!self.markers.placed.is_empty(), |card| {
+                    card.child(
+                        clip_menu_row(
+                            &theme,
+                            "track-menu-split-markers",
+                            "icons/flag.svg",
+                            tr::editor::markers::split(),
+                            ClipMenuTrailing::None,
+                            true,
+                            false,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.track_menu = None;
+                            this.split_at_markers(window, cx);
+                        })),
+                    )
+                });
+        }
+
+        if kind == TrackKind::Caption {
+            card = card
+                .child(
+                    clip_menu_row(
+                        &theme,
+                        "track-menu-find-replace",
+                        "icons/search.svg",
+                        tr::editor::tabs::captions::find_replace(),
+                        ClipMenuTrailing::None,
+                        true,
+                        false,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.track_menu = None;
+                        this.open_transcript_search(window, cx);
+                        cx.notify();
+                    })),
+                )
+                .child(
+                    clip_menu_row(
+                        &theme,
+                        "track-menu-caption-settings",
+                        "icons/sliders-horizontal.svg",
+                        tr::editor::window::track_menu::caption_settings(),
+                        ClipMenuTrailing::None,
+                        true,
+                        false,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.track_menu = None;
+                        this.open_captions_settings(window, cx);
+                    })),
+                )
+                .child(div().my(px(4.)).h(px(1.)).bg(Hsla::from(theme.editor.line)));
+        }
+
+        if kind == TrackKind::Audio {
+            let has_audio = self
+                .timeline
+                .audio
+                .iter()
+                .any(|segment| segment.lane == lane);
+            card = card
+                .child(
+                    clip_menu_row(
+                        &theme,
+                        "track-menu-add-music",
+                        "icons/music.svg",
+                        tr::editor::window::track_menu::add_music(),
+                        ClipMenuTrailing::None,
+                        true,
+                        false,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.track_menu = None;
+                        this.open_audio_picker(lane, cx);
+                    })),
+                )
+                .child(
+                    clip_menu_row(
+                        &theme,
+                        "track-menu-voiceover",
+                        "icons/microphone.svg",
+                        tr::editor::voiceover::title(),
+                        ClipMenuTrailing::None,
+                        true,
+                        false,
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.track_menu = None;
+                        this.open_voiceover(lane, window, cx);
+                    })),
+                )
+                .child(
+                    clip_menu_row(
+                        &theme,
+                        "track-menu-audio-settings",
+                        "icons/sliders-horizontal.svg",
+                        tr::editor::window::track_menu::audio_settings(),
+                        ClipMenuTrailing::None,
+                        has_audio,
+                        false,
+                    )
+                    .when(has_audio, |row| {
+                        row.on_click(cx.listener(move |this, _, _, cx| {
+                            this.track_menu = None;
+                            this.select_lane_header(TrackKind::Audio, lane, cx);
+                        }))
+                    }),
+                )
+                .child(div().my(px(4.)).h(px(1.)).bg(Hsla::from(theme.editor.line)));
+        }
+
+        if kind != TrackKind::Clip {
+            let label = match kind {
+                TrackKind::Zoom | TrackKind::ThreeD | TrackKind::Scene => {
+                    tr::editor::window::track::clear_all()
+                }
+                _ => tr::editor::window::track::delete(),
+            };
+            card = card.child(
+                clip_menu_row(
+                    &theme,
+                    "track-menu-delete",
+                    "icons/trash.svg",
+                    label,
+                    ClipMenuTrailing::None,
+                    true,
+                    true,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.track_menu = None;
+                    this.delete_track_row(kind, lane, window, cx);
+                    cx.notify();
+                })),
+            );
+        }
+
+        let dismiss = |this: &mut Self, cx: &mut Context<Self>| {
+            this.track_menu = None;
+            cx.notify();
+        };
+        Some(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .child(
+                    div()
+                        .id("track-menu-backdrop")
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .occlude()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| dismiss(this, cx)),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, _, _, cx| dismiss(this, cx)),
+                        ),
+                )
+                .child(card)
+                .into_any_element(),
+        )
+    }
+
     fn render_add_track_popover(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let menu = self.add_track?;
         let theme = self.theme;
@@ -9679,6 +10806,7 @@ impl EditorWindow {
                         .bg(Hsla::from(theme.editor.card))
                         .shadow(theme.editor.pop_shadow())
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .w(px(ADD_TRACK_TRAY_WIDTH))
                         .child(
                             div().flex().flex_row().gap(px(4.)).p(px(6.)).children(
                                 ADD_TRACK_OPTIONS.iter().copied().enumerate().map(
@@ -9696,17 +10824,47 @@ impl EditorWindow {
                         )
                         .child(
                             div()
+                                .px(px(12.))
+                                .pt(px(4.))
+                                .border_t_1()
+                                .border_color(Hsla::from(theme.editor.line))
+                                .text_size(px(10.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(Hsla::from(theme.editor.text_3))
+                                .child(tr::editor::window::add_track::more()),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .flex_wrap()
+                                .gap(px(4.))
+                                .px(px(6.))
+                                .pb(px(6.))
+                                .children(ADD_TRACK_MORE.iter().copied().enumerate().map(
+                                    |(index, kind)| {
+                                        self.render_add_track_tile(
+                                            ADD_TRACK_OPTIONS.len() + index,
+                                            kind,
+                                            generation,
+                                            scene_available,
+                                            cx,
+                                        )
+                                    },
+                                )),
+                        )
+                        .child(
+                            div()
                                 .flex()
                                 .items_center()
-                                .h(px(30.))
+                                .h(px(ADD_TRACK_HINT_HEIGHT))
                                 .px(px(12.))
                                 .border_t_1()
                                 .border_color(Hsla::from(theme.editor.line))
                                 .text_size(px(11.))
+                                .line_height(px(15.))
                                 .text_color(Hsla::from(theme.editor.text_2))
-                                .whitespace_nowrap()
-                                .overflow_hidden()
-                                .child(hint),
+                                .child(div().line_clamp(2).child(hint)),
                         )
                         .with_animation(
                             ("add-track-tray", generation),
@@ -9733,11 +10891,6 @@ impl EditorWindow {
         let theme = self.theme;
         let available = kind != TrackKind::Scene || scene_available;
         let active = !kind.supports_multiple() && self.tracks.is_active(kind);
-        let count = if kind.supports_multiple() {
-            self.tracks.count(kind)
-        } else {
-            0
-        };
         let color = kind.color();
         let group = SharedString::from(format!("add-track-tile-{kind:?}"));
         let badge = |this: gpui::Div| {
@@ -9806,17 +10959,6 @@ impl EditorWindow {
                                         .size(px(8.))
                                         .text_color(gpui::white()),
                                 ),
-                        )
-                    })
-                    .when(count > 0, |this| {
-                        this.child(
-                            badge(div())
-                                .px(px(4.))
-                                .bg(Hsla::from(theme.editor.text_1))
-                                .text_size(px(9.))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(Hsla::from(theme.editor.card))
-                                .child(format!("{count}")),
                         )
                     }),
             )
@@ -10620,7 +11762,7 @@ impl EditorWindow {
                     .child(self.header_divider())
                     .child(
                         ui::EditorButton::plain(&theme, "presets")
-                            .left_icon("icons/presets.svg")
+                            .left_icon("icons/sliders-horizontal.svg")
                             .when(!compact, |button| {
                                 button.label(tr::editor::window::header::presets())
                             })
@@ -11324,7 +12466,7 @@ impl EditorWindow {
                             .gap(px(14.))
                             .when(!live, |this| this.opacity(0.5))
                             .when(!narrow, |this| {
-                                this.child(div().w(px(PREVIEW_SPEED_BUTTON_WIDTH)).flex_none())
+                                this.child(div().w(px(VIDEO_SPEED_BUTTON_WIDTH)).flex_none())
                             })
                             .child(skip(
                                 "transport-prev",
@@ -11368,7 +12510,7 @@ impl EditorWindow {
                                 "icons/next.svg",
                                 Box::new(cx.listener(|this, _, _window, cx| this.jump_to_end(cx))),
                             ))
-                            .child(self.render_preview_speed(cx)),
+                            .child(self.render_video_speed(cx)),
                     ),
             )
             .child(
@@ -11461,15 +12603,16 @@ impl EditorWindow {
             )
     }
 
-    fn render_preview_speed(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_video_speed(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let editor = theme.editor;
         let enabled = self.visual_ready();
         let open = self
             .toolbar_menu
             .as_ref()
-            .is_some_and(|menu| menu.kind == ToolbarMenu::PreviewSpeed);
-        let changed = !self.preview_speed.is_normal();
+            .is_some_and(|menu| menu.kind == ToolbarMenu::VideoSpeed);
+        let speed = self.uniform_video_speed();
+        let changed = speed.is_none_or(|speed| (speed - 1.0).abs() > 1e-6);
         let accent = Hsla::from(editor.accent);
         let trigger = div()
             .id("transport-speed")
@@ -11477,7 +12620,7 @@ impl EditorWindow {
             .flex_none()
             .items_center()
             .justify_center()
-            .w(px(PREVIEW_SPEED_BUTTON_WIDTH))
+            .w(px(VIDEO_SPEED_BUTTON_WIDTH))
             .h(px(24.))
             .rounded(px(7.))
             .text_size(px(12.))
@@ -11513,12 +12656,12 @@ impl EditorWindow {
                             .view(cx)
                     })
             })
-            .child(self.preview_speed.label());
+            .child(speed.map_or_else(|| "—".to_string(), format_clip_speed));
         if enabled {
             ui::Menu::trigger(
                 trigger,
                 cx.listener(|this, bounds: &Bounds<Pixels>, window, cx| {
-                    this.open_toolbar_menu(ToolbarMenu::PreviewSpeed, *bounds, window, cx);
+                    this.open_toolbar_menu(ToolbarMenu::VideoSpeed, *bounds, window, cx);
                 }),
             )
         } else {
@@ -11581,7 +12724,7 @@ impl EditorWindow {
                 self.playing,
                 self.playhead_epoch_live,
                 self.last_playhead_redraw.elapsed().as_secs_f64(),
-                self.preview_speed.as_f64(),
+                1.0,
             );
             if ahead > 0.0 {
                 view.playhead = (view.playhead + ahead).min(self.total_duration());
@@ -11894,7 +13037,7 @@ impl EditorWindow {
                     })
                     .count()
                     > 1;
-            let row_hovered = self.view.hovered_track == Some(kind);
+            let row_hovered = self.hovered_row == Some((kind, lane));
             let reorder_source = self
                 .lane_reorder
                 .is_some_and(|reorder| reorder.dragging && reorder.source == track_row);
@@ -11931,25 +13074,24 @@ impl EditorWindow {
                     })?;
                 (indicator == *row).then_some(before)
             });
-            // `TrackRow`'s hover-reveal delete (`TL/index.tsx:1505-1546`):
-            // caption/keyboard delete themselves, the multi-lane tracks delete
-            // one lane, and zoom/3D/scene offer "Clear all" once they have
-            // segments. The clip row has none.
-            let delete_label = match kind {
-                TrackKind::Clip => None,
-                TrackKind::Caption | TrackKind::Keyboard => {
-                    Some(tr::editor::window::track::delete())
+            let segment_drop = self.drag.and_then(|drag| {
+                if !drag.moved || !drag.track.same_family(kind) {
+                    return None;
                 }
-                TrackKind::Text
-                | TrackKind::Shape
-                | TrackKind::Mask
-                | TrackKind::Audio
-                | TrackKind::Style
-                | TrackKind::Image => Some(tr::editor::window::track::delete()),
-                TrackKind::Zoom | TrackKind::ThreeD | TrackKind::Scene => {
-                    (!model.segments(kind).is_empty()).then(tr::editor::window::track::clear_all)
+                match drag.lane_target? {
+                    edits::LaneTarget::Existing(target) => (target == lane).then_some(None),
+                    edits::LaneTarget::Insert(0) => (lane == 0).then_some(Some(false)),
+                    edits::LaneTarget::Insert(target) => (target - 1 == lane).then_some(Some(true)),
                 }
-            };
+            });
+            let has_menu = track_has_menu(kind, !model.segments(kind).is_empty());
+            let toggleable = edits::row_toggleable(kind) && model.row_has_segments(*row);
+            let row_hidden = toggleable
+                && self
+                    .project
+                    .timeline
+                    .as_ref()
+                    .is_some_and(|timeline| edits::row_hidden(timeline, kind, lane));
             rows = rows.child(
                 div()
                     .id(gpui::ElementId::NamedInteger(
@@ -11963,10 +13105,24 @@ impl EditorWindow {
                     // siblings); the zoom and 3D tracks read it to decide
                     // whether to draw their new-segment ghost.
                     .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                        let next_row = if *hovered {
+                            Some((kind, lane))
+                        } else if this.hovered_row == Some((kind, lane)) {
+                            None
+                        } else {
+                            this.hovered_row
+                        };
+                        if this.hovered_row != next_row {
+                            this.hovered_row = next_row;
+                            cx.notify();
+                        }
                         this.set_hovered_track(hovered.then_some(kind), window, cx);
                         if !*hovered
-                            && this.hovered_segment.map(|(kind, lane, _)| (kind, lane))
-                                == Some((kind, lane))
+                            && this
+                                .hovered_segment
+                                .is_some_and(|(hovered, hovered_lane, _)| {
+                                    hovered.same_family(kind) && hovered_lane == lane
+                                })
                         {
                             this.hovered_segment = None;
                             this.split_preview = None;
@@ -12006,16 +13162,79 @@ impl EditorWindow {
                             }
                         }),
                     )
-                    .child(timeline::render_row(
-                        &theme,
-                        model,
-                        *row,
-                        self.view,
-                        viewport_width,
-                        ui,
+                    .child(div().when(row_hidden, |this| this.opacity(0.4)).child(
+                        timeline::render_row(&theme, model, *row, self.view, viewport_width, ui),
                     ))
                     .when(reorder_source, |this| this.opacity(0.45))
-                    .children(insertion_before.map(|before| {
+                    .children((toggleable && (row_hovered || row_hidden)).then(|| {
+                        let audio = kind == TrackKind::Audio;
+                        let icon = match (audio, row_hidden) {
+                            (true, true) => "icons/volume-x.svg",
+                            (true, false) => "icons/volume-2.svg",
+                            (false, true) => "icons/eye-off.svg",
+                            (false, false) => "icons/eye.svg",
+                        };
+                        let label = match (audio, row_hidden) {
+                            (true, true) => tr::editor::window::track_menu::unmute_row(),
+                            (true, false) => tr::editor::window::track_menu::mute_row(),
+                            (false, true) => tr::editor::window::track_menu::show_row(),
+                            (false, false) => tr::editor::window::track_menu::hide_row(),
+                        };
+                        div()
+                            .id(gpui::ElementId::NamedInteger(
+                                "track-visibility".into(),
+                                (kind as usize as u64) << 16 | lane as u64,
+                            ))
+                            .absolute()
+                            .left(px(timeline::TRACK_GUTTER - 48.))
+                            .top(px((model.track_height() - 20.) / 2.))
+                            .size(px(20.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(6.))
+                            .cursor_pointer()
+                            .when(row_hidden, |this| {
+                                this.bg(Hsla::from(theme.editor.ctl_active))
+                            })
+                            .hover(|this| this.bg(Hsla::from(theme.editor.ctl_active)))
+                            .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+                            .tooltip(move |_, cx| ui::Tooltip::new(&theme, label).view(cx))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                                    cx.stop_propagation();
+                                    this.toggle_row_hidden(kind, lane, window, cx);
+                                }),
+                            )
+                            .child(svg().path(icon).size(px(13.)).text_color(Hsla::from(
+                                if row_hidden {
+                                    theme.editor.text_1
+                                } else {
+                                    theme.editor.text_2
+                                },
+                            )))
+                    }))
+                    .children(has_menu.then(|| {
+                        div()
+                            .id(gpui::ElementId::NamedInteger(
+                                "track-header".into(),
+                                (kind as usize as u64) << 16 | lane as u64,
+                            ))
+                            .absolute()
+                            .left_0()
+                            .top_0()
+                            .w(px(timeline::TRACK_GUTTER))
+                            .h(px(model.track_height()))
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                    cx.stop_propagation();
+                                    this.open_track_menu(kind, lane, event.position, window, cx);
+                                }),
+                            )
+                    }))
+                    .children(insertion_before.or(segment_drop.flatten()).map(|before| {
                         div()
                             .absolute()
                             .left_0()
@@ -12025,6 +13244,17 @@ impl EditorWindow {
                             .h(px(2.))
                             .rounded_full()
                             .bg(Hsla::from(theme.editor.accent))
+                    }))
+                    .children((segment_drop == Some(None)).then(|| {
+                        div()
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .left(px(timeline::TRACK_GUTTER))
+                            .right_0()
+                            .rounded(px(6.))
+                            .border_1()
+                            .border_color(Hsla::from(theme.editor.accent))
                     }))
                     // The reorder grip takes the gutter tile's place while
                     // the row is hovered, so the two never overlap.
@@ -12282,10 +13512,13 @@ impl EditorWindow {
                                 )),
                             )
                     }))
-                    // The lane's delete: a ghost that only appears with the
-                    // row under the pointer, and only turns red under its own.
-                    .children(delete_label.map(|_| {
+                    // The menu's visible door: right-clicking alone is too hard
+                    // to discover, and awkward on a trackpad.
+                    .children(has_menu.then(|| {
                         let hovered = self.hovered_gutter == Some((kind, lane));
+                        let open = self
+                            .track_menu
+                            .is_some_and(|menu| menu.kind == kind && menu.lane == lane);
                         div()
                             .id(gpui::ElementId::NamedInteger(
                                 "track-gutter".into(),
@@ -12309,52 +13542,59 @@ impl EditorWindow {
                                     cx.notify();
                                 }
                             }))
-                            .when(row_hovered || hovered, |this| {
-                                this.cursor_pointer()
-                                    .tab_index(0)
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(px(6.))
-                                    .bg(Hsla::from(theme.editor.ctl_active))
-                                    .text_color(if hovered {
-                                        Hsla::from(theme.red_9)
-                                    } else {
-                                        Hsla::from(theme.editor.text_3)
-                                    })
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(move |this, _, window, cx| {
-                                            cx.stop_propagation();
-                                            match kind {
-                                                TrackKind::Caption | TrackKind::Keyboard => {
-                                                    this.delete_single_track(kind, window, cx);
-                                                }
-                                                TrackKind::Text
-                                                | TrackKind::Shape
-                                                | TrackKind::Mask
-                                                | TrackKind::Audio
-                                                | TrackKind::Style
-                                                | TrackKind::Image => {
-                                                    this.delete_track_lane(kind, lane, window, cx);
-                                                }
-                                                TrackKind::Zoom
-                                                | TrackKind::ThreeD
-                                                | TrackKind::Scene => {
-                                                    this.clear_track_segments(kind, window, cx);
-                                                }
-                                                TrackKind::Clip => {}
-                                            }
-                                        }),
-                                    )
-                                    .child(svg().path("icons/trash.svg").size(px(13.)).text_color(
-                                        if hovered {
-                                            Hsla::from(theme.red_9)
-                                        } else {
-                                            Hsla::from(theme.editor.text_3)
-                                        },
-                                    ))
-                            })
+                            .when(
+                                kind == TrackKind::Audio || row_hovered || hovered || open,
+                                |this| {
+                                    this.cursor_pointer()
+                                        .tab_index(0)
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(px(6.))
+                                        .bg(Hsla::from(theme.editor.ctl_active))
+                                        .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+                                        .tooltip(move |_, cx| {
+                                            ui::Tooltip::new(
+                                                &theme,
+                                                if kind == TrackKind::Audio {
+                                                    tr::editor::window::track_menu::audio_settings()
+                                                } else {
+                                                    tr::editor::window::track_menu::more()
+                                                },
+                                            )
+                                            .view(cx)
+                                        })
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(
+                                                move |this, event: &MouseDownEvent, window, cx| {
+                                                    cx.stop_propagation();
+                                                    this.open_track_menu(
+                                                        kind,
+                                                        lane,
+                                                        event.position,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                },
+                                            ),
+                                        )
+                                        .child(
+                                            svg()
+                                                .path(if kind == TrackKind::Audio {
+                                                    "icons/sliders-horizontal.svg"
+                                                } else {
+                                                    "icons/more-horizontal.svg"
+                                                })
+                                                .size(px(13.))
+                                                .text_color(Hsla::from(if hovered || open {
+                                                    theme.editor.text_1
+                                                } else {
+                                                    theme.editor.text_3
+                                                })),
+                                        )
+                                },
+                            )
                     })),
             );
         }
@@ -12520,7 +13760,7 @@ fn playhead_extrapolation(
 /// `<` and `>` step the preview speed down and up. Matched on the typed
 /// character, so the keys follow the keyboard layout: Shift-comma and
 /// Shift-period on US layouts, the dedicated `<>` key on many European ones.
-fn preview_speed_shortcut(keystroke: &gpui::Keystroke) -> Option<bool> {
+fn video_speed_shortcut(keystroke: &gpui::Keystroke) -> Option<bool> {
     let modifiers = keystroke.modifiers;
     if modifiers.platform || modifiers.control || modifiers.alt || modifiers.function {
         return None;
@@ -12553,6 +13793,7 @@ fn dismiss_indexed_sidebar_menu(menu: &mut Option<crate::editor_tabs::OpenMenu>)
         | SidebarMenu::CaptionModel
         | SidebarMenu::CaptionLanguage
         | SidebarMenu::CaptionFont
+        | SidebarMenu::CaptionTranslationFont
         | SidebarMenu::CaptionHighlightStyle
         | SidebarMenu::CaptionPosition
         | SidebarMenu::CaptionAnimation
@@ -12576,6 +13817,9 @@ fn is_playback_shortcut(
 
 impl Render for EditorWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.audio_picker.is_none() {
+            self.library_audition = None;
+        }
         self.sync_appearance(window, cx);
         self.sync_locale();
         self.sync_imported_waveforms(cx);
@@ -12726,6 +13970,14 @@ impl Render for EditorWindow {
                             let event = event.clone();
                             editor
                                 .update(cx, |this, cx| {
+                                    if this.asset_dragging() {
+                                        if event.dragging() {
+                                            this.move_asset_drag(&event, window, cx);
+                                        } else {
+                                            this.cancel_asset_drag(cx);
+                                        }
+                                        return;
+                                    }
                                     if this.scrub.is_none()
                                         && this.drag.is_none()
                                         && this.lane_reorder.is_none()
@@ -12772,6 +14024,7 @@ impl Render for EditorWindow {
                                     this.timeline_mouse_move(&event, window, cx);
                                     this.drag_mouse_move(
                                         f32::from(event.position.x),
+                                        f32::from(event.position.y),
                                         event.modifiers.shift,
                                         window,
                                         cx,
@@ -12788,6 +14041,10 @@ impl Render for EditorWindow {
                             }
                             editor
                                 .update(cx, |this, cx| {
+                                    if this.asset_dragging() {
+                                        this.finish_asset_drag(event, window, cx);
+                                        return;
+                                    }
                                     if this.scrub.is_none()
                                         && this.drag.is_none()
                                         && this.lane_reorder.is_none()
@@ -13118,6 +14375,7 @@ impl Render for EditorWindow {
             .children(self.render_add_track_popover(cx))
             .children(self.render_shape_tool_popover(cx))
             .children(self.render_clip_speed_popover(cx))
+            .children(self.render_track_menu(cx))
             .children(self.render_transition_popover(cx))
             // The config sidebar's sliders take the same layer, for the same
             // reason -- and its release is what closes the undo bracket, so a
@@ -13142,6 +14400,7 @@ impl Render for EditorWindow {
             // The clips overlays: import menu, record modal, and the card
             // drag's window-wide layer with its floating ghost.
             .children(self.render_clips_overlays(cx))
+            .children(self.render_asset_drag_layer(window, cx))
             // Crop mode is a modal: it goes over everything, including the
             // menu above.
             .children(self.render_crop_dialog(cx))
@@ -13165,6 +14424,7 @@ impl Render for EditorWindow {
                         .cursor(drag.cursor())
                     }),
             )
+            .children(self.render_voiceover(cx))
     }
 }
 
@@ -13193,6 +14453,7 @@ fn import_audio_file(
             source.display(),
         ));
     }
+    let duration = validate_audio_duration(source)?;
     let display_name = source
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -13211,7 +14472,7 @@ fn import_audio_file(
     Ok(ImportedAudio {
         path: format!("assets/audio/{dest_name}"),
         name: display_name,
-        duration: probe_audio_duration(&dest),
+        duration,
     })
 }
 
@@ -13557,6 +14818,322 @@ mod tests {
         assert_eq!(playhead_past_end(2.0, 4.0), None);
         assert_eq!(playhead_past_end(4.0, 4.0), None);
         assert_eq!(playhead_past_end(3.0, 0.0), None);
+    }
+
+    fn asset_lane_test_project() -> ProjectConfiguration {
+        ProjectConfiguration {
+            timeline: Some(
+                serde_json::from_value(serde_json::json!({
+                    "segments": [{"start":0,"end":8,"timescale":1}],
+                    "zoomSegments": [],
+                    "imageSegments": [{"start":3,"end":6,"path":"content/image.png"}],
+                    "audioSegments": [{"start":0,"end":8,"path":"assets/audio/music.mp3"}]
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    fn asset_lane_counts(project: &ProjectConfiguration, lanes: TrackLanes) -> (usize, usize) {
+        let model = TimelineModel::build_with_lanes(project, false, false, &lanes);
+        (
+            model
+                .rows
+                .iter()
+                .filter(|row| row.kind.is_overlay())
+                .count(),
+            model
+                .rows
+                .iter()
+                .filter(|row| row.kind == TrackKind::Audio)
+                .count(),
+        )
+    }
+
+    #[test]
+    fn audio_request_commit_uses_captured_time_and_undo_restores_automatic_lanes() {
+        for minimum in [1, 3] {
+            let mut project = asset_lane_test_project();
+            let mut lanes = initial_track_lanes(&project, false, None);
+            lanes.audio = minimum;
+            let original = serde_json::to_value(&project).unwrap();
+            let mut history = ProjectHistory::new(project.clone());
+            let request = AudioImportRequest::new(
+                crate::editor_audio::AudioPicker::Add { lane: 0 },
+                1,
+                &project,
+            )
+            .unwrap()
+            .capture_start(3., 8., &project)
+            .unwrap();
+            let index = crate::editor_audio::apply_audio_add(
+                &mut project,
+                &request,
+                lanes.audio,
+                8.,
+                ("assets/audio/full.mp3".into(), "Full song".into(), 204.32),
+            )
+            .unwrap();
+            history.record(&project);
+            let added = &project.timeline.as_ref().unwrap().audio_segments[index];
+            assert_eq!((added.start, added.end, added.track), (3., 207.32, minimum));
+            assert_eq!(asset_lane_counts(&project, lanes).1, minimum as usize + 1);
+            assert_eq!(project.timeline.as_ref().unwrap().duration(), 207.32);
+            let undone = history.undo().unwrap();
+            assert_eq!(serde_json::to_value(undone).unwrap(), original);
+            assert_eq!(asset_lane_counts(undone, lanes).1, minimum as usize);
+            assert_eq!(
+                asset_lane_counts(history.redo().unwrap(), lanes).1,
+                minimum as usize + 1
+            );
+            let before = serde_json::to_value(&project).unwrap();
+            assert!(
+                crate::editor_audio::apply_audio_add(
+                    &mut project,
+                    &request,
+                    lanes.audio,
+                    7.,
+                    ("assets/audio/other.mp3".into(), "Other song".into(), 204.32)
+                )
+                .is_err()
+            );
+            assert_eq!(serde_json::to_value(&project).unwrap(), before);
+        }
+    }
+
+    #[gpui::test]
+    fn audio_request_editor_commit_does_not_read_the_later_playhead(cx: &mut gpui::TestAppContext) {
+        let directory = tempfile::tempdir().unwrap();
+        cx.add_empty_window().update(|window, cx| {
+            let editor = cx.new(|cx| {
+                EditorWindow::new_state(directory.path().into(), Theme::light(), window, cx)
+            });
+            editor.update(cx, |editor, cx| {
+                editor.project = asset_lane_test_project();
+                editor.total = 8.;
+                editor.tracks = initial_track_lanes(&editor.project, false, None);
+                let request = AudioImportRequest::new(
+                    crate::editor_audio::AudioPicker::Add { lane: 0 },
+                    1,
+                    &editor.project,
+                )
+                .unwrap()
+                .capture_start(3., 8., &editor.project)
+                .unwrap();
+                editor.playhead = 7.;
+                assert!(editor.commit_audio_request(
+                    &request,
+                    ImportedAudio {
+                        path: "assets/audio/full.mp3".into(),
+                        name: "Full song".into(),
+                        duration: 204.32,
+                    },
+                    window,
+                    cx
+                ));
+                let added = editor
+                    .project
+                    .timeline
+                    .as_ref()
+                    .unwrap()
+                    .audio_segments
+                    .last()
+                    .unwrap();
+                assert_eq!((added.start, added.end, added.track), (3., 207.32, 1));
+                let timeline = editor.project.timeline.as_mut().unwrap();
+                timeline.segments[0].timescale = 2.;
+                let before = serde_json::to_value(&editor.project).unwrap();
+                assert!(!editor.commit_audio_request(
+                    &request,
+                    ImportedAudio {
+                        path: "assets/audio/other.mp3".into(),
+                        name: "Other song".into(),
+                        duration: 204.32,
+                    },
+                    window,
+                    cx
+                ));
+                assert_eq!(serde_json::to_value(&editor.project).unwrap(), before);
+            });
+        });
+    }
+
+    #[test]
+    fn asset_lane_undo_removes_automatic_rows_and_preserves_explicit_empty_rows() {
+        for minimum in [1, 3] {
+            let mut project = asset_lane_test_project();
+            let mut lanes = initial_track_lanes(&project, false, None);
+            lanes.overlay = minimum;
+            lanes.audio = minimum;
+            let overlays = minimum.max(2) as usize;
+            let mut history = ProjectHistory::new(project.clone());
+            let timeline = project.timeline.as_mut().unwrap();
+            let (image_lane, start, end) =
+                crate::asset_library::image_placement(timeline, 0, 3., 8.).unwrap();
+            assert_eq!(image_lane, 1);
+            edits::insert_image_segment(
+                timeline,
+                cap_project::ImageSegment {
+                    start,
+                    end,
+                    track: image_lane,
+                    path: "content/image.png".into(),
+                    ..Default::default()
+                },
+            );
+            history.record(&project);
+            assert_eq!(
+                asset_lane_counts(&project, lanes),
+                (overlays, minimum as usize)
+            );
+            let timeline = project.timeline.as_mut().unwrap();
+            let (audio_lane, range) = crate::editor_audio::audio_import_placement(
+                &timeline.audio_segments,
+                0,
+                lanes.audio,
+                3.,
+                8.,
+                12.,
+            )
+            .unwrap();
+            assert_eq!(audio_lane, minimum);
+            edits::insert_audio_segment(
+                timeline,
+                edits::default_audio_segment(
+                    range.start,
+                    range.end,
+                    audio_lane,
+                    "assets/audio/music.mp3".into(),
+                    "Music".into(),
+                    Some(12.),
+                ),
+            );
+            history.record(&project);
+            assert_eq!(
+                asset_lane_counts(&project, lanes),
+                (overlays, (minimum + 1) as usize)
+            );
+            assert_eq!(
+                asset_lane_counts(history.undo().unwrap(), lanes),
+                (overlays, minimum as usize)
+            );
+            assert_eq!(
+                asset_lane_counts(history.undo().unwrap(), lanes),
+                (minimum as usize, minimum as usize)
+            );
+            assert_eq!(
+                asset_lane_counts(history.redo().unwrap(), lanes),
+                (overlays, minimum as usize)
+            );
+            assert_eq!(
+                asset_lane_counts(history.redo().unwrap(), lanes),
+                (overlays, (minimum + 1) as usize)
+            );
+        }
+    }
+
+    #[test]
+    fn asset_lane_reload_keeps_automatic_rows_derived_from_history() {
+        let initial = asset_lane_test_project();
+        let mut project = initial.clone();
+        let before = initial_track_lanes(&initial, false, None);
+        let timeline = project.timeline.as_mut().unwrap();
+        let mut image = timeline.image_segments[0].clone();
+        image.track = 1;
+        timeline.image_segments.push(image);
+        let mut audio = timeline.audio_segments[0].clone();
+        audio.track = 1;
+        timeline.audio_segments.push(audio);
+        let mut history = ProjectHistory::new(initial);
+        history.record(&project);
+        let restored = initial_track_lanes(&project, false, Some((before.overlay, before.audio)));
+        assert_eq!((restored.overlay, restored.audio), (1, 1));
+        assert_eq!(asset_lane_counts(&project, restored), (2, 2));
+        assert_eq!(asset_lane_counts(history.undo().unwrap(), restored), (1, 1));
+        assert_eq!(asset_lane_counts(history.redo().unwrap(), restored), (2, 2));
+        let fresh = initial_track_lanes(&project, false, None);
+        assert_eq!((fresh.overlay, fresh.audio), (2, 2));
+        let explicit = initial_track_lanes(&project, false, Some((4, 3)));
+        assert_eq!(asset_lane_counts(history.undo().unwrap(), explicit), (4, 3));
+    }
+
+    #[test]
+    fn asset_lane_delete_does_not_promote_other_automatic_rows_to_empty_minima() {
+        assert_eq!(lane_minimum_after_delete(TrackKind::Audio, 1, 2, 2), 1);
+        assert_eq!(lane_minimum_after_delete(TrackKind::Audio, 3, 1, 5), 2);
+        assert_eq!(lane_minimum_after_delete(TrackKind::Audio, 0, 0, 1), 0);
+        assert_eq!(lane_minimum_after_delete(TrackKind::Image, 3, 1, 5), 5);
+        assert_eq!(lane_minimum_after_delete(TrackKind::Mask, 3, 1, 5), 5);
+    }
+
+    #[test]
+    fn import_playhead_waits_for_transport_then_seeks_once_and_stays_paused() {
+        let mut pending = Some(3.0);
+        assert_eq!(restore_import_transport(&mut pending, None, 0.0), None);
+        assert_eq!(pending, Some(3.0));
+        let (handle, driver, _stopped) = transport();
+        handle.play_from(0);
+        assert_eq!(
+            restore_import_transport(&mut pending, Some(&handle), 41.6),
+            Some(3.0)
+        );
+        assert_eq!(pending, None);
+        let restored = *driver.desired.lock().unwrap();
+        assert!(!restored.playing);
+        assert_eq!(restored.seek, Some(3 * EDITOR_PREVIEW_FPS));
+        assert_eq!(
+            restore_import_transport(&mut pending, Some(&handle), 41.6),
+            None
+        );
+        assert_eq!(*driver.desired.lock().unwrap(), restored);
+    }
+
+    #[test]
+    fn import_playhead_rejects_invalid_values_without_moving_transport() {
+        let (handle, driver, _stopped) = transport();
+        for time in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut pending = Some(time);
+            assert_eq!(
+                restore_import_transport(&mut pending, Some(&handle), 10.0),
+                None
+            );
+            assert_eq!(pending, None);
+            assert_eq!(*driver.desired.lock().unwrap(), Desired::default());
+        }
+        let mut pending = Some(3.0);
+        for total in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+            assert_eq!(
+                restore_import_transport(&mut pending, Some(&handle), total),
+                None
+            );
+            assert_eq!(pending, Some(3.0));
+            assert_eq!(*driver.desired.lock().unwrap(), Desired::default());
+        }
+        assert_eq!(
+            restore_import_transport(&mut pending, Some(&handle), 10.0),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn import_playhead_clamps_to_the_new_timelines_valid_frames() {
+        let (handle, driver, _stopped) = transport();
+        for (time, total, frame) in [
+            (8.0, 4.0, 4 * EDITOR_PREVIEW_FPS - 1),
+            (3.0, 1.25, (1.25 * f64::from(EDITOR_PREVIEW_FPS)) as u32 - 1),
+            (-2.0, 4.0, 0),
+            (2.0, 0.001, 0),
+            (2.0, 0.0, 0),
+        ] {
+            let mut pending = Some(time);
+            let restored = restore_import_transport(&mut pending, Some(&handle), total).unwrap();
+            assert_eq!(restored, frame_seconds(frame));
+            assert!(restored <= total);
+            let desired = *driver.desired.lock().unwrap();
+            assert!(!desired.playing);
+            assert_eq!(desired.seek, Some(frame));
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -14098,6 +15675,24 @@ mod tests {
     }
 
     #[test]
+    fn importing_invalid_audio_preserves_source_without_creating_project_assets() {
+        let root = tempfile::tempdir().unwrap();
+        for (name, bytes) in [
+            ("empty.wav", Vec::new()),
+            ("broken.mp3", b"This is not an audio file".to_vec()),
+            ("header-only.wav", b"RIFF\x24\x00\x00\x00WAVE".to_vec()),
+        ] {
+            let source = root.path().join(name);
+            let project = root.path().join(format!("{name}.cap"));
+            std::fs::write(&source, &bytes).unwrap();
+            let result = import_audio_file(&project, &source);
+            assert!(result.is_err(), "accepted invalid audio: {name}");
+            assert_eq!(std::fs::read(&source).unwrap(), bytes);
+            assert!(!project.exists());
+        }
+    }
+
+    #[test]
     fn importing_short_audio_keeps_source_and_probes_copied_duration() {
         let root = std::env::temp_dir().join(format!(
             "cap-gpui-short-audio-import-{}",
@@ -14140,7 +15735,7 @@ mod tests {
         assert!(near(add_track_tray_progress(at(ADD_TRACK_TRAY_IN_MS)), 1.));
         assert!(near(add_track_tray_progress(1.), 1.));
 
-        let last = ADD_TRACK_OPTIONS.len() - 1;
+        let last = ADD_TRACK_OPTIONS.len() + ADD_TRACK_MORE.len() - 1;
         assert!(near(add_track_tile_progress(0., 0), 0.));
         assert!(near(
             add_track_tile_progress(at(ADD_TRACK_TILE_DELAY_MS), 0),
@@ -14210,11 +15805,13 @@ mod tests {
                 text: "hello".into(),
                 start: 1.0,
                 end: 2.0,
+                hidden: false,
             },
             cap_project::CaptionWord {
                 text: "world".into(),
                 start: 3.0,
                 end: 4.0,
+                hidden: false,
             },
         ];
         let track = cap_project::CaptionTrackSegment {
@@ -14333,11 +15930,13 @@ mod tests {
                             text: "hello".into(),
                             start: 1.0,
                             end: 2.0,
+                            hidden: false,
                         },
                         cap_project::CaptionWord {
                             text: "world".into(),
                             start: 3.0,
                             end: 4.0,
+                            hidden: false,
                         },
                     ],
                 }],
@@ -14479,6 +16078,17 @@ mod tests {
         assert_eq!(editor_player_width(800.), 358.);
     }
 
+    #[test]
+    fn empty_generated_lanes_offer_no_track_menu() {
+        for kind in [TrackKind::Zoom, TrackKind::ThreeD, TrackKind::Scene] {
+            assert!(!track_has_menu(kind, false));
+            assert!(track_has_menu(kind, true));
+        }
+        for kind in [TrackKind::Clip, TrackKind::Caption, TrackKind::Audio] {
+            assert!(track_has_menu(kind, false));
+        }
+    }
+
     fn open_sidebar_menu_for_test(
         kind: crate::editor_tabs::SidebarMenu,
     ) -> Option<crate::editor_tabs::OpenMenu> {
@@ -14522,6 +16132,7 @@ mod tests {
             SidebarMenu::CaptionModel,
             SidebarMenu::CaptionLanguage,
             SidebarMenu::CaptionFont,
+            SidebarMenu::CaptionTranslationFont,
             SidebarMenu::CaptionHighlightStyle,
             SidebarMenu::CaptionPosition,
             SidebarMenu::CaptionAnimation,
@@ -14676,6 +16287,7 @@ mod tests {
                             timeline: TimelineModel::build(&config, false, false),
                             duration: 30.,
                             has_camera: false,
+                            display_is_camera: false,
                             has_cursor_data: true,
                             recorded_cursor_family: None,
                             clip_display_durations: vec![30.],
@@ -14802,6 +16414,7 @@ mod tests {
                             timeline: TimelineModel::build(&config, false, false),
                             duration: 10.,
                             has_camera: false,
+                            display_is_camera: false,
                             has_cursor_data: false,
                             recorded_cursor_family: None,
                             clip_display_durations: vec![10.],
@@ -14851,8 +16464,8 @@ mod tests {
 
         fn drag_to(editor: &Entity<EditorWindow>, cx: &mut gpui::VisualTestContext, x: f32) {
             editor.update_in(cx, |editor, window, cx| {
-                editor.drag_mouse_move(x - 1., false, window, cx);
-                editor.drag_mouse_move(x, false, window, cx);
+                editor.drag_mouse_move(x - 1., 0., false, window, cx);
+                editor.drag_mouse_move(x, 0., false, window, cx);
                 editor.drag_mouse_up(window, cx);
             });
             cx.run_until_parked();
@@ -14928,11 +16541,13 @@ mod tests {
                                 text: "hello".into(),
                                 start: 6.0,
                                 end: 6.5,
+                                hidden: false,
                             },
                             cap_project::CaptionWord {
                                 text: "there".into(),
                                 start: 6.5,
                                 end: 7.0,
+                                hidden: false,
                             },
                         ],
                     }],
@@ -15002,6 +16617,7 @@ mod tests {
                             text: "hello".into(),
                             start: 6.0,
                             end: 7.0,
+                            hidden: false,
                         }],
                     }],
                     settings: Default::default(),
@@ -15816,7 +17432,7 @@ mod tests {
     }
 
     #[test]
-    fn preview_speed_shortcuts_follow_the_typed_angle_brackets() {
+    fn video_speed_shortcuts_follow_the_typed_angle_brackets() {
         let keystroke =
             |key: &str, key_char: Option<&str>, modifiers: gpui::Modifiers| gpui::Keystroke {
                 modifiers,
@@ -15829,45 +17445,39 @@ mod tests {
         };
         let none = gpui::Modifiers::default();
         assert_eq!(
-            preview_speed_shortcut(&keystroke(".", Some(">"), shift)),
+            video_speed_shortcut(&keystroke(".", Some(">"), shift)),
             Some(true)
         );
         assert_eq!(
-            preview_speed_shortcut(&keystroke(",", Some("<"), shift)),
+            video_speed_shortcut(&keystroke(",", Some("<"), shift)),
             Some(false)
         );
         assert_eq!(
-            preview_speed_shortcut(&keystroke(".", None, shift)),
+            video_speed_shortcut(&keystroke(".", None, shift)),
             Some(true)
         );
         assert_eq!(
-            preview_speed_shortcut(&keystroke(",", None, shift)),
+            video_speed_shortcut(&keystroke(",", None, shift)),
             Some(false)
         );
         assert_eq!(
-            preview_speed_shortcut(&keystroke("<", Some("<"), none)),
+            video_speed_shortcut(&keystroke("<", Some("<"), none)),
             Some(false)
         );
         assert_eq!(
-            preview_speed_shortcut(&keystroke("<", Some(">"), shift)),
+            video_speed_shortcut(&keystroke("<", Some(">"), shift)),
             Some(true)
         );
         assert_eq!(
-            preview_speed_shortcut(&keystroke(">", None, shift)),
+            video_speed_shortcut(&keystroke(">", None, shift)),
             Some(true)
         );
         assert_eq!(
-            preview_speed_shortcut(&keystroke(".", Some(":"), shift)),
+            video_speed_shortcut(&keystroke(".", Some(":"), shift)),
             None
         );
-        assert_eq!(
-            preview_speed_shortcut(&keystroke(".", Some("."), none)),
-            None
-        );
-        assert_eq!(
-            preview_speed_shortcut(&keystroke(",", Some(","), none)),
-            None
-        );
+        assert_eq!(video_speed_shortcut(&keystroke(".", Some("."), none)), None);
+        assert_eq!(video_speed_shortcut(&keystroke(",", Some(","), none)), None);
         for modifiers in [
             gpui::Modifiers {
                 platform: true,
@@ -15886,13 +17496,13 @@ mod tests {
             },
         ] {
             assert_eq!(
-                preview_speed_shortcut(&keystroke(".", Some(">"), modifiers)),
+                video_speed_shortcut(&keystroke(".", Some(">"), modifiers)),
                 None
             );
         }
         for key in ["space", "s", "c", "up", "down", "home", "end", "delete"] {
             let parsed = gpui::Keystroke::parse(key).unwrap();
-            assert_eq!(preview_speed_shortcut(&parsed), None, "{key}");
+            assert_eq!(video_speed_shortcut(&parsed), None, "{key}");
             assert!(!is_playback_shortcut(
                 &keystroke(".", Some(">"), shift),
                 false,

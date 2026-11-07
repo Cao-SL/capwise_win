@@ -100,6 +100,7 @@ pub(crate) struct CleanupState {
     pub tab: CleanupTab,
     pub categories: [bool; 4],
     pub ignored: HashSet<usize>,
+    pub by_term_open: bool,
     pub pause_longer_than: f64,
     pub pause_keep: f64,
     pub filler_rows: gpui::UniformListScrollHandle,
@@ -121,6 +122,7 @@ impl CleanupState {
             tab: CleanupTab::Fillers,
             categories: [true, true, true, false],
             ignored: HashSet::new(),
+            by_term_open: false,
             pause_longer_than: read(
                 PAUSE_LONGER_KEY,
                 DEFAULT_PAUSE_LONGER_THAN,

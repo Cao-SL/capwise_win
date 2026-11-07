@@ -29,9 +29,43 @@ pub struct DiskBudget {
     pub estimated_bytes: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ResourceMessage<'a> {
+    DiskWarning { description: &'a str, free_gib: f64 },
+    DiskEstimate { gib: f64 },
+    MemoryCritical,
+    WarningFooter,
+    DiskStop { description: &'a str, free_gib: f64 },
+    MemoryStop,
+}
+
+fn english_message(message: ResourceMessage<'_>) -> String {
+    match message {
+        ResourceMessage::DiskWarning { description, free_gib } => {
+            format!("Only {free_gib:.2} GiB is available on {description}.")
+        }
+        ResourceMessage::DiskEstimate { gib } => {
+            format!("This export may need approximately {gib:.2} GiB, including temporary files.")
+        }
+        ResourceMessage::MemoryCritical => {
+            "The system reports critically high memory pressure. Close other applications before exporting.".into()
+        }
+        ResourceMessage::WarningFooter => {
+            "Exporting may fail if resources run out. Resources are monitored during export, which may stop if they become critically low.".into()
+        }
+        ResourceMessage::DiskStop { description, free_gib } => {
+            format!("{description} has only {free_gib:.2} GiB free. Free up disk space and try again. Your original recording has been kept.")
+        }
+        ResourceMessage::MemoryStop => {
+            "memory pressure stayed critically high. Close other applications or choose a lower export resolution and try again. Your original recording has been kept.".into()
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ExportResources {
     disks: Vec<DiskBudget>,
+    format_message: for<'a> fn(ResourceMessage<'a>) -> String,
 }
 
 #[derive(Default)]
@@ -46,7 +80,15 @@ struct PressureHistory {
 }
 
 impl ExportResources {
-    pub fn new(mut disks: Vec<DiskBudget>) -> Self {
+    pub fn new(disks: Vec<DiskBudget>) -> Self {
+        Self::new_with_messages(disks, "your system drive", english_message)
+    }
+
+    pub fn new_with_messages(
+        mut disks: Vec<DiskBudget>,
+        system_drive_description: &'static str,
+        format_message: for<'a> fn(ResourceMessage<'a>) -> String,
+    ) -> Self {
         #[cfg(target_os = "macos")]
         let system_path = Some(PathBuf::from("/System/Volumes/Data"));
         #[cfg(not(target_os = "macos"))]
@@ -54,11 +96,14 @@ impl ExportResources {
         if let Some(path) = system_path {
             disks.push(DiskBudget {
                 path,
-                description: "your system drive",
+                description: system_drive_description,
                 estimated_bytes: 0,
             });
         }
-        Self { disks }
+        Self {
+            disks,
+            format_message,
+        }
     }
 
     fn disk_free_bytes(&self) -> Vec<Option<u64>> {
@@ -83,11 +128,21 @@ impl ExportResources {
     }
 
     fn disk_failure(&self, sample: &Sample) -> Option<String> {
-        self.disks.iter().zip(&sample.free_bytes).find_map(|(disk, free)| {
-            free.filter(|free| *free <= DISK_RESERVE).map(|free| {
-                format!("{STOP_PREFIX}{} has only {:.2} GiB free. Free up disk space and try again. Your original recording has been kept.", disk.description, free as f64 / GIB as f64)
+        self.disks
+            .iter()
+            .zip(&sample.free_bytes)
+            .find_map(|(disk, free)| {
+                free.filter(|free| *free <= DISK_RESERVE).map(|free| {
+                    self.stop_message(ResourceMessage::DiskStop {
+                        description: disk.description,
+                        free_gib: free as f64 / GIB as f64,
+                    })
+                })
             })
-        })
+    }
+
+    fn stop_message(&self, message: ResourceMessage<'_>) -> String {
+        format!("{STOP_PREFIX}{}", (self.format_message)(message))
     }
 
     pub async fn check(&self) -> Result<Option<String>, String> {
@@ -95,6 +150,7 @@ impl ExportResources {
         if let Some(error) = self.disk_failure(&sample) {
             return Err(error);
         }
+        tracing::info!(memory_pressure = ?sample.memory, "Checked export memory pressure");
         Ok(self.warning(&sample))
     }
 
@@ -108,34 +164,25 @@ impl ExportResources {
             .filter(|(disk, free)| *free < DISK_WARNING.saturating_add(disk.estimated_bytes))
             .min_by_key(|(disk, free)| free.saturating_sub(disk.estimated_bytes));
         if let Some((disk, free)) = lowest {
-            let estimate = if disk.estimated_bytes > 0 {
-                format!(
-                    " This export may need approximately {:.2} GiB, including temporary files.",
-                    disk.estimated_bytes as f64 / GIB as f64
-                )
-            } else {
-                String::new()
-            };
-            warnings.push(format!(
-                "Only {:.2} GiB is available on {}.{estimate}",
-                free as f64 / GIB as f64,
-                disk.description
-            ));
+            let mut message = (self.format_message)(ResourceMessage::DiskWarning {
+                description: disk.description,
+                free_gib: free as f64 / GIB as f64,
+            });
+            if disk.estimated_bytes > 0 {
+                message.push(' ');
+                message.push_str(&(self.format_message)(ResourceMessage::DiskEstimate {
+                    gib: disk.estimated_bytes as f64 / GIB as f64,
+                }));
+            }
+            warnings.push(message);
         }
-        #[cfg(any(target_os = "macos", test))]
-        let memory_warning = matches!(
-            sample.memory,
-            MemoryPressure::Warning | MemoryPressure::Critical
-        );
-        #[cfg(not(any(target_os = "macos", test)))]
-        let memory_warning = sample.memory == MemoryPressure::Critical;
-        if memory_warning {
-            warnings.push("Your computer is already under memory pressure. Close other applications before exporting.".to_string());
+        if sample.memory == MemoryPressure::Critical {
+            warnings.push((self.format_message)(ResourceMessage::MemoryCritical));
         }
         if warnings.is_empty() {
             None
         } else {
-            warnings.push("The export may fail or your computer may become unresponsive if resources run out. Cap monitors resources during export and may stop if they become critically low.".to_string());
+            warnings.push((self.format_message)(ResourceMessage::WarningFooter));
             Some(warnings.join("\n\n"))
         }
     }
@@ -176,10 +223,11 @@ impl ExportResources {
                     }
                 }
             };
-            if let Some(error) = self
-                .disk_failure(&observation)
-                .or_else(|| history.observe(observation.memory))
-            {
+            if let Some(error) = self.disk_failure(&observation).or_else(|| {
+                history
+                    .observe(observation.memory)
+                    .map(|reason| self.stop_message(reason))
+            }) {
                 tracing::warn!(reason = %error, "Stopping export because resources are exhausted");
                 stop();
                 let _ = export.await;
@@ -218,20 +266,23 @@ async fn read_disk_space(
 }
 
 impl PressureHistory {
-    fn observe(&mut self, pressure: MemoryPressure) -> Option<String> {
+    fn observe(&mut self, pressure: MemoryPressure) -> Option<ResourceMessage<'static>> {
         self.critical_memory_samples = if pressure == MemoryPressure::Critical {
             self.critical_memory_samples.saturating_add(1)
         } else {
             0
         };
-        (self.critical_memory_samples >= CRITICAL_MEMORY_SAMPLES).then(|| {
-            format!("{STOP_PREFIX}memory pressure stayed critically high. Close other applications or choose a lower export resolution and try again. Your original recording has been kept.")
-        })
+        (self.critical_memory_samples >= CRITICAL_MEMORY_SAMPLES)
+            .then_some(ResourceMessage::MemoryStop)
     }
 }
 
 pub fn is_resource_stop(error: &str) -> bool {
     error.starts_with(STOP_PREFIX)
+}
+
+pub fn resource_error_message(error: &str) -> &str {
+    error.strip_prefix(STOP_PREFIX).unwrap_or(error)
 }
 
 pub fn estimated_working_bytes(megabytes: f64) -> u64 {
@@ -258,6 +309,11 @@ fn memory_pressure() -> MemoryPressure {
     if result != 0 || length != std::mem::size_of_val(&level) {
         return MemoryPressure::Unknown;
     }
+    memory_pressure_from_dispatch_level(level)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn memory_pressure_from_dispatch_level(level: u32) -> MemoryPressure {
     match level {
         1 => MemoryPressure::Normal,
         2 => MemoryPressure::Warning,
@@ -289,6 +345,7 @@ mod tests {
                 description: "your export drive",
                 estimated_bytes: 2 * GIB,
             }],
+            format_message: english_message,
         }
     }
 
@@ -320,6 +377,112 @@ mod tests {
         let observation = sample(None, MemoryPressure::Unknown);
         assert!(resources().warning(&observation).is_none());
         assert!(resources().disk_failure(&observation).is_none());
+    }
+
+    #[test]
+    fn dispatch_pressure_values_do_not_use_the_internal_kernel_enum() {
+        assert_eq!(
+            memory_pressure_from_dispatch_level(1),
+            MemoryPressure::Normal
+        );
+        assert_eq!(
+            memory_pressure_from_dispatch_level(2),
+            MemoryPressure::Warning
+        );
+        assert_eq!(
+            memory_pressure_from_dispatch_level(4),
+            MemoryPressure::Critical
+        );
+        for unknown in [0, 3, 8, u32::MAX] {
+            assert_eq!(
+                memory_pressure_from_dispatch_level(unknown),
+                MemoryPressure::Unknown
+            );
+        }
+    }
+
+    #[test]
+    fn warning_pressure_does_not_require_confirmation_but_critical_pressure_does() {
+        let resources = resources();
+        for pressure in [
+            MemoryPressure::Unknown,
+            MemoryPressure::Normal,
+            MemoryPressure::Warning,
+        ] {
+            assert!(
+                resources
+                    .warning(&sample(Some(9 * GIB), pressure))
+                    .is_none()
+            );
+        }
+        assert!(
+            resources
+                .warning(&sample(Some(9 * GIB), MemoryPressure::Critical))
+                .is_some()
+        );
+        assert!(
+            resources
+                .warning(&sample(Some(GIB), MemoryPressure::Warning))
+                .is_some()
+        );
+        assert!(
+            resources
+                .disk_failure(&sample(Some(DISK_RESERVE), MemoryPressure::Warning))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn localized_resource_reasons_preserve_stop_classification_without_visible_english_prefix() {
+        fn translate(message: ResourceMessage<'_>) -> String {
+            match message {
+                ResourceMessage::DiskStop {
+                    description,
+                    free_gib,
+                } => format!("已停止：{description}，剩余 {free_gib:.2} GiB"),
+                ResourceMessage::MemoryStop => "内存压力持续严重，已停止导出".into(),
+                ResourceMessage::MemoryCritical => "系统内存压力严重".into(),
+                ResourceMessage::WarningFooter => "导出期间会持续检查".into(),
+                _ => "磁盘空间不足".into(),
+            }
+        }
+        let resources = ExportResources::new_with_messages(Vec::new(), "系统磁盘", translate);
+        let memory = resources
+            .warning(&sample(None, MemoryPressure::Critical))
+            .unwrap();
+        assert_eq!(memory, "系统内存压力严重\n\n导出期间会持续检查");
+        let stop = resources.stop_message(ResourceMessage::MemoryStop);
+        assert!(is_resource_stop(&stop));
+        assert_eq!(
+            resource_error_message(&stop),
+            "内存压力持续严重，已停止导出"
+        );
+        let disk = resources.stop_message(ResourceMessage::DiskStop {
+            description: "系统磁盘",
+            free_gib: 0.25,
+        });
+        assert!(is_resource_stop(&disk));
+        assert_eq!(
+            resource_error_message(&disk),
+            "已停止：系统磁盘，剩余 0.25 GiB"
+        );
+        assert_eq!(resource_error_message("Encoder failed"), "Encoder failed");
+    }
+
+    #[tokio::test]
+    async fn sustained_warning_pressure_does_not_stop_a_running_export() {
+        let result = resources()
+            .supervise_with(
+                async {
+                    tokio::time::sleep(Duration::from_millis(8)).await;
+                    Ok(42)
+                },
+                || panic!("Warning pressure must not stop the export"),
+                || async { sample(Some(9 * GIB), MemoryPressure::Warning) },
+                Duration::from_millis(1),
+            )
+            .await;
+        assert_eq!(result.unwrap(), 42);
     }
 
     #[test]

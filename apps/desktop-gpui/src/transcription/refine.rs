@@ -32,6 +32,8 @@ const REQUEST_FILE: &str = "caption-refinement.json";
 pub struct RefinementRequest {
     pub model: String,
     pub language: String,
+    #[serde(default)]
+    pub requested_manually: bool,
     /// The source ranges the first pass transcribed, so refinement hears the
     /// same audio even after the timeline has been cut.
     pub ranges: Vec<[f64; 2]>,
@@ -42,6 +44,7 @@ impl RefinementRequest {
         Self {
             model: model.to_string(),
             language: language.to_string(),
+            requested_manually: false,
             ranges: ranges
                 .iter()
                 .map(|range| [range.start, range.end])
@@ -73,6 +76,18 @@ pub fn refinement_request(project_path: &Path) -> Option<RefinementRequest> {
             tracing::warn!("Ignoring a broken caption refinement request: {error}")
         })
         .ok()
+}
+
+pub(crate) fn refinement_request_checked(
+    project_path: &Path,
+) -> Result<Option<RefinementRequest>, String> {
+    match std::fs::read(request_path(project_path)) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|error| error.to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 pub fn clear_refinement_request(project_path: &Path) {
@@ -120,9 +135,14 @@ fn words_signature(segments: &[CaptionSegment]) -> u64 {
     let mut hasher = std::hash::DefaultHasher::new();
     segments.len().hash(&mut hasher);
     for segment in segments {
+        segment.id.hash(&mut hasher);
+        segment.text.hash(&mut hasher);
+        segment.start.to_bits().hash(&mut hasher);
+        segment.end.to_bits().hash(&mut hasher);
         segment.words.len().hash(&mut hasher);
         for word in &segment.words {
             word_key(word).hash(&mut hasher);
+            word.hidden.hash(&mut hasher);
         }
     }
     hasher.finish()
@@ -365,6 +385,7 @@ pub fn refine_blocking(
                                 text: word.text.clone(),
                                 start: to_concatenated_time(word.start, offsets)?,
                                 end: to_concatenated_time(word.end, offsets)?,
+                                hidden: word.hidden,
                             })
                         })
                         .collect::<Option<Vec<_>>>()
@@ -458,6 +479,20 @@ fn keep_caption_identities(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn caption_export_distinguishes_missing_and_damaged_refinement_requests() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(
+            super::refinement_request_checked(directory.path())
+                .unwrap()
+                .is_none()
+        );
+        std::fs::write(super::request_path(directory.path()), b"{damaged").unwrap();
+        assert!(super::refinement_request_checked(directory.path()).is_err());
+        std::fs::remove_file(super::request_path(directory.path())).unwrap();
+        std::fs::create_dir(super::request_path(directory.path())).unwrap();
+        assert!(super::refinement_request_checked(directory.path()).is_err());
+    }
     use super::*;
 
     fn word(text: &str, start: f32, end: f32) -> CaptionWord {
@@ -465,7 +500,35 @@ mod tests {
             text: text.to_string(),
             start,
             end,
+            hidden: false,
         }
+    }
+
+    #[test]
+    fn refinement_preserves_hidden_words_changed_during_review() {
+        let input = vec![CaptionSegment {
+            id: "a".into(),
+            start: 0.0,
+            end: 2.0,
+            text: "um hello".into(),
+            words: vec![word("um", 0.0, 0.5), word("hello", 1.0, 2.0)],
+        }];
+        let mut timed = input.clone();
+        timed[0].words[0].end = 0.4;
+        timed[0].words[1].start = 1.1;
+        let refined = RefinedCaptions::new(&input, timed);
+        let mut project = ProjectConfiguration::default();
+        project.captions = Some(cap_project::CaptionsData {
+            segments: input,
+            source_timed: true,
+            ..Default::default()
+        });
+        project.captions.as_mut().unwrap().segments[0].words[0].hidden = true;
+        assert!(apply_refined_captions(&mut project, &refined, &[]));
+        let caption = &project.captions.as_ref().unwrap().segments[0];
+        assert!(caption.words[0].hidden);
+        assert_eq!(caption.words[1].start, 1.1);
+        assert_eq!(caption.id, "a");
     }
 
     #[test]
@@ -473,6 +536,7 @@ mod tests {
         let request = RefinementRequest {
             model: "best".to_string(),
             language: "en".to_string(),
+            requested_manually: false,
             ranges: vec![
                 [5.0, 8.0],
                 [0.0, 6.0],

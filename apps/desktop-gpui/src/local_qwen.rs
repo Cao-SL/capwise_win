@@ -67,7 +67,8 @@ pub fn delete() -> Result<(), String> {
 /// moved into place.
 pub async fn download() -> Result<(), String> {
     let dir = dir();
-    std::fs::create_dir_all(&dir).map_err(|error| format!("Failed to create {}: {error}", dir.display()))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("Failed to create {}: {error}", dir.display()))?;
     let total: u64 = FILES.iter().map(|file| file.bytes).sum();
     let mut done: u64 = 0;
     let client = reqwest::Client::new();
@@ -83,7 +84,8 @@ pub async fn download() -> Result<(), String> {
             let _ = std::fs::remove_file(&staging);
             return Err(error);
         }
-        std::fs::rename(&staging, &path).map_err(|error| format!("Failed to install the model: {error}"))?;
+        std::fs::rename(&staging, &path)
+            .map_err(|error| format!("Failed to install the model: {error}"))?;
         done += file.bytes;
     }
     Ok(())
@@ -103,15 +105,20 @@ async fn download_file(
         .await
         .map_err(|error| format!("Failed to download the model: {error}"))?;
     if !response.status().is_success() {
-        return Err(format!("Failed to download the model: HTTP {}", response.status()));
+        return Err(format!(
+            "Failed to download the model: HTTP {}",
+            response.status()
+        ));
     }
-    let mut out = std::fs::File::create(staging).map_err(|error| format!("Failed to create file: {error}"))?;
+    let mut out = std::fs::File::create(staging)
+        .map_err(|error| format!("Failed to create file: {error}"))?;
     let mut hasher = sha2::Sha256::new();
     let mut written: u64 = 0;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| format!("Error while downloading: {error}"))?;
-        out.write_all(&chunk).map_err(|error| format!("Error while writing to file: {error}"))?;
+        out.write_all(&chunk)
+            .map_err(|error| format!("Error while writing to file: {error}"))?;
         hasher.update(&chunk);
         written += chunk.len() as u64;
         let progress = (before + written) as f64 / total as f64 * 100.0;
@@ -121,12 +128,24 @@ async fn download_file(
             tr::transcription::download::progress(format!("{progress:.0}")),
         );
     }
-    out.flush().map_err(|error| format!("Failed to flush file: {error}"))?;
-    let digest: String = hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect();
+    out.flush()
+        .map_err(|error| format!("Failed to flush file: {error}"))?;
+    let digest: String = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     if digest != file.sha256 {
-        return Err(format!("The downloaded {} is damaged; try again.", file.name));
+        return Err(format!(
+            "The downloaded {} is damaged; try again.",
+            file.name
+        ));
     }
     Ok(())
+}
+
+pub(crate) fn runtime_available() -> bool {
+    server_binary().is_some_and(|path| path.is_file())
 }
 
 /// `CAPWISE_LLAMA_SERVER`, or `Contents/Helpers/llama-server/llama-server`
@@ -166,7 +185,8 @@ fn free_port() -> Result<u16, String> {
 }
 
 fn start_server() -> Result<Server, String> {
-    let binary = server_binary().ok_or_else(|| tr::transcription::qwen_missing_server().to_string())?;
+    let binary =
+        server_binary().ok_or_else(|| tr::transcription::qwen_missing_server().to_string())?;
     let port = free_port()?;
     let dir = dir();
     let child = Command::new(&binary)
@@ -175,7 +195,17 @@ fn start_server() -> Result<Server, String> {
         .arg("--mmproj")
         .arg(dir.join(FILES[1].name))
         .args(["--host", "127.0.0.1", "--port", &port.to_string()])
-        .args(["-ngl", "99", "-np", "3", "-c", "12288", "--alias", MODEL, "--log-disable"])
+        .args([
+            "-ngl",
+            "99",
+            "-np",
+            "3",
+            "-c",
+            "12288",
+            "--alias",
+            MODEL,
+            "--log-disable",
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -191,7 +221,9 @@ fn start_server() -> Result<Server, String> {
     let client = reqwest::Client::new();
     loop {
         if let Ok(Some(status)) = server.child.try_wait() {
-            return Err(format!("llama-server exited while loading the model ({status})"));
+            return Err(format!(
+                "llama-server exited while loading the model ({status})"
+            ));
         }
         let ready = tokio::runtime::Handle::current().block_on(async {
             client
@@ -202,7 +234,10 @@ fn start_server() -> Result<Server, String> {
                 .is_ok_and(|response| response.status().is_success())
         });
         if ready {
-            tracing::info!(ms = started.elapsed().as_millis() as u64, "llama-server ready");
+            tracing::info!(
+                ms = started.elapsed().as_millis() as u64,
+                "llama-server ready"
+            );
             return Ok(server);
         }
         if started.elapsed() > STARTUP_TIMEOUT {
@@ -237,7 +272,10 @@ mod tests {
             .chunks_exact(2)
             .map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32768.0)
             .collect();
-        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let hints = vec!["灵录".to_string(), "通义千问".to_string()];
         let segments = runtime
             .block_on(async move {
@@ -245,11 +283,18 @@ mod tests {
             })
             .unwrap()
             .unwrap();
-        let text: String = segments.iter().map(|segment| segment.text.as_str()).collect();
+        let text: String = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect();
         eprintln!("{segments:#?}");
         assert!(text.contains("灵录"), "{text}");
         assert!(text.contains("通义千问"), "{text}");
-        assert!(segments.windows(2).all(|pair| pair[0].end <= pair[1].start + 0.01));
+        assert!(
+            segments
+                .windows(2)
+                .all(|pair| pair[0].end <= pair[1].start + 0.01)
+        );
     }
 
     /// Downloads whatever is missing from Hugging Face (network, ~1 GB at
@@ -257,7 +302,10 @@ mod tests {
     #[test]
     #[ignore]
     fn download_fetches_missing_files_and_verifies_them() {
-        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(download()).unwrap();
         assert!(installed());
     }

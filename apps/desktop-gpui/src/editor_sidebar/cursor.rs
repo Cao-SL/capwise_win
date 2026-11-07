@@ -147,7 +147,10 @@ fn circle_art() -> AnyElement {
 
 impl EditorWindow {
     pub(crate) fn prepare_cursor_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sidebar.tab != SidebarTab::Cursor {
+        if !matches!(
+            self.sidebar.tab,
+            SidebarTab::Cursor | SidebarTab::Background
+        ) {
             return;
         }
         self.sidebar.cursor_scale = window.scale_factor();

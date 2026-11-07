@@ -414,6 +414,11 @@ pub fn decode_style<S: PresetStyle>(stored: &Map<String, Value>) -> S {
 
 fn decode_style_field_by_field<S: PresetStyle>(stored: &Map<String, Value>) -> S {
     let mut merged = style_map(&S::default());
+    if S::KIND == PresetKind::Captions {
+        merged.insert("translationStyle".into(), Value::Null);
+        merged.insert("translationGap".into(), Value::Null);
+        merged.insert("bottomMargin".into(), Value::Null);
+    }
     for (key, value) in stored {
         let Some(previous) = merged.get(key).cloned() else {
             continue;
@@ -747,6 +752,8 @@ impl CaptionStyle {
         settings.export_with_subtitles = false;
         settings.show_filler_words = false;
         settings.filler_language = None;
+        settings.translations.clear();
+        settings.display_mode = Default::default();
         Self(settings)
     }
 
@@ -756,6 +763,15 @@ impl CaptionStyle {
             export_with_subtitles: current.export_with_subtitles,
             show_filler_words: current.show_filler_words,
             filler_language: current.filler_language.clone(),
+            translations: current.translations.clone(),
+            display_mode: current.display_mode,
+            translation_gap: self.0.translation_gap.or(current.translation_gap),
+            bottom_margin: self.0.bottom_margin.or(current.bottom_margin),
+            translation_style: self
+                .0
+                .translation_style
+                .clone()
+                .or_else(|| current.translation_style.clone()),
             ..self.0.clone()
         }
     }
@@ -780,11 +796,24 @@ impl PresetStyle for CaptionStyle {
         settings.export_with_subtitles = false;
         settings.show_filler_words = false;
         settings.filler_language = None;
-        if !crate::editor_tabs::caption_font_options().contains(&settings.font) {
+        settings.translations.clear();
+        settings.display_mode = Default::default();
+        if !crate::editor_tabs::caption_font_available(&settings.font) {
             settings.font = fallback.font.clone();
         }
         settings.size = settings.size.clamp(12, 100);
+        settings.translation_gap = settings.translation_gap.map(|v| v.min(200));
+        settings.bottom_margin = settings.bottom_margin.map(|v| v.min(400));
+        if let Some(style) = &mut settings.translation_style {
+            if !crate::editor_tabs::caption_font_available(&style.font) {
+                style.font = fallback.font.clone();
+            }
+            style.size = style.size.clamp(12, 100);
+        }
         settings.background_opacity = settings.background_opacity.min(100);
+        settings.outline_width = settings.normalized_outline_width();
+        settings.shadow_opacity = settings.shadow_opacity.min(100);
+        settings.shadow_size = settings.normalized_shadow_size();
         settings.font_weight = settings.font_weight.clamp(100, 900);
         settings.fade_duration =
             finite_f32(settings.fade_duration, fallback.fade_duration, 0., 0.5);
@@ -803,6 +832,7 @@ impl PresetStyle for CaptionStyle {
         valid_color(&mut settings.color, &fallback.color);
         valid_color(&mut settings.background_color, &fallback.background_color);
         valid_color(&mut settings.outline_color, &fallback.outline_color);
+        valid_color(&mut settings.shadow_color, &fallback.shadow_color);
         valid_color(&mut settings.highlight_color, &fallback.highlight_color);
     }
 }
@@ -1430,7 +1460,7 @@ mod tests {
             "gradientColor": "#abc"
         });
         let style: TextStyle = decode_style(stored.as_object().unwrap());
-        assert_eq!(style.font_family, "sans-serif");
+        assert_eq!(style.font_family, "Noto Sans SC");
         assert_eq!(style.font_size, TEXT_FONT_SIZE_MAX);
         assert_eq!(style.font_weight, 100.);
         assert_eq!(style.letter_spacing, 20.);
@@ -1881,6 +1911,115 @@ mod tests {
         assert_eq!(applied.size, 80);
         assert_eq!(applied.filler_language.as_deref(), Some("en"));
         assert!(applied.show_filler_words);
+    }
+
+    #[test]
+    fn caption_translation_style_presets_roundtrip_and_preserve_legacy_inheritance() {
+        let mut current = CaptionSettings {
+            font: "Noto Sans SC".into(),
+            size: 48,
+            ..Default::default()
+        };
+        let legacy: CaptionStyle = decode_style(
+            json!({"font":"Noto Serif SC","size":60})
+                .as_object()
+                .unwrap(),
+        );
+        let unchanged_inheritance = legacy.applied_to(&current);
+        assert!(unchanged_inheritance.translation_style.is_none());
+        assert_eq!(unchanged_inheritance.resolved_translation_style().size, 60);
+        current.set_translation_font("Inter".into());
+        current.set_translation_font_size(40);
+        current.set_translation("private", "私密字幕", "Private caption".into(), "en".into());
+        current.display_mode = cap_project::CaptionDisplayMode::Bilingual;
+        let applied = legacy.applied_to(&current);
+        assert_eq!(applied.translation_style, current.translation_style);
+        assert_eq!(applied.font, "Noto Serif SC");
+        assert_eq!(applied.size, 60);
+        let saved = serde_json::to_value(CaptionStyle::of(&current)).unwrap();
+        assert_eq!(saved["translationStyle"], json!({"font":"Inter","size":40}));
+        assert!(saved.get("translations").is_none());
+        assert!(!saved.to_string().contains("Private caption"));
+        let restored: CaptionStyle = decode_style(saved.as_object().unwrap());
+        let mut other = CaptionSettings {
+            size: 70,
+            ..Default::default()
+        };
+        other.set_translation_font("Montserrat".into());
+        other.set_translation_font_size(28);
+        let applied = restored.applied_to(&other);
+        assert_eq!(applied.translation_style, current.translation_style);
+        assert_eq!(applied.size, 48);
+        assert_eq!(applied.translations, other.translations);
+    }
+
+    #[test]
+    fn caption_translation_style_survives_other_malformed_preset_fields_and_is_bounded() {
+        let recovered: CaptionStyle = decode_style(
+            json!({
+                "size":"broken", "translationStyle":{"font":"Inter","size":40}
+            })
+            .as_object()
+            .unwrap(),
+        );
+        assert_eq!(
+            recovered.0.resolved_translation_style(),
+            cap_project::CaptionTextStyle {
+                font: "Inter".into(),
+                size: 40
+            }
+        );
+        let bounded: CaptionStyle = decode_style(
+            json!({
+                "translationStyle":{"font":"unavailable-font","size":9000}
+            })
+            .as_object()
+            .unwrap(),
+        );
+        assert_eq!(bounded.0.resolved_translation_style().size, 100);
+        assert_eq!(
+            bounded.0.resolved_translation_style().font,
+            CaptionSettings::default().font
+        );
+    }
+
+    #[test]
+    fn caption_effect_styles_roundtrip_without_transcript_payload() {
+        let mut settings = CaptionSettings {
+            outline: true,
+            outline_width: 8.0,
+            shadow: true,
+            shadow_color: "#FFFFFF".into(),
+            shadow_size: 12.0,
+            shadow_opacity: 65,
+            display_mode: cap_project::CaptionDisplayMode::Bilingual,
+            ..Default::default()
+        };
+        settings.set_translation("private", "内部内容", "Private content".into(), "en".into());
+        let json = serde_json::to_string(&CaptionStyle::of(&settings)).unwrap();
+        assert!(!json.contains("Private content"));
+        assert!(!json.contains("内部内容"));
+        let restored: CaptionStyle = serde_json::from_str(&json).unwrap();
+        let applied = restored.applied_to(&settings);
+        assert_eq!(applied.outline_width, 8.0);
+        assert_eq!(applied.shadow_size, 12.0);
+        assert_eq!(applied.shadow_opacity, 65);
+        assert_eq!(applied.shadow_color, "#FFFFFF");
+        assert_eq!(applied.translations, settings.translations);
+        assert_eq!(
+            applied.display_mode,
+            cap_project::CaptionDisplayMode::Bilingual
+        );
+        let mut invalid = restored;
+        invalid.0.outline_width = f32::NAN;
+        invalid.0.shadow_size = 10000.0;
+        invalid.0.shadow_opacity = 10000;
+        invalid.0.shadow_color = "invalid".into();
+        invalid.sanitize();
+        assert_eq!(invalid.0.outline_width, 5.5);
+        assert_eq!(invalid.0.shadow_size, 30.0);
+        assert_eq!(invalid.0.shadow_opacity, 100);
+        assert_eq!(invalid.0.shadow_color, "#000000");
     }
 
     fn blue_outline() -> ShapeStyle {

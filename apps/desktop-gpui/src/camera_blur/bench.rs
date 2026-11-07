@@ -165,7 +165,8 @@ impl Converter {
             width: self.dims.0 as u32,
             height: self.dims.1 as u32,
             ring_generation: 1,
-            mode,
+            mode: Some(mode),
+            skin_smoothing: false,
         }
     }
 }
@@ -295,7 +296,10 @@ fn run(
     let footprint_before = footprint_mb();
     let mut worker = Worker::new(device, queue).unwrap();
     if let Some(interval) = inference_interval {
-        worker.processor.set_inference_interval(interval);
+        worker
+            .ensure_processor()
+            .unwrap()
+            .set_inference_interval(interval);
     }
     let interval = Duration::from_secs(1) / FPS;
     let frame_at = |index: usize| {
@@ -340,7 +344,7 @@ fn run(
             convert_ms.push(converted.as_secs_f64() * 1000.0);
             process_ms.push(elapsed.saturating_sub(converted).as_secs_f64() * 1000.0);
             worker_cpu_ms.push(cpu as f64 / 1e6);
-            if let Some(status) = worker.processor.output_status()
+            if let Some(status) = worker.processor.as_ref().and_then(|p| p.output_status())
                 && let BlurMaskStatus::Ready(receipt) = status.mask
             {
                 generations.insert(receipt.generation);
@@ -467,10 +471,16 @@ pub(super) fn synchronous_outputs(
     let source = (frames[0][0].width(), frames[0][0].height());
     let mut converter = Converter::new(source);
     let mut worker = Worker::new(device, queue).unwrap();
-    worker.processor.set_frame_synchronous(true);
+    worker
+        .ensure_processor()
+        .unwrap()
+        .set_frame_synchronous(true);
     (0..count)
         .map(|index| {
-            worker.processor.set_frame_time(index as f32 / FPS as f32);
+            worker
+                .ensure_processor()
+                .unwrap()
+                .set_frame_time(index as f32 / FPS as f32);
             let photo = (index / (count / frames.len()).max(1)) % frames.len();
             let job = converter.convert(&frames[photo][index % PAN_POSITIONS], mode);
             let output = worker.process(&runtime, job).unwrap();

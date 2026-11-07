@@ -28,6 +28,8 @@ pub struct CameraLayer {
     blur_bind_group: Option<wgpu::BindGroup>,
     blur_active: bool,
     blur_cache: Option<BlurCacheEntry>,
+    skin_bind_group: Option<(u64, wgpu::BindGroup)>,
+    skin_active: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -97,6 +99,8 @@ impl CameraLayer {
             blur_bind_group: None,
             blur_active: false,
             blur_cache: None,
+            skin_bind_group: None,
+            skin_active: false,
         }
     }
 
@@ -108,6 +112,7 @@ impl CameraLayer {
         frame_data: Option<(XY<u32>, &DecodedFrame, f32)>,
     ) {
         self.blur_active = false;
+        self.skin_active = false;
 
         let Some(uniforms) = uniforms else {
             self.hidden = true;
@@ -377,6 +382,7 @@ impl CameraLayer {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         self.blur_active = false;
+        self.skin_active = false;
 
         let Some(uniforms) = uniforms else {
             self.hidden = true;
@@ -606,6 +612,32 @@ impl CameraLayer {
         self.blur_active = true;
     }
 
+    pub fn attach_skin_smoothing(
+        &mut self,
+        device: &wgpu::Device,
+        smoother: &cap_camera_effects::SkinSmoother,
+    ) {
+        if self.hidden || self.last_recording_time.is_none() {
+            return;
+        }
+        let Some(output_view) = smoother.output_view() else {
+            return;
+        };
+        let generation = smoother.output_generation();
+        if !self
+            .skin_bind_group
+            .as_ref()
+            .is_some_and(|(cached, _)| *cached == generation)
+        {
+            self.skin_bind_group = Some((
+                generation,
+                self.pipeline
+                    .bind_group(device, &self.uniforms_buffer, output_view),
+            ));
+        }
+        self.skin_active = true;
+    }
+
     pub fn copy_to_texture(&mut self, _encoder: &mut wgpu::CommandEncoder) {}
 
     pub fn render(&self, pass: &mut wgpu::RenderPass<'_>) {
@@ -616,6 +648,11 @@ impl CameraLayer {
         let bind_group = if self.blur_active {
             self.blur_bind_group
                 .as_ref()
+                .or(self.bind_groups[self.current_texture].as_ref())
+        } else if self.skin_active {
+            self.skin_bind_group
+                .as_ref()
+                .map(|(_, bind_group)| bind_group)
                 .or(self.bind_groups[self.current_texture].as_ref())
         } else {
             self.bind_groups[self.current_texture].as_ref()
@@ -798,6 +835,133 @@ mod tests {
             .iter()
             .zip(expected)
             .all(|(&value, expected)| value.abs_diff(expected) <= 2)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a working native WGPU adapter"]
+    async fn skin_smoothing_reaches_the_composited_frame_in_both_prepare_paths() {
+        let constants = constants().await;
+        let mut rgba = Vec::with_capacity(1280 * 720 * 4);
+        for y in 0..720u32 {
+            for x in 0..1280u32 {
+                let speck = if (x * 7 + y * 13) % 5 == 0 { 0 } else { 14 };
+                rgba.extend_from_slice(&[191 + speck, 146 + speck, 121 + speck, 255]);
+            }
+        }
+        let camera = DecodedFrame::new(rgba, 1280, 720);
+        for ordinary_prepare in [true, false] {
+            let mut layers = legacy_layers(&constants);
+            let mut project = ProjectConfiguration::default();
+            let input = frames(Some(camera.clone()), 180);
+            let raw = pixels(
+                &constants,
+                &project,
+                input.clone(),
+                &mut layers,
+                ordinary_prepare,
+            )
+            .await;
+            project.camera.skin_smoothing = 1.0;
+            let smoothed = pixels(
+                &constants,
+                &project,
+                input.clone(),
+                &mut layers,
+                ordinary_prepare,
+            )
+            .await;
+            assert_ne!(raw, smoothed, "ordinary_prepare={ordinary_prepare}");
+            assert!(layers.camera_skin_smoother.is_some());
+
+            project.camera.skin_smoothing = 0.0;
+            let restored = pixels(&constants, &project, input, &mut layers, ordinary_prepare).await;
+            assert_eq!(raw, restored, "ordinary_prepare={ordinary_prepare}");
+            assert!(layers.camera_skin_smoother.is_none());
+        }
+    }
+
+    fn skin_coloured_display(number: u32) -> DecodedSegmentFrames {
+        let mut rgba = Vec::with_capacity(320 * 180 * 4);
+        for y in 0..180u32 {
+            for x in 0..320u32 {
+                let speck = if (x * 7 + y * 13) % 5 == 0 { 0 } else { 14 };
+                rgba.extend_from_slice(&[191 + speck, 146 + speck, 121 + speck, 255]);
+            }
+        }
+        DecodedSegmentFrames {
+            screen_frame: Some(DecodedFrame::new(rgba, 320, 180)),
+            segment_has_camera: false,
+            ..frames(None, number)
+        }
+    }
+
+    async fn display_only_constants(project_folder: &str) -> RenderVideoConstants {
+        let mut metadata: RecordingMeta = serde_json::from_value(serde_json::json!({
+            "pretty_name": "display only",
+            "segments": [{ "display": { "path": "display.mp4", "fps": 30 } }],
+        }))
+        .unwrap();
+        metadata.project_path = project_folder.into();
+        let studio = metadata.studio_meta().unwrap().clone();
+        RenderVideoConstants::new_with_options(
+            RenderOptions {
+                screen_size: XY::new(320, 180),
+                camera_size: None,
+                preserve_screen_alpha: false,
+            },
+            metadata,
+            studio,
+        )
+        .await
+        .expect("A working native WGPU adapter is required")
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a working native WGPU adapter"]
+    async fn skin_smoothing_reaches_a_camera_only_display_but_never_a_screen_recording() {
+        for (folder, reaches) in [
+            ("Camera (Camera) 2026-11-06 10.06 PM.cap", true),
+            (
+                "Built-in Retina Display (Display) 2026-11-06 09.04 PM.cap",
+                false,
+            ),
+        ] {
+            let constants = display_only_constants(folder).await;
+            assert_eq!(constants.recording_meta.display_is_camera(), reaches);
+            for ordinary_prepare in [true, false] {
+                let mut layers = RendererLayers::new(&constants.device, &constants.queue);
+                let mut project = ProjectConfiguration::default();
+                let raw = pixels(
+                    &constants,
+                    &project,
+                    skin_coloured_display(180),
+                    &mut layers,
+                    ordinary_prepare,
+                )
+                .await;
+                project.camera.skin_smoothing = 1.0;
+                let smoothed = pixels(
+                    &constants,
+                    &project,
+                    skin_coloured_display(180),
+                    &mut layers,
+                    ordinary_prepare,
+                )
+                .await;
+                assert_eq!(raw != smoothed, reaches, "{folder} {ordinary_prepare}");
+
+                project.camera.skin_smoothing = 0.0;
+                let restored = pixels(
+                    &constants,
+                    &project,
+                    skin_coloured_display(180),
+                    &mut layers,
+                    ordinary_prepare,
+                )
+                .await;
+                assert_eq!(raw, restored, "{folder} {ordinary_prepare}");
+            }
+        }
     }
 
     #[tokio::test]

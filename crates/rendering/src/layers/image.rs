@@ -93,6 +93,7 @@ struct ImageUniforms {
     center_size: [f32; 4],
     rotation_opacity_radius: [f32; 4],
     flips: [f32; 4],
+    uv_rect: [f32; 4],
 }
 
 struct CachedDraw {
@@ -167,6 +168,7 @@ fn visible_images(
                         0.0,
                         0.0,
                     ],
+                    uv_rect: [0.0, 0.0, 1.0, 1.0],
                 },
             ))
         })
@@ -630,6 +632,77 @@ impl ImageLayer {
 
     pub fn has_content(&self) -> bool {
         !self.draws.is_empty()
+    }
+
+    pub(super) async fn prepare_title_card_picture(
+        &mut self,
+        constants: &RenderVideoConstants,
+        relative: &str,
+        bounds: [f32; 4],
+        fit: cap_project::TitleCardImageFit,
+        focus: cap_project::XY<f64>,
+        dim: f32,
+    ) -> Result<(), crate::RenderingError> {
+        self.draws.clear();
+        self.draw_tracks.clear();
+        let project = constants.recording_meta.project_path.clone();
+        let relative = relative.to_owned();
+        let (path, version) = tokio::task::spawn_blocking(move || {
+            let root = project.canonicalize().ok()?;
+            let path = root.join(relative).canonicalize().ok()?;
+            if !path.starts_with(&root) || !path.is_file() {
+                return None;
+            }
+            let version = FileVersion::read(&path);
+            Some((path, version))
+        })
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(|| {
+            crate::RenderingError::ImageLoadError(
+                "Title card background is missing or outside the project".into(),
+            )
+        })?;
+        self.cache.retain(|cached, _| cached == &path);
+        let texture = self
+            .ensure_texture(&constants.device, &constants.queue, &path, &version, None)
+            .await
+            .ok_or_else(|| {
+                crate::RenderingError::ImageLoadError(
+                    "Title card background could not be decoded".into(),
+                )
+            })?;
+        let (bounds, uv_rect) = crate::title_cards::image_placement(
+            (texture.width(), texture.height()),
+            bounds,
+            fit,
+            focus,
+        )
+        .ok_or_else(|| crate::RenderingError::TitleCard("Invalid background framing".into()))?;
+        self.push_draw_with_track(
+            &constants.device,
+            &texture,
+            ImageUniforms {
+                center_size: [
+                    (bounds[0] + bounds[2]) * 0.5,
+                    (bounds[1] + bounds[3]) * 0.5,
+                    bounds[2] - bounds[0],
+                    bounds[3] - bounds[1],
+                ],
+                rotation_opacity_radius: [1.0, 0.0, 1.0, 0.0],
+                flips: [0.0, 0.0, dim.clamp(0.0, 1.0), 0.0],
+                uv_rect,
+            },
+            0,
+        );
+        self.cached_draws.truncate(1);
+        Ok(())
+    }
+
+    pub(super) fn clear_title_card_picture(&mut self) {
+        self.draws.clear();
+        self.draw_tracks.clear();
     }
 
     pub fn has_track(&self, track: u32) -> bool {

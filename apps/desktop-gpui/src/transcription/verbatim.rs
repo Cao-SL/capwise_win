@@ -30,6 +30,7 @@ pub(super) fn words_from_subword_tokens(
                 text: text.to_string(),
                 start: token.start,
                 end: token.end.min(token.start + TOKEN_REACH_SECONDS),
+                hidden: false,
             }),
         }
         open = true;
@@ -341,6 +342,7 @@ pub(super) fn split_stutters(words: Vec<CaptionWord>) -> Vec<CaptionWord> {
                 },
                 start: word.start + step * index as f32,
                 end: word.start + step * (index + 1) as f32,
+                hidden: false,
             });
         }
     }
@@ -442,6 +444,7 @@ mod tests {
             text: text.to_string(),
             start,
             end,
+            hidden: false,
         }
     }
 

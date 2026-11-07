@@ -79,6 +79,8 @@ pub struct CameraWindowState {
     pub shape: CameraShape,
     pub mirrored: bool,
     pub background_blur: BlurMode,
+    #[serde(default)]
+    pub skin_smoothing: bool,
 }
 
 impl Default for CameraWindowState {
@@ -88,6 +90,7 @@ impl Default for CameraWindowState {
             shape: CameraShape::Round,
             mirrored: false,
             background_blur: BlurMode::Off,
+            skin_smoothing: false,
         }
     }
 }
@@ -225,6 +228,12 @@ fn bundled_resource_dirs_for(
 
 fn state_path() -> PathBuf {
     app_data_dir().join("gpui-state.json")
+}
+
+pub(crate) fn camera_skin_smoothing_preference() -> Option<bool> {
+    let value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state_path()).ok()?).ok()?;
+    value.get("camera_window")?.get("skin_smoothing")?.as_bool()
 }
 
 pub fn load() -> PersistedState {
@@ -433,6 +442,23 @@ pub fn store_section(section: &str) -> Map<String, Value> {
             _ => None,
         })
         .unwrap_or_default()
+}
+
+pub(crate) fn store_section_checked(section: &str) -> Result<Map<String, Value>, String> {
+    let bytes = match std::fs::read(tauri_store_path()) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let value: Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "Settings must be a JSON object".to_string())?;
+    match object.get(section) {
+        Some(Value::Object(section)) => Ok(section.clone()),
+        Some(_) => Err(format!("Invalid settings section: {section}")),
+        None => Ok(Map::new()),
+    }
 }
 
 pub fn notification_sounds_enabled() -> bool {
@@ -735,6 +761,21 @@ settings_enum! {
     default = ScreenRegion
 }
 
+fn window_capture_style_at(
+    general: &Map<String, Value>,
+    focused_by_default: bool,
+) -> WindowCaptureStyle {
+    general
+        .get("windowCaptureStyle")
+        .and_then(Value::as_str)
+        .and_then(WindowCaptureStyle::from_json)
+        .unwrap_or(if focused_by_default {
+            WindowCaptureStyle::FocusedWindow
+        } else {
+            WindowCaptureStyle::ScreenRegion
+        })
+}
+
 settings_enum! {
     /// `PostStudioRecordingBehaviour`.
     PostStudioBehaviour {
@@ -977,6 +1018,7 @@ pub struct GeneralSettings {
     pub crash_recovery_recording: bool,
     pub custom_cursor_capture: bool,
     pub auto_zoom_on_clicks: bool,
+    pub auto_captions_after_recording: bool,
     pub default_zoom_amount: Option<f32>,
     pub capture_keyboard_events: bool,
     pub macbook_notch_overlay: bool,
@@ -1403,7 +1445,7 @@ impl GeneralSettings {
                 general,
                 "mainWindowRecordingStartBehaviour",
             ),
-            window_capture_style: enum_at(general, "windowCaptureStyle"),
+            window_capture_style: window_capture_style_at(general, cfg!(target_os = "macos")),
             focus_center: bool_at(general, "focusCenter", false),
             post_studio_recording_behaviour: enum_at(general, "postStudioRecordingBehaviour"),
             post_screenshot_behaviour: enum_at(general, "postScreenshotBehaviour"),
@@ -1420,7 +1462,8 @@ impl GeneralSettings {
             // is how the setting was re-defaulted without inheriting the old
             // key's values.
             custom_cursor_capture: bool_at(general, "custom_cursor_capture2", true),
-            auto_zoom_on_clicks: bool_at(general, "autoZoomOnClicks", false),
+            auto_zoom_on_clicks: bool_at(general, "autoZoomOnClicks", true),
+            auto_captions_after_recording: bool_at(general, "autoCaptionsAfterRecording", true),
             default_zoom_amount: opt_f32_at(general, "defaultZoomAmount"),
             capture_keyboard_events: bool_at(general, "captureKeyboardEvents", true),
             macbook_notch_overlay: bool_at(general, "macbookNotchOverlay", false),
@@ -1482,6 +1525,9 @@ pub const TELEPROMPTER: &str = "teleprompter";
 #[derive(Debug, Clone, PartialEq)]
 pub struct TeleprompterState {
     pub script: String,
+    pub script_backup: String,
+    pub narrow_reading: bool,
+    pub window_bounds: Option<[f32; 4]>,
     pub font_size: f32,
     pub words_per_minute: u32,
     pub line_height: f32,
@@ -1492,6 +1538,9 @@ pub struct TeleprompterState {
 
 impl TeleprompterState {
     /// The store keys, so a write call reads as the key it writes.
+    pub const SCRIPT_BACKUP: &'static str = "scriptBackup";
+    pub const NARROW_READING: &'static str = "narrowReading";
+    pub const WINDOW_BOUNDS: &'static str = "windowBounds";
     pub const SCRIPT: &'static str = "script";
     pub const FONT_SIZE: &'static str = "fontSize";
     pub const WORDS_PER_MINUTE: &'static str = "wordsPerMinute";
@@ -1508,6 +1557,16 @@ impl TeleprompterState {
         let defaults = Self::default();
         Self {
             script: opt_string_at(map, Self::SCRIPT).unwrap_or(defaults.script),
+            script_backup: opt_string_at(map, Self::SCRIPT_BACKUP).unwrap_or_default(),
+            narrow_reading: bool_at(map, Self::NARROW_READING, true),
+            window_bounds: map
+                .get(Self::WINDOW_BOUNDS)
+                .and_then(|value| serde_json::from_value::<[f32; 4]>(value.clone()).ok())
+                .filter(|bounds| {
+                    bounds.iter().all(|value| value.is_finite())
+                        && bounds[2] >= 220.0
+                        && bounds[3] >= 160.0
+                }),
             font_size: f32_at(map, Self::FONT_SIZE, defaults.font_size),
             words_per_minute: u32_at(map, Self::WORDS_PER_MINUTE, defaults.words_per_minute),
             line_height: f32_at(map, Self::LINE_HEIGHT, defaults.line_height),
@@ -1526,6 +1585,9 @@ impl TeleprompterState {
     pub fn value_for(&self, key: &str) -> Value {
         match key {
             Self::SCRIPT => Value::from(self.script.clone()),
+            Self::SCRIPT_BACKUP => Value::from(self.script_backup.clone()),
+            Self::NARROW_READING => Value::Bool(self.narrow_reading),
+            Self::WINDOW_BOUNDS => serde_json::json!(self.window_bounds),
             Self::FONT_SIZE => Value::from(self.font_size),
             Self::WORDS_PER_MINUTE => Value::from(self.words_per_minute),
             Self::LINE_HEIGHT => Value::from(self.line_height),
@@ -1541,6 +1603,9 @@ impl Default for TeleprompterState {
     fn default() -> Self {
         Self {
             script: String::new(),
+            script_backup: String::new(),
+            narrow_reading: true,
+            window_bounds: None,
             font_size: 30.,
             words_per_minute: 150,
             line_height: 1.5,
@@ -1641,9 +1706,7 @@ pub fn seed_recording_marker_hotkey() {
 
 // -- Transcription hints --------------------------------------------------------
 
-/// `DEFAULT_TRANSCRIPTION_HINTS` (`apps/desktop/src/utils/general-settings.ts`).
-pub const DEFAULT_TRANSCRIPTION_HINTS: &[&str] =
-    &["Cap", "TypeScript", "My Brand Name", "mywebsite.com"];
+pub const DEFAULT_TRANSCRIPTION_HINTS: &[&str] = &[];
 
 /// `normalizeTranscriptionHints`: strip NULs, trim, drop empties and
 /// duplicates, first occurrence wins.
@@ -1664,9 +1727,6 @@ where
     normalized
 }
 
-/// `deriveGeneralSettings(store).transcriptionHints ?? []`: the stored array
-/// as-is when the key exists (normalisation happens on write, not read), the
-/// four defaults when it does not.
 pub fn transcription_hints() -> Vec<String> {
     match store_section(GENERAL_SETTINGS).get("transcriptionHints") {
         Some(Value::Array(entries)) => entries
@@ -2133,6 +2193,54 @@ pub fn preset_names() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_capture_defaults_preserve_explicit_scope_and_centering_choices() {
+        let empty = Map::new();
+        assert_eq!(
+            window_capture_style_at(&empty, true),
+            WindowCaptureStyle::FocusedWindow
+        );
+        assert_eq!(
+            window_capture_style_at(&empty, false),
+            WindowCaptureStyle::ScreenRegion
+        );
+        let defaults = GeneralSettings::from_sections(&empty, &empty, &empty);
+        assert_eq!(
+            defaults.window_capture_style,
+            window_capture_style_at(&empty, cfg!(target_os = "macos"))
+        );
+        assert!(!defaults.focus_center);
+        for focused_by_default in [false, true] {
+            for (value, expected) in [
+                ("screenRegion", WindowCaptureStyle::ScreenRegion),
+                ("focusedWindow", WindowCaptureStyle::FocusedWindow),
+            ] {
+                let general = serde_json::json!({"windowCaptureStyle": value, "focusCenter": true});
+                let general = general.as_object().unwrap();
+                assert_eq!(
+                    window_capture_style_at(general, focused_by_default),
+                    expected
+                );
+                let settings = GeneralSettings::from_sections(general, &empty, &empty);
+                assert_eq!(settings.window_capture_style, expected);
+                assert!(settings.focus_center);
+                assert_eq!(general["windowCaptureStyle"], value);
+            }
+            for value in [
+                Value::Null,
+                Value::Bool(false),
+                Value::String("unknown".into()),
+            ] {
+                let general = Map::from_iter([("windowCaptureStyle".into(), value)]);
+                assert_eq!(
+                    window_capture_style_at(&general, focused_by_default),
+                    window_capture_style_at(&empty, focused_by_default)
+                );
+                assert!(!GeneralSettings::from_sections(&general, &empty, &empty).focus_center);
+            }
+        }
+    }
 
     struct TempStore {
         path: PathBuf,
@@ -3097,6 +3205,45 @@ mod tests {
     /// The teleprompter's own section: defaults when absent, and a per-key
     /// write that leaves the rest of the section (and the rest of the store)
     /// alone -- the window writes only the fields the user touched.
+    #[test]
+    fn teleprompter_reading_preferences_and_backup_survive_reload() {
+        let mut map = Map::new();
+        map.insert(
+            TeleprompterState::SCRIPT.into(),
+            serde_json::json!("current"),
+        );
+        map.insert(
+            TeleprompterState::SCRIPT_BACKUP.into(),
+            serde_json::json!("original"),
+        );
+        map.insert(
+            TeleprompterState::NARROW_READING.into(),
+            serde_json::json!(false),
+        );
+        map.insert(
+            TeleprompterState::WINDOW_BOUNDS.into(),
+            serde_json::json!([100., 50., 560., 320.]),
+        );
+        let loaded = TeleprompterState::from_section(&map);
+        assert_eq!(loaded.script_backup, "original");
+        assert!(!loaded.narrow_reading);
+        assert_eq!(loaded.window_bounds, Some([100., 50., 560., 320.]));
+        assert_eq!(
+            loaded.value_for(TeleprompterState::WINDOW_BOUNDS),
+            serde_json::json!([100., 50., 560., 320.])
+        );
+        map.insert(
+            TeleprompterState::WINDOW_BOUNDS.into(),
+            serde_json::json!([0., 0., -10., 0.]),
+        );
+        assert!(
+            TeleprompterState::from_section(&map)
+                .window_bounds
+                .is_none()
+        );
+        assert!(TeleprompterState::default().narrow_reading);
+    }
+
     #[test]
     fn the_teleprompter_section_round_trips_per_key() {
         let store = TempStore::new(

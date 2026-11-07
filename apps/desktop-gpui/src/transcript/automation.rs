@@ -1,6 +1,7 @@
 //! `CAP_GPUI_AUTO_TRANSCRIPT=<action>,...` drives the transcript panel for
 //! screenshots, perf runs and export checks. Actions: `open`, `seed:<words>`,
 //! `transcribe`, `select:<a>-<b>`, `delete`, `cleanup[:pauses]`, `fillers`,
+//! `suggestions`, `by-term`,
 //! `pauses`, `cuts:<n>`, `search:<query>`, `seek:<seconds>`, `play`, `stop`,
 //! `wait:<ms>`, `scroll:<frames>`, `follow:<seconds>`, `undo`, `redo`,
 //! `hover-cut`, `restore`, `dump:<path>`.
@@ -52,6 +53,7 @@ fn seeded_captions(words: usize, duration: f64) -> cap_project::CaptionsData {
             text,
             start: time as f32,
             end: (time + step * 0.7) as f32,
+            hidden: false,
         });
         time += step + pause;
         if time > duration - 0.5 {
@@ -160,6 +162,15 @@ pub(crate) async fn run(handle: WindowHandle<EditorWindow>, cx: &mut AsyncApp) {
                     } else {
                         super::CleanupTab::Fillers
                     };
+                    view.invalidate_transcript(cx);
+                    String::new()
+                }
+                "suggestions" => {
+                    view.transcript_apply_suggestions(window, cx);
+                    view.timeline_summary()
+                }
+                "by-term" => {
+                    view.transcript.cleanup.by_term_open = true;
                     view.invalidate_transcript(cx);
                     String::new()
                 }

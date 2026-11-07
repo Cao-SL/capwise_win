@@ -28,9 +28,8 @@
 use cap_project::{
     AudioTrackSegment, Camera3DProperties, Camera3DSegment, CaptionTrackSegment,
     ClipSpeedAudioMode, CursorClickEvent, GlideDirection, KeyboardTrackSegment, MaskKind,
-    MaskSegment, OverlayTrack, ProjectConfiguration, SceneMode, SceneSegment, ShapeSegment,
-    TextSegment, TimelineConfiguration, TimelineSegment, XY, ZoomMode, ZoomSegment,
-    mask_effect_contract,
+    MaskSegment, ProjectConfiguration, SceneMode, SceneSegment, ShapeSegment, TextSegment,
+    TimelineConfiguration, TimelineSegment, XY, ZoomMode, ZoomSegment, mask_effect_contract,
 };
 
 use crate::editor_timeline::{self, Segment, TrackKind};
@@ -1057,7 +1056,11 @@ pub fn delete_segments(
     indices: &[usize],
 ) -> bool {
     match kind {
-        TrackKind::Image => delete_indices(&mut timeline.image_segments, indices),
+        TrackKind::Image | TrackKind::Mask | TrackKind::Shape | TrackKind::Text => {
+            let deleted = with_track!(timeline, kind, |segments| delete_indices(segments, indices));
+            normalize_overlay_layers(timeline);
+            deleted
+        }
         TrackKind::Style => {
             let deleted = delete_indices(&mut timeline.style_segments, indices);
             normalize_track(&mut timeline.style_segments, |segment, lane| {
@@ -1065,9 +1068,6 @@ pub fn delete_segments(
             });
             deleted
         }
-        TrackKind::Mask => delete_indices(&mut timeline.mask_segments, indices),
-        TrackKind::Shape => delete_indices(&mut timeline.shape_segments, indices),
-        TrackKind::Text => delete_indices(&mut timeline.text_segments, indices),
         TrackKind::Audio => {
             let deleted = delete_indices(&mut timeline.audio_segments, indices);
             normalize_track(&mut timeline.audio_segments, |segment, lane| {
@@ -1146,58 +1146,478 @@ pub fn delete_track_lane(timeline: &mut TimelineConfiguration, kind: TrackKind, 
     }
 }
 
-pub fn delete_track_lane_and_order(
-    project: &mut ProjectConfiguration,
-    available: &[OverlayTrack],
-    kind: TrackKind,
-    lane: u32,
-) -> bool {
-    let next_order = kind.overlay_track(lane).map(|deleted| {
-        project
-            .resolved_overlay_order(available)
-            .into_iter()
-            .filter(|track| *track != deleted)
-            .map(|mut track| {
-                if track.kind == deleted.kind && track.track > deleted.track {
-                    track.track -= 1;
-                }
-                track
-            })
-            .collect::<Vec<_>>()
-    });
-    let timeline_changed = project
-        .timeline
-        .as_mut()
-        .is_some_and(|timeline| delete_track_lane(timeline, kind, lane));
-    let order_changed = next_order.is_some_and(|order| {
-        if project.overlay_order() == order.as_slice() {
-            false
-        } else {
-            project.set_overlay_order(order);
-            true
-        }
-    });
-    timeline_changed || order_changed
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LaneSpan {
+    pub start: f64,
+    pub end: f64,
 }
 
-pub fn reorder_overlay_track(
-    project: &mut ProjectConfiguration,
-    available: &[OverlayTrack],
-    from: OverlayTrack,
-    target_index: usize,
+impl TrackSegmentOps for LaneSpan {
+    fn start(&self) -> f64 {
+        self.start
+    }
+    fn end(&self) -> f64 {
+        self.end
+    }
+    fn set_start(&mut self, value: f64) {
+        self.start = value;
+    }
+    fn set_end(&mut self, value: f64) {
+        self.end = value;
+    }
+}
+
+pub fn overlay_lane_spans(timeline: &TimelineConfiguration, lane: u32) -> Vec<LaneSpan> {
+    let mut spans = timeline
+        .overlay_spans()
+        .filter(|(_, _, layer, _, _)| *layer == lane)
+        .map(|(_, _, _, start, end)| LaneSpan { start, end })
+        .collect::<Vec<_>>();
+    spans.sort_by(|a, b| a.start.total_cmp(&b.start));
+    spans
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaneTarget {
+    Existing(u32),
+    Insert(u32),
+}
+
+fn overlay_kind(kind: TrackKind) -> Option<cap_project::OverlayTrackKind> {
+    kind.overlay_track(0).map(|track| track.kind)
+}
+
+pub fn overlay_overlaps(
+    timeline: &TimelineConfiguration,
+    lane: u32,
+    start: f64,
+    end: f64,
+    skip: Option<(TrackKind, usize)>,
 ) -> bool {
-    let mut order = project.resolved_overlay_order(available);
-    let Some(from_index) = order.iter().position(|track| *track == from) else {
-        return false;
-    };
-    let moved = order.remove(from_index);
-    let target_index = target_index.min(order.len());
-    order.insert(target_index, moved);
-    if order == project.resolved_overlay_order(available) {
+    let skip = skip.and_then(|(kind, index)| overlay_kind(kind).map(|kind| (kind, index)));
+    timeline
+        .overlay_spans()
+        .any(|(kind, index, layer, segment_start, segment_end)| {
+            layer == lane
+                && Some((kind, index)) != skip
+                && segment_start < end
+                && start < segment_end
+        })
+}
+
+pub fn overlay_front_layer(timeline: &TimelineConfiguration, start: f64, end: f64) -> u32 {
+    timeline
+        .overlay_spans()
+        .filter(|(_, _, _, segment_start, segment_end)| {
+            *segment_start < end && start < *segment_end
+        })
+        .map(|(_, _, layer, _, _)| layer + 1)
+        .max()
+        .unwrap_or(0)
+}
+
+pub fn place_overlay_at_time(
+    timeline: &TimelineConfiguration,
+    time: f64,
+    length: f64,
+    total: f64,
+) -> Option<(u32, f64, f64)> {
+    let (start, end) = place_segment_at_time(&[] as &[TextSegment], time, length, total)?;
+    Some((overlay_front_layer(timeline, start, end), start, end))
+}
+
+fn sort_overlay_tracks(timeline: &mut TimelineConfiguration) {
+    sort_track(&mut timeline.text_segments);
+    sort_track(&mut timeline.mask_segments);
+    sort_track(&mut timeline.shape_segments);
+}
+
+fn remap_overlay_layers(
+    timeline: &mut TimelineConfiguration,
+    mut map: impl FnMut(u32) -> u32,
+) -> bool {
+    let mut changed = false;
+    timeline.for_each_overlay_track_mut(|_, track| {
+        let next = map(*track);
+        if next != *track {
+            *track = next;
+            changed = true;
+        }
+    });
+    if changed {
+        sort_overlay_tracks(timeline);
+    }
+    changed
+}
+
+pub fn normalize_overlay_layers(timeline: &mut TimelineConfiguration) -> bool {
+    let mut used = timeline
+        .overlay_spans()
+        .map(|(_, _, layer, _, _)| layer)
+        .collect::<Vec<_>>();
+    used.sort_unstable();
+    used.dedup();
+    remap_overlay_layers(timeline, |layer| {
+        used.iter().position(|value| *value == layer).unwrap_or(0) as u32
+    })
+}
+
+pub fn delete_overlay_layer(timeline: &mut TimelineConfiguration, lane: u32) -> bool {
+    let before = timeline.overlay_spans().count();
+    timeline
+        .text_segments
+        .retain(|segment| segment.track != lane);
+    timeline
+        .shape_segments
+        .retain(|segment| segment.track != lane);
+    timeline
+        .image_segments
+        .retain(|segment| segment.track != lane);
+    timeline
+        .mask_segments
+        .retain(|segment| segment.track != lane);
+    let removed = timeline.overlay_spans().count() != before;
+    let shifted = remap_overlay_layers(
+        timeline,
+        |layer| if layer > lane { layer - 1 } else { layer },
+    );
+    removed || shifted
+}
+
+pub fn reorder_overlay_layer(timeline: &mut TimelineConfiguration, from: u32, to: u32) -> bool {
+    if from == to {
         return false;
     }
-    project.set_overlay_order(order);
-    true
+    remap_overlay_layers(timeline, |lane| {
+        if lane == from {
+            to
+        } else if from < to && lane > from && lane <= to {
+            lane - 1
+        } else if from > to && lane >= to && lane < from {
+            lane + 1
+        } else {
+            lane
+        }
+    })
+}
+
+fn lane_spans_of<T: TrackSegmentOps>(segments: &[T], lane: u32, skip: usize) -> Vec<(f64, f64)> {
+    segments
+        .iter()
+        .enumerate()
+        .filter(|(index, segment)| *index != skip && segment.lane() == lane)
+        .map(|(_, segment)| (segment.start(), segment.end()))
+        .collect()
+}
+
+fn family_overlaps(
+    timeline: &TimelineConfiguration,
+    kind: TrackKind,
+    index: usize,
+    lane: u32,
+    start: f64,
+    end: f64,
+) -> bool {
+    if kind.is_overlay() {
+        return overlay_overlaps(timeline, lane, start, end, Some((kind, index)));
+    }
+    let spans = match kind {
+        TrackKind::Audio => lane_spans_of(&timeline.audio_segments, lane, index),
+        TrackKind::Style => lane_spans_of(&timeline.style_segments, lane, index),
+        _ => return true,
+    };
+    spans
+        .iter()
+        .any(|(segment_start, segment_end)| *segment_start < end && start < *segment_end)
+}
+
+fn set_family_lane(timeline: &mut TimelineConfiguration, kind: TrackKind, index: usize, lane: u32) {
+    match kind {
+        TrackKind::Text => timeline.text_segments[index].track = lane,
+        TrackKind::Shape => timeline.shape_segments[index].track = lane,
+        TrackKind::Image => timeline.image_segments[index].track = lane,
+        TrackKind::Mask => timeline.mask_segments[index].track = lane,
+        TrackKind::Audio => timeline.audio_segments[index].track = lane,
+        TrackKind::Style => timeline.style_segments[index].track = lane,
+        _ => {}
+    }
+}
+
+fn shift_family_lanes_from(timeline: &mut TimelineConfiguration, kind: TrackKind, from: u32) {
+    let bump = |track: &mut u32| {
+        if *track >= from {
+            *track += 1;
+        }
+    };
+    if kind.is_overlay() {
+        timeline.for_each_overlay_track_mut(|_, track| bump(track));
+    } else if kind == TrackKind::Audio {
+        timeline
+            .audio_segments
+            .iter_mut()
+            .for_each(|segment| bump(&mut segment.track));
+    } else if kind == TrackKind::Style {
+        timeline
+            .style_segments
+            .iter_mut()
+            .for_each(|segment| bump(&mut segment.track));
+    }
+}
+
+fn normalize_family(timeline: &mut TimelineConfiguration, kind: TrackKind) {
+    if kind.is_overlay() {
+        normalize_overlay_layers(timeline);
+    } else if kind == TrackKind::Audio {
+        normalize_track(&mut timeline.audio_segments, |segment, lane| {
+            segment.track = lane
+        });
+    } else if kind == TrackKind::Style {
+        normalize_track(&mut timeline.style_segments, |segment, lane| {
+            segment.track = lane
+        });
+    }
+}
+
+fn family_identity(
+    timeline: &TimelineConfiguration,
+    kind: TrackKind,
+    index: usize,
+) -> Option<String> {
+    fn unlaned<T: serde::Serialize + Clone>(
+        segment: Option<&T>,
+        clear: impl Fn(&mut T),
+    ) -> Option<String> {
+        let mut segment = segment?.clone();
+        clear(&mut segment);
+        serde_json::to_string(&segment).ok()
+    }
+    match kind {
+        TrackKind::Text => unlaned(timeline.text_segments.get(index), |s| s.track = 0),
+        TrackKind::Shape => unlaned(timeline.shape_segments.get(index), |s| s.track = 0),
+        TrackKind::Image => unlaned(timeline.image_segments.get(index), |s| s.track = 0),
+        TrackKind::Mask => unlaned(timeline.mask_segments.get(index), |s| s.track = 0),
+        TrackKind::Audio => unlaned(timeline.audio_segments.get(index), |s| s.track = 0),
+        TrackKind::Style => unlaned(timeline.style_segments.get(index), |s| s.track = 0),
+        _ => None,
+    }
+}
+
+fn family_lanes(timeline: &TimelineConfiguration, kind: TrackKind) -> Vec<u32> {
+    let mut lanes = if kind.is_overlay() {
+        timeline
+            .overlay_spans()
+            .map(|(_, _, layer, _, _)| layer)
+            .collect::<Vec<_>>()
+    } else if kind == TrackKind::Audio {
+        timeline.audio_segments.iter().map(|s| s.track).collect()
+    } else {
+        timeline.style_segments.iter().map(|s| s.track).collect()
+    };
+    lanes.sort_unstable();
+    lanes.dedup();
+    lanes
+}
+
+fn family_lane(timeline: &TimelineConfiguration, kind: TrackKind, index: usize) -> Option<u32> {
+    match kind {
+        TrackKind::Text => timeline.text_segments.get(index).map(|s| s.track),
+        TrackKind::Shape => timeline.shape_segments.get(index).map(|s| s.track),
+        TrackKind::Image => timeline.image_segments.get(index).map(|s| s.track),
+        TrackKind::Mask => timeline.mask_segments.get(index).map(|s| s.track),
+        TrackKind::Audio => timeline.audio_segments.get(index).map(|s| s.track),
+        TrackKind::Style => timeline.style_segments.get(index).map(|s| s.track),
+        _ => None,
+    }
+}
+
+fn family_index_of(
+    timeline: &TimelineConfiguration,
+    kind: TrackKind,
+    identity: &str,
+    lane: u32,
+) -> Option<usize> {
+    let count = segment_count(timeline, kind);
+    (0..count).find(|index| {
+        family_lane(timeline, kind, *index) == Some(lane)
+            && family_identity(timeline, kind, *index).as_deref() == Some(identity)
+    })
+}
+
+pub fn resolve_lane_target(
+    timeline: &TimelineConfiguration,
+    kind: TrackKind,
+    index: usize,
+    target: LaneTarget,
+) -> LaneTarget {
+    let LaneTarget::Existing(lane) = target else {
+        return target;
+    };
+    let Some((start, end)) = with_track_ref(timeline, kind, index) else {
+        return target;
+    };
+    if family_overlaps(timeline, kind, index, lane, start, end) {
+        LaneTarget::Insert(lane + 1)
+    } else {
+        target
+    }
+}
+
+fn with_track_ref(
+    timeline: &TimelineConfiguration,
+    kind: TrackKind,
+    index: usize,
+) -> Option<(f64, f64)> {
+    let span = |start: f64, end: f64| Some((start, end));
+    match kind {
+        TrackKind::Text => timeline
+            .text_segments
+            .get(index)
+            .and_then(|s| span(s.start, s.end)),
+        TrackKind::Shape => timeline
+            .shape_segments
+            .get(index)
+            .and_then(|s| span(s.start, s.end)),
+        TrackKind::Image => timeline
+            .image_segments
+            .get(index)
+            .and_then(|s| span(s.start, s.end)),
+        TrackKind::Mask => timeline
+            .mask_segments
+            .get(index)
+            .and_then(|s| span(s.start, s.end)),
+        TrackKind::Audio => timeline
+            .audio_segments
+            .get(index)
+            .and_then(|s| span(s.start, s.end)),
+        TrackKind::Style => timeline
+            .style_segments
+            .get(index)
+            .and_then(|s| span(s.start, s.end)),
+        _ => None,
+    }
+}
+
+pub fn move_segment_to_lane(
+    timeline: &mut TimelineConfiguration,
+    kind: TrackKind,
+    index: usize,
+    target: LaneTarget,
+) -> Option<usize> {
+    if !(kind.is_overlay() || matches!(kind, TrackKind::Audio | TrackKind::Style)) {
+        return None;
+    }
+    let lane = match resolve_lane_target(timeline, kind, index, target) {
+        LaneTarget::Existing(lane) => lane,
+        LaneTarget::Insert(lane) => {
+            shift_family_lanes_from(timeline, kind, lane);
+            lane
+        }
+    };
+    set_family_lane(timeline, kind, index, lane);
+    let identity = family_identity(timeline, kind, index)?;
+    let final_lane = family_lanes(timeline, kind)
+        .iter()
+        .position(|used| *used == lane)? as u32;
+    normalize_family(timeline, kind);
+    family_index_of(timeline, kind, &identity, final_lane)
+}
+
+pub fn row_toggleable(kind: TrackKind) -> bool {
+    kind.is_overlay() || matches!(kind, TrackKind::Audio | TrackKind::Style)
+}
+
+fn row_flags(timeline: &TimelineConfiguration, kind: TrackKind, lane: u32) -> Vec<bool> {
+    let mut flags = Vec::new();
+    if kind.is_overlay() {
+        flags.extend(
+            timeline
+                .text_segments
+                .iter()
+                .filter(|s| s.track == lane)
+                .map(|s| s.enabled),
+        );
+        flags.extend(
+            timeline
+                .shape_segments
+                .iter()
+                .filter(|s| s.track == lane)
+                .map(|s| s.enabled),
+        );
+        flags.extend(
+            timeline
+                .image_segments
+                .iter()
+                .filter(|s| s.track == lane)
+                .map(|s| s.enabled),
+        );
+        flags.extend(
+            timeline
+                .mask_segments
+                .iter()
+                .filter(|s| s.track == lane)
+                .map(|s| s.enabled),
+        );
+    } else if kind == TrackKind::Audio {
+        flags.extend(
+            timeline
+                .audio_segments
+                .iter()
+                .filter(|s| s.track == lane)
+                .map(|s| s.enabled),
+        );
+    } else if kind == TrackKind::Style {
+        flags.extend(
+            timeline
+                .style_segments
+                .iter()
+                .filter(|s| s.track == lane)
+                .map(|s| s.enabled),
+        );
+    }
+    flags
+}
+
+pub fn row_hidden(timeline: &TimelineConfiguration, kind: TrackKind, lane: u32) -> bool {
+    let flags = row_flags(timeline, kind, lane);
+    !flags.is_empty() && flags.iter().all(|enabled| !enabled)
+}
+
+pub fn set_row_enabled(
+    timeline: &mut TimelineConfiguration,
+    kind: TrackKind,
+    lane: u32,
+    enabled: bool,
+) -> bool {
+    let mut changed = false;
+    let mut apply = |track: u32, flag: &mut bool| {
+        if track == lane && *flag != enabled {
+            *flag = enabled;
+            changed = true;
+        }
+    };
+    if kind.is_overlay() {
+        for s in &mut timeline.text_segments {
+            apply(s.track, &mut s.enabled);
+        }
+        for s in &mut timeline.shape_segments {
+            apply(s.track, &mut s.enabled);
+        }
+        for s in &mut timeline.image_segments {
+            apply(s.track, &mut s.enabled);
+        }
+        for s in &mut timeline.mask_segments {
+            apply(s.track, &mut s.enabled);
+        }
+    } else if kind == TrackKind::Audio {
+        for s in &mut timeline.audio_segments {
+            apply(s.track, &mut s.enabled);
+        }
+    } else if kind == TrackKind::Style {
+        for s in &mut timeline.style_segments {
+            apply(s.track, &mut s.enabled);
+        }
+    }
+    changed
 }
 
 pub fn reorder_track_lane(
@@ -1914,7 +2334,7 @@ pub fn default_text_segment(start: f64, end: f64, track: u32) -> TextSegment {
         content: "Text".to_string(),
         center: XY::new(0.5, 0.5),
         size: XY::new(0.1, 0.055),
-        font_family: "sans-serif".to_string(),
+        font_family: "Noto Sans SC".to_string(),
         font_size: 48.0,
         font_weight: 700.0,
         italic: false,
@@ -1938,6 +2358,7 @@ pub fn default_text_segment(start: f64, end: f64, track: u32) -> TextSegment {
         animation_out_duration: 0.15,
         layout: Default::default(),
         layout_transition: 0.5,
+        title_card: None,
     }
 }
 
@@ -1977,6 +2398,7 @@ pub fn default_audio_segment(
         enabled: true,
         trim_start: 0.0,
         volume_db: 0.0,
+        ducking: false,
         fade_in: 0.0,
         fade_out: 0.0,
         duration,
@@ -2770,6 +3192,40 @@ fn lerp_vector_keyframe(
     }
 }
 
+/// What the transport's speed menu offers for the whole video.
+pub const VIDEO_SPEEDS: [f64; 10] = [0.5, 0.75, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0];
+
+/// The speed every clip shares, or `None` when they differ.
+pub fn uniform_clip_speed(timeline: &TimelineConfiguration) -> Option<f64> {
+    let first = timeline.segments.first()?.timescale;
+    timeline
+        .segments
+        .iter()
+        .all(|segment| (segment.timescale - first).abs() < 1e-6)
+        .then_some(first)
+}
+
+pub fn next_video_speed(current: f64, faster: bool) -> Option<f64> {
+    if faster {
+        VIDEO_SPEEDS
+            .into_iter()
+            .find(|speed| *speed > current + 1e-6)
+    } else {
+        VIDEO_SPEEDS
+            .into_iter()
+            .rev()
+            .find(|speed| *speed < current - 1e-6)
+    }
+}
+
+pub fn set_all_clips_timescale(timeline: &mut TimelineConfiguration, timescale: f64) -> bool {
+    let mut changed = false;
+    for index in 0..timeline.segments.len() {
+        changed |= set_clip_segment_timescale(timeline, index, timescale);
+    }
+    changed
+}
+
 pub fn set_clip_segment_timescale(
     timeline: &mut TimelineConfiguration,
     index: usize,
@@ -2792,7 +3248,17 @@ pub fn set_clip_segment_timescale(
         .effective_transition(index)
         .map_or(0.0, |transition| transition.duration);
 
-    timeline.segments[index].timescale = timescale;
+    let retimed = &mut timeline.segments[index];
+    retimed.timescale = timescale;
+    // An unset mode renders as muted once the clip is retimed, which would
+    // silently drop the narration the moment someone speeds a clip up.
+    if (timescale - 1.0).abs() < f64::EPSILON {
+        if retimed.speed_audio_mode == Some(ClipSpeedAudioMode::MaintainPitch) {
+            retimed.speed_audio_mode = None;
+        }
+    } else if retimed.speed_audio_mode.is_none() {
+        retimed.speed_audio_mode = Some(ClipSpeedAudioMode::MaintainPitch);
+    }
     normalize_clip_transitions(timeline);
 
     let new_duration = clip_timeline_duration(timeline);
@@ -2885,10 +3351,6 @@ pub fn set_clip_segment_timescale(
         segment.end += shift(segment.end);
     }
     for segment in &mut timeline.shape_segments {
-        segment.start += shift(segment.start);
-        segment.end += shift(segment.end);
-    }
-    for segment in &mut timeline.audio_segments {
         segment.start += shift(segment.start);
         segment.end += shift(segment.end);
     }
@@ -3339,6 +3801,7 @@ mod tests {
                             text: "word".into(),
                             start: start + word as f32 * 0.35,
                             end: start + word as f32 * 0.35 + 0.3,
+                            hidden: false,
                         })
                         .collect(),
                 }
@@ -5300,6 +5763,82 @@ mod tests {
     }
 
     #[test]
+    fn retiming_keeps_the_clip_audible_at_its_pitch_and_returns_clean_at_1x() {
+        let mut project = zoom_fixture();
+        let timeline = project.timeline.as_mut().unwrap();
+        assert!(set_clip_segment_timescale(timeline, 0, 1.5));
+        assert_eq!(
+            timeline.segments[0].speed_audio_mode,
+            Some(ClipSpeedAudioMode::MaintainPitch)
+        );
+        assert!(set_clip_segment_timescale(timeline, 0, 1.0));
+        assert_eq!(timeline.segments[0].speed_audio_mode, None);
+
+        assert!(set_clip_muted(timeline, 0, true));
+        assert!(set_clip_segment_timescale(timeline, 0, 2.0));
+        assert_eq!(
+            timeline.segments[0].speed_audio_mode,
+            Some(ClipSpeedAudioMode::Mute)
+        );
+    }
+
+    #[test]
+    fn whole_video_speed_retimes_every_clip_and_its_overlays() {
+        let mut project = zoom_fixture();
+        let timeline = project.timeline.as_mut().unwrap();
+        let second = timeline.segments[0].clone();
+        timeline.segments.push(second);
+        let before = clip_timeline_duration(timeline);
+        assert_eq!(uniform_clip_speed(timeline), Some(1.0));
+
+        assert!(set_all_clips_timescale(timeline, 1.25));
+        assert_eq!(uniform_clip_speed(timeline), Some(1.25));
+        assert!((clip_timeline_duration(timeline) - before / 1.25).abs() < 1e-9);
+        assert!(!set_all_clips_timescale(timeline, 1.25));
+
+        assert!(set_clip_segment_timescale(timeline, 0, 2.0));
+        assert_eq!(uniform_clip_speed(timeline), None);
+    }
+
+    #[test]
+    fn changing_video_speed_keeps_independent_audio_at_its_original_time_and_rate() {
+        for speed in [0.5, 1.25, 2.0] {
+            let mut project = zoom_fixture();
+            let timeline = project.timeline.as_mut().unwrap();
+            let mut music =
+                default_audio_segment(0.0, 10.0, 0, "music.wav".into(), "Music".into(), Some(15.0));
+            music.trim_start = 2.0;
+            music.fade_in = 0.8;
+            music.fade_out = 1.2;
+            music.volume_db = -12.0;
+            timeline.audio_segments = vec![
+                music,
+                default_audio_segment(15.0, 17.0, 1, "cue.wav".into(), "Cue".into(), Some(2.0)),
+            ];
+            let before = serde_json::to_value(&timeline.audio_segments).unwrap();
+            assert!(set_all_clips_timescale(timeline, speed));
+            assert_eq!(
+                serde_json::to_value(&timeline.audio_segments).unwrap(),
+                before
+            );
+            assert_eq!(
+                timeline.segments[0].speed_audio_mode,
+                Some(ClipSpeedAudioMode::MaintainPitch)
+            );
+        }
+    }
+
+    #[test]
+    fn video_speed_steps_stop_at_the_ends_and_leave_off_grid_speeds() {
+        assert_eq!(next_video_speed(1.0, true), Some(1.1));
+        assert_eq!(next_video_speed(1.0, false), Some(0.75));
+        assert_eq!(next_video_speed(1.2, true), Some(1.25));
+        assert_eq!(next_video_speed(1.2, false), Some(1.1));
+        assert_eq!(next_video_speed(4.0, true), None);
+        assert_eq!(next_video_speed(0.5, false), None);
+    }
+
+    #[test]
     fn setting_clip_speed_audio_mode_writes_the_segment() {
         let mut project = zoom_fixture();
         let timeline = project.timeline.as_mut().unwrap();
@@ -5481,14 +6020,22 @@ mod style_image_tests {
     }
 
     #[test]
-    fn visual_segment_delete_preserves_lane_identity() {
+    fn visual_segment_delete_compacts_empty_layers() {
         let mut project = project();
         let timeline = project.timeline.as_mut().unwrap();
         let mut second = timeline.image_segments[0].clone();
-        second.track = 2;
+        second.track = timeline.overlay_layer_count() + 1;
         timeline.image_segments.push(second);
+        let before = timeline.overlay_layer_count();
         assert!(delete_segments(timeline, TrackKind::Image, &[0]));
-        assert_eq!(timeline.image_segments[0].track, 2);
+        assert!(timeline.overlay_layer_count() < before);
+        let mut layers = timeline
+            .overlay_spans()
+            .map(|(_, _, layer, _, _)| layer)
+            .collect::<Vec<_>>();
+        layers.sort_unstable();
+        layers.dedup();
+        assert_eq!(layers, (0..layers.len() as u32).collect::<Vec<_>>());
     }
 
     fn shape_project() -> ProjectConfiguration {
@@ -5563,80 +6110,125 @@ mod style_image_tests {
         assert_eq!(timeline.shape_segments[2].track, 1);
     }
 
-    #[test]
-    fn reordering_a_shape_track_keeps_the_legacy_order_parseable() {
-        let mut project = shape_project();
-        let text = cap_project::OverlayTrack {
-            kind: cap_project::OverlayTrackKind::Text,
-            track: 0,
-        };
-        let shape = cap_project::OverlayTrack {
-            kind: cap_project::OverlayTrackKind::Shape,
-            track: 0,
-        };
-        let top_shape = cap_project::OverlayTrack {
-            kind: cap_project::OverlayTrackKind::Shape,
+    fn layered_project() -> ProjectConfiguration {
+        let mut project = project();
+        let timeline = project.timeline.as_mut().unwrap();
+        timeline.text_segments = vec![default_text_segment(0., 2., 0)];
+        timeline.image_segments = vec![cap_project::ImageSegment {
+            start: 1.,
+            end: 3.,
             track: 1,
-        };
-        let available = [text, top_shape, shape];
-        assert!(reorder_overlay_track(&mut project, &available, shape, 0));
-        assert_eq!(project.overlay_order(), [shape, text, top_shape]);
-        assert_eq!(project.overlay_order, [text]);
-        assert!(delete_track_lane_and_order(
-            &mut project,
-            &available,
-            TrackKind::Shape,
-            0,
-        ));
-        let renumbered = cap_project::OverlayTrack {
-            kind: cap_project::OverlayTrackKind::Shape,
+            ..Default::default()
+        }];
+        timeline.shape_segments = vec![cap_project::ShapeSegment {
+            start: 4.,
+            end: 5.,
             track: 0,
-        };
-        assert_eq!(project.overlay_order(), [text, renumbered]);
-        assert_eq!(project.overlay_order, [text]);
+            ..Default::default()
+        }];
+        timeline.mask_segments.clear();
+        project
     }
 
     #[test]
-    fn overlay_reorder_and_lane_delete_update_only_saved_order() {
-        let mut project = project();
-        let text = cap_project::OverlayTrack {
-            kind: cap_project::OverlayTrackKind::Text,
-            track: 0,
-        };
-        let image = cap_project::OverlayTrack {
-            kind: cap_project::OverlayTrackKind::Image,
-            track: 2,
-        };
-        let mask = cap_project::OverlayTrack {
-            kind: cap_project::OverlayTrackKind::Mask,
-            track: 0,
-        };
-        let available = [text, image, mask];
-        project.timeline.as_mut().unwrap().image_segments[0].track = 2;
-
-        assert!(reorder_overlay_track(&mut project, &available, image, 0));
-        assert_eq!(project.overlay_order, [image, text, mask]);
-        assert!(delete_track_lane_and_order(
-            &mut project,
-            &available,
-            TrackKind::Image,
-            1,
+    fn overlay_layers_are_shared_across_kinds() {
+        let project = layered_project();
+        let timeline = project.timeline.as_ref().unwrap();
+        assert!(overlay_overlaps(timeline, 0, 1.5, 2.5, None));
+        assert!(!overlay_overlaps(timeline, 0, 2., 4., None));
+        assert!(!overlay_overlaps(
+            timeline,
+            0,
+            0.,
+            1.,
+            Some((TrackKind::Text, 0))
         ));
+        assert_eq!(overlay_front_layer(timeline, 0.5, 1.5), 2);
+        assert_eq!(overlay_front_layer(timeline, 3.5, 4.5), 1);
+        assert_eq!(overlay_front_layer(timeline, 6., 7.), 0);
         assert_eq!(
-            project.timeline.as_ref().unwrap().image_segments[0].track,
-            1
-        );
-        assert_eq!(
-            project.overlay_order,
+            overlay_lane_spans(timeline, 0),
             [
-                cap_project::OverlayTrack {
-                    kind: cap_project::OverlayTrackKind::Image,
-                    track: 1,
-                },
-                text,
-                mask
+                LaneSpan { start: 0., end: 2. },
+                LaneSpan { start: 4., end: 5. }
             ]
         );
+    }
+
+    #[test]
+    fn overlay_layer_reorder_and_delete_move_every_kind() {
+        let mut project = layered_project();
+        let timeline = project.timeline.as_mut().unwrap();
+        assert!(reorder_overlay_layer(timeline, 1, 0));
+        assert_eq!(timeline.image_segments[0].track, 0);
+        assert_eq!(timeline.text_segments[0].track, 1);
+        assert_eq!(timeline.shape_segments[0].track, 1);
+        assert!(delete_overlay_layer(timeline, 0));
+        assert!(timeline.image_segments.is_empty());
+        assert_eq!(timeline.text_segments[0].track, 0);
+        assert_eq!(timeline.shape_segments[0].track, 0);
+    }
+
+    #[test]
+    fn moving_a_segment_to_another_lane_keeps_layers_dense() {
+        let mut project = layered_project();
+        let timeline = project.timeline.as_mut().unwrap();
+        assert_eq!(
+            move_segment_to_lane(timeline, TrackKind::Shape, 0, LaneTarget::Existing(1)),
+            Some(0)
+        );
+        assert_eq!(timeline.shape_segments[0].track, 1);
+        assert_eq!(
+            move_segment_to_lane(timeline, TrackKind::Image, 0, LaneTarget::Existing(0)),
+            Some(0)
+        );
+        assert_eq!(timeline.image_segments[0].track, 1);
+        assert_eq!(timeline.text_segments[0].track, 0);
+        assert_eq!(timeline.shape_segments[0].track, 2);
+        assert_eq!(timeline.overlay_layer_count(), 3);
+        assert_eq!(
+            move_segment_to_lane(timeline, TrackKind::Text, 0, LaneTarget::Insert(2)),
+            Some(0)
+        );
+        assert_eq!(timeline.image_segments[0].track, 0);
+        assert_eq!(timeline.text_segments[0].track, 1);
+        assert_eq!(timeline.shape_segments[0].track, 2);
+    }
+
+    #[test]
+    fn hiding_a_layer_row_disables_every_kind_on_it() {
+        let mut project = layered_project();
+        let timeline = project.timeline.as_mut().unwrap();
+        assert!(!row_hidden(timeline, TrackKind::Text, 0));
+        assert!(set_row_enabled(timeline, TrackKind::Text, 0, false));
+        assert!(row_hidden(timeline, TrackKind::Shape, 0));
+        assert!(!timeline.text_segments[0].enabled);
+        assert!(!timeline.shape_segments[0].enabled);
+        assert!(timeline.image_segments[0].enabled);
+        assert!(!set_row_enabled(timeline, TrackKind::Text, 0, false));
+        assert!(set_row_enabled(timeline, TrackKind::Text, 0, true));
+        assert!(!row_hidden(timeline, TrackKind::Text, 0));
+        assert!(!row_hidden(timeline, TrackKind::Text, 7));
+    }
+
+    #[test]
+    fn moving_audio_between_lanes_renumbers_and_reports_the_new_index() {
+        let mut timeline: TimelineConfiguration = serde_json::from_value(serde_json::json!({
+            "segments": [],
+            "zoomSegments": [],
+            "audioSegments": [
+                {"start": 0.0, "end": 2.0, "track": 0, "path": "a.mp3"},
+                {"start": 1.0, "end": 3.0, "track": 1, "path": "b.mp3"}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(
+            move_segment_to_lane(&mut timeline, TrackKind::Audio, 0, LaneTarget::Insert(2)),
+            Some(1)
+        );
+        assert_eq!(timeline.audio_segments[1].track, 1);
+        assert_eq!(timeline.audio_segments[0].track, 0);
+        assert_eq!(timeline.audio_segments[0].start, 1.);
     }
 
     #[test]
