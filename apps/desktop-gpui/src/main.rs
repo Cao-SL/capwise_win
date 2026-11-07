@@ -9,6 +9,10 @@ mod app_windows;
 mod asr_cloud;
 mod asset_library;
 mod assets;
+#[cfg(feature = "cap-cloud")]
+mod auth;
+#[cfg(not(feature = "cap-cloud"))]
+#[path = "feature_stubs/auth.rs"]
 mod auth;
 mod blur_recovery;
 #[cfg(target_os = "macos")]
@@ -103,10 +107,21 @@ mod recording;
 mod recording_autocaptions;
 mod recording_defaults;
 mod recording_setup;
+#[cfg(feature = "screenshots")]
 mod screenshot;
+#[cfg(not(feature = "screenshots"))]
+#[path = "feature_stubs/screenshot.rs"]
+mod screenshot;
+#[cfg(feature = "screenshots")]
 mod screenshot_annotations;
+#[cfg(feature = "screenshots")]
 mod screenshot_crop;
+#[cfg(feature = "screenshots")]
 mod screenshot_editor;
+#[cfg(not(feature = "screenshots"))]
+#[path = "feature_stubs/screenshot_editor.rs"]
+mod screenshot_editor;
+#[cfg(feature = "screenshots")]
 mod screenshot_export;
 mod script_text;
 mod session;
@@ -116,6 +131,10 @@ mod settings_cover;
 mod settings_pages;
 mod settings_stock;
 mod settings_window;
+#[cfg(feature = "cap-cloud")]
+mod sign_in;
+#[cfg(not(feature = "cap-cloud"))]
+#[path = "feature_stubs/sign_in.rs"]
 mod sign_in;
 mod single_instance;
 #[cfg(debug_assertions)]
@@ -134,6 +153,10 @@ mod transcription;
 mod tray;
 mod ui;
 mod updates;
+#[cfg(feature = "cap-cloud")]
+mod upload;
+#[cfg(not(feature = "cap-cloud"))]
+#[path = "feature_stubs/upload.rs"]
 mod upload;
 pub mod voiceover_recording;
 mod window_arrange;

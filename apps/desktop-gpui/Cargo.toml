@@ -23,6 +23,15 @@ path = "src/main.rs"
 name = "studio-finalization-benchmark"
 path = "../../crates/recording/examples/studio-finalization-benchmark.rs"
 
+[features]
+default = []
+# Cap cloud: sign-in, account, instant uploads and share links. Capwise is
+# offline, so the default build compiles `src/feature_stubs/` in their place.
+cap-cloud = []
+# Screenshot mode and the screenshot editor. Its share button uploads, so it
+# needs `cap-cloud`.
+screenshots = ["cap-cloud", "dep:cosmic-text"]
+
 [dependencies]
 cap-audio = { path = "../../crates/audio" }
 cap-cli-install = { path = "../../crates/cli-install" }
@@ -152,7 +161,7 @@ rfd = { version = "0.15", default-features = false, features = [
 # tree), so these lines make existing build units direct rather than adding
 # dependency trees.
 tiny-skia = "0.11"
-cosmic-text = "0.14"
+cosmic-text = { version = "0.14", optional = true }
 sha2 = "0.10"
 tempfile = "3"
 
@@ -204,6 +213,7 @@ tokio = { version = "1", features = [
 # Caption oracles (`src/transcription/verify_tests.rs`): fixture projects and
 # audio markers for the fake transcriber.
 cap-verify = { path = "../../crates/verify" }
+cosmic-text = "0.14"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
