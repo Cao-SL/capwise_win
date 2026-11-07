@@ -1184,7 +1184,7 @@ answer = "Ja. Es ist kostenlos und Open Source (AGPL-3.0), ohne Konto und ohne k
 question = "Ist Capwise kostenlos?"
 
 [onboarding.faq.sharing]
-question = "Wie funktioniert das Teilen?"
+question = "Wie exportiere ich?"
 answer = "Exportiere im Editor eine MP4- oder GIF-Datei oder kopiere sie in die Zwischenablage und sende sie dann beliebig weiter."
 
 [onboarding.faq.shortcuts]
@@ -1218,9 +1218,9 @@ description = "Nehmen Sie lokal in voller Qualität auf und fügen Sie dann im i
 feature_1 = "Lokale Aufnahme in voller Qualität"
 feature_2 = "Integrierter Editor & Effekte"
 feature_3 = "Eigene Hintergründe & Abstände"
-feature_4 = "Exportieren oder teilen, wenn alles fertig ist"
-tagline = "Professionelle Bearbeitungswerkzeuge"
-title = "Studio-Modus"
+feature_4 = "Mit einem Klick als MP4 oder GIF exportieren"
+tagline = "Aufnehmen und direkt exportieren"
+title = "Aufnehmen, bearbeiten, exportieren"
 
 [onboarding.nav]
 back = "←  Zurück"

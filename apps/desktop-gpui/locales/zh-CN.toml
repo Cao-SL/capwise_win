@@ -1185,7 +1185,7 @@ question = "灵录免费吗？"
 
 [onboarding.faq.sharing]
 answer = "在编辑器里导出 MP4 或 GIF，或直接复制到剪贴板，然后发到任何地方。"
-question = "如何分享？"
+question = "怎么导出？"
 
 [onboarding.faq.shortcuts]
 answer = "随时前往“设置 → 快捷键”，自定义所有键盘快捷键。"
@@ -1218,9 +1218,9 @@ description = "在本地以完整画质录制，然后用内置编辑器添加�
 feature_1 = "完整画质本地录制"
 feature_2 = "内置编辑器与特效"
 feature_3 = "自定义背景与边距"
-feature_4 = "准备好后导出或分享"
-tagline = "专业编辑工具"
-title = "Studio 模式"
+feature_4 = "一键导出 MP4 或 GIF"
+tagline = "录完，直接导出"
+title = "三步出片"
 
 [onboarding.nav]
 back = "←  返回"

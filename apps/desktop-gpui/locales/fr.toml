@@ -1184,7 +1184,7 @@ answer = "Oui. L'application est gratuite et open source (AGPL-3.0), sans compte
 question = "Capwise est-il gratuit ?"
 
 [onboarding.faq.sharing]
-question = "Comment fonctionne le partage ?"
+question = "Comment exporter ?"
 answer = "Exportez un MP4 ou un GIF depuis l'éditeur, ou copiez-le dans le presse-papiers, puis partagez-le où vous voulez."
 
 [onboarding.faq.shortcuts]
@@ -1218,9 +1218,9 @@ description = "Enregistrez localement en pleine qualité, puis utilisez l'édite
 feature_1 = "Enregistrement local en pleine qualité"
 feature_2 = "Éditeur et effets intégrés"
 feature_3 = "Arrière-plans et marges personnalisés"
-feature_4 = "Exportez ou partagez quand c'est prêt"
-tagline = "Outils de montage professionnels"
-title = "Mode Studio"
+feature_4 = "Exportez en MP4 ou GIF en un clic"
+tagline = "Enregistrez, puis exportez"
+title = "Enregistrer, monter, exporter"
 
 [onboarding.nav]
 back = "←  Retour"

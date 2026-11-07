@@ -1184,7 +1184,7 @@ answer = "はい。無料のオープンソース（AGPL-3.0）で、アカウ�
 question = "Capwiseは無料ですか？"
 
 [onboarding.faq.sharing]
-question = "共有はどのように行いますか？"
+question = "書き出すには？"
 answer = "エディタからMP4またはGIFを書き出すか、クリップボードにコピーして、どこへでも送信できます。"
 
 [onboarding.faq.shortcuts]
@@ -1218,9 +1218,9 @@ description = "フル画質でローカルに録画し、内蔵エディタで�
 feature_1 = "フル画質のローカル録画"
 feature_2 = "内蔵エディタとエフェクト"
 feature_3 = "カスタム背景と余白"
-feature_4 = "準備ができたら書き出しや共有"
-tagline = "プロ仕様の編集ツール"
-title = "Studioモード"
+feature_4 = "MP4 や GIF をワンクリックで書き出し"
+tagline = "録ったらそのまま書き出し"
+title = "録画・編集・書き出し"
 
 [onboarding.nav]
 back = "←  戻る"

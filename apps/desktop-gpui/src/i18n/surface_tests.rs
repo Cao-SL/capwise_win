@@ -385,10 +385,10 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::onboarding::modes::instant::feature_4(),
             "Browser-based playback",
         ),
-        (tr::onboarding::modes::studio::title(), "Studio Mode"),
+        (tr::onboarding::modes::studio::title(), "Record, edit, export"),
         (
             tr::onboarding::modes::studio::tagline(),
-            "Professional editing tools",
+            "Record it, then just export",
         ),
         (
             tr::onboarding::modes::studio::description(),
@@ -408,7 +408,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::modes::studio::feature_4(),
-            "Export or share when ready",
+            "Export MP4 or GIF in one click",
         ),
         (
             tr::onboarding::modes::screenshot::title(),
@@ -461,7 +461,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::faq::sharing::question(),
-            "How does sharing work?",
+            "How do I export?",
         ),
         (
             tr::onboarding::faq::sharing::answer(),

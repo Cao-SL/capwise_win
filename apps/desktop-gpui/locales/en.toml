@@ -1187,7 +1187,7 @@ question = "Is Capwise free?"
 
 [onboarding.faq.sharing]
 answer = "Export an MP4 or GIF from the editor, or copy it to the clipboard, then send it anywhere."
-question = "How does sharing work?"
+question = "How do I export?"
 
 [onboarding.faq.shortcuts]
 answer = "Head to Settings → Shortcuts at any time to customize all your keyboard shortcuts."
@@ -1220,9 +1220,9 @@ description = "Record in full quality locally, then use the built-in editor to a
 feature_1 = "Full quality local recording"
 feature_2 = "Built-in editor & effects"
 feature_3 = "Custom backgrounds & padding"
-feature_4 = "Export or share when ready"
-tagline = "Professional editing tools"
-title = "Studio Mode"
+feature_4 = "Export MP4 or GIF in one click"
+tagline = "Record it, then just export"
+title = "Record, edit, export"
 
 [onboarding.nav]
 back = "←  Back"
