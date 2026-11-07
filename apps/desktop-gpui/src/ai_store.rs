@@ -168,6 +168,11 @@ fn cache_key_if_unknown(account: String, value: Option<String>) -> Option<String
     keys().entry(account).or_insert(value).clone()
 }
 
+/// The key if the cache already holds it; never touches the keychain.
+pub fn key_cached(kind: Kind, id: &str) -> Option<String> {
+    keys().get(&account(kind, id)).cloned().flatten()
+}
+
 pub fn key_available_cached(kind: Kind, id: &str) -> Option<bool> {
     keys().get(&account(kind, id)).map(Option::is_some)
 }

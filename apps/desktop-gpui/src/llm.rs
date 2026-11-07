@@ -11,6 +11,10 @@ use crate::{
     i18n::tr,
 };
 
+mod oauth;
+
+pub use oauth::{SignIn, begin as begin_sign_in, decode as signed_in_account};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Protocol {
     /// `/chat/completions`, the OpenAI shape most services speak.
@@ -27,6 +31,8 @@ pub enum Group {
     Provider,
     /// Runs on this computer.
     Local,
+    /// Signs in with an account instead of a key.
+    Account,
 }
 
 pub struct LlmProvider {
@@ -38,6 +44,8 @@ pub struct LlmProvider {
     pub base_url: &'static str,
     pub key_url: Option<&'static str>,
     pub models: &'static [&'static str],
+    /// A browser sign-in that fills in the key, or replaces it.
+    pub sign_in: Option<SignIn>,
 }
 
 impl LlmProvider {
@@ -77,19 +85,69 @@ const fn openai(
         base_url,
         key_url,
         models,
+        sign_in: None,
     }
 }
 
-/// Clipper's catalogue minus the ChatGPT and Codex account sign-ins, in the
-/// order its picker shows them.
+const fn signs_in(mut provider: LlmProvider, sign_in: SignIn) -> LlmProvider {
+    provider.sign_in = Some(sign_in);
+    provider
+}
+
+const fn account(
+    id: &'static str,
+    name: fn() -> &'static str,
+    sign_in: SignIn,
+    base_url: &'static str,
+) -> LlmProvider {
+    signs_in(
+        LlmProvider {
+            id,
+            name,
+            group: Group::Account,
+            protocol: Protocol::OpenAi,
+            base_url,
+            key_url: None,
+            models: &[],
+            sign_in: None,
+        },
+        sign_in,
+    )
+}
+
+/// Clipper's catalogue, in the order its picker shows them: signing in is
+/// easier than pasting a key, so the accounts come first.
 pub static PROVIDERS: &[LlmProvider] = &[
+    account(
+        "chatgpt",
+        || "ChatGPT",
+        SignIn::ChatGpt,
+        "https://api.openai.com/v1/responses",
+    ),
+    account(
+        "codex",
+        || "Codex",
+        SignIn::Codex,
+        "https://chatgpt.com/backend-api/codex/responses",
+    ),
+    signs_in(
+        openai(
+            "tokendance",
+            tr::ai::llm::tokendance,
+            Group::Relay,
+            "https://tokendance.space/gateway/v1/chat/completions",
+            Some("https://tokendance.space/keys"),
+            &["deepseek-v4-flash", "qwen3.8-flash", "kimi-k3"],
+        ),
+        SignIn::TokenDance,
+    ),
     openai(
-        "tokendance",
-        tr::ai::llm::tokendance,
-        Group::Relay,
-        "https://tokendance.space/gateway/v1/chat/completions",
-        Some("https://tokendance.space/keys"),
-        &["deepseek-v4-flash", "qwen3.8-flash", "kimi-k3"],
+        "magpie",
+        || "Magpie",
+        Group::Local,
+        "http://127.0.0.1:3425/v1/chat/completions",
+        Some("https://github.com/yetone/magpie"),
+        &[],
     ),
     openai(
         "siliconflow",
@@ -102,13 +160,16 @@ pub static PROVIDERS: &[LlmProvider] = &[
             "deepseek-ai/deepseek-v4-pro",
         ],
     ),
-    openai(
-        "openrouter",
-        || "OpenRouter",
-        Group::Relay,
-        "https://openrouter.ai/api/v1/chat/completions",
-        Some("https://openrouter.ai/settings/keys"),
-        &["meta-llama/llama-4-scout", "meta-llama/llama-4-maverick"],
+    signs_in(
+        openai(
+            "openrouter",
+            || "OpenRouter",
+            Group::Relay,
+            "https://openrouter.ai/api/v1/chat/completions",
+            Some("https://openrouter.ai/settings/keys"),
+            &[],
+        ),
+        SignIn::OpenRouter,
     ),
     openai(
         "opencode-go",
@@ -140,6 +201,7 @@ pub static PROVIDERS: &[LlmProvider] = &[
         base_url: "https://api.anthropic.com/v1/messages",
         key_url: Some("https://console.anthropic.com/settings/keys"),
         models: &["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"],
+        sign_in: None,
     },
     LlmProvider {
         id: "google-gemini",
@@ -153,6 +215,7 @@ pub static PROVIDERS: &[LlmProvider] = &[
             "gemini-3.5-flash",
             "gemini-3.1-pro-preview",
         ],
+        sign_in: None,
     },
     openai(
         "deepseek",
@@ -305,7 +368,8 @@ pub static PROVIDERS: &[LlmProvider] = &[
         protocol: Protocol::Ollama,
         base_url: "http://127.0.0.1:11434/api/chat",
         key_url: None,
-        models: &["gemma4", "qwen3.5", "gpt-oss:20b", "llama3.3"],
+        models: &["qwen3.5", "gemma4", "gpt-oss:20b"],
+        sign_in: None,
     },
     openai(
         "lmstudio",
@@ -608,13 +672,24 @@ pub async fn discover_models(
     key: &str,
 ) -> Result<Vec<DiscoveredModel>, DiscoveryError> {
     let provider = provider(id).ok_or(DiscoveryError::Unsupported)?;
+    if provider.group == Group::Account {
+        if key.trim().is_empty() {
+            return Err(DiscoveryError::MissingKey);
+        }
+        return tokio::time::timeout(
+            Duration::from_secs(25),
+            oauth::models(provider.id, (provider.name)(), key),
+        )
+        .await
+        .map_err(|_| DiscoveryError::Timeout)?;
+    }
     let url = discovery_url(provider.protocol, endpoint)?;
     if provider.needs_key() && key.trim().is_empty() {
         return Err(DiscoveryError::MissingKey);
     }
     tokio::time::timeout(
         Duration::from_secs(25),
-        discover_with(provider.protocol, url, key.trim()),
+        discover_with(provider.protocol, url, effective_key(provider, key.trim())),
     )
     .await
     .map_err(|_| DiscoveryError::Timeout)?
@@ -666,11 +741,51 @@ fn request(
             }));
         }
     };
+    let key = effective_key(provider, key);
     if key.is_empty() {
         builder
     } else {
         builder.bearer_auth(key)
     }
+}
+
+/// Magpie on this Mac takes any bearer token but still wants one.
+fn effective_key<'a>(provider: &LlmProvider, key: &'a str) -> &'a str {
+    if key.is_empty() && provider.id == "magpie" {
+        "magpie"
+    } else {
+        key
+    }
+}
+
+/// Fills in the request path people leave off when they paste a base URL:
+/// `https://host/v1` becomes `https://host/v1/chat/completions`.
+pub fn normalize_address(id: &str, address: &str) -> String {
+    let address = address.trim();
+    let Some(provider) = provider(id) else {
+        return address.to_string();
+    };
+    if provider.group == Group::Account {
+        return address.to_string();
+    }
+    let Ok(mut url) = reqwest::Url::parse(address) else {
+        return address.to_string();
+    };
+    let path = url.path().trim_end_matches('/').to_string();
+    let versioned = path.rsplit('/').next().is_some_and(|last| {
+        last.len() > 1
+            && last.starts_with('v')
+            && last[1..].bytes().all(|byte| byte.is_ascii_digit())
+    });
+    let next = match provider.protocol {
+        Protocol::OpenAi if versioned => format!("{path}/chat/completions"),
+        Protocol::Anthropic if path.is_empty() => "/v1/messages".to_string(),
+        Protocol::Anthropic if versioned => format!("{path}/messages"),
+        Protocol::Ollama if path.is_empty() => "/api/chat".to_string(),
+        _ => return address.to_string(),
+    };
+    url.set_path(&next);
+    url.to_string()
 }
 
 fn reply_text(protocol: Protocol, value: &Value) -> Option<String> {
@@ -686,7 +801,7 @@ fn reply_text(protocol: Protocol, value: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn error_message(body: &str) -> String {
+pub(crate) fn error_message(body: &str) -> String {
     serde_json::from_str::<Value>(body)
         .ok()
         .and_then(|value| {
@@ -762,6 +877,9 @@ pub async fn chat(id: &str, system: &str, user: &str) -> Result<String, String> 
         return Err(tr::ai::model_missing().to_string());
     }
     let key = ai_store::key(Kind::Llm, id).unwrap_or_default();
+    if provider.group == Group::Account {
+        return oauth::chat(id, (provider.name)(), &key, &endpoint.model, system, user).await;
+    }
     chat_with(provider, &endpoint, &key, system, user).await
 }
 
@@ -779,6 +897,17 @@ pub fn test(id: &str, key: &str, endpoint: &Endpoint) -> Result<u128, String> {
         return Err(tr::asr::no_key((provider.name)()));
     }
     let started = std::time::Instant::now();
+    if provider.group == Group::Account {
+        tokio::runtime::Handle::current().block_on(oauth::chat(
+            provider.id,
+            (provider.name)(),
+            key,
+            &endpoint.model,
+            "Reply with the single word OK.",
+            "ping",
+        ))?;
+        return Ok(started.elapsed().as_millis());
+    }
     tokio::runtime::Handle::current().block_on(chat_with(
         provider,
         endpoint,
@@ -792,6 +921,39 @@ pub fn test(id: &str, key: &str, endpoint: &Endpoint) -> Result<u128, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pasted_base_urls_gain_their_request_path() {
+        assert_eq!(
+            normalize_address("magpie", "https://magpie.example.com/v1"),
+            "https://magpie.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            normalize_address("magpie", "http://127.0.0.1:3425/v1/"),
+            "http://127.0.0.1:3425/v1/chat/completions"
+        );
+        assert_eq!(
+            normalize_address("deepseek", "https://api.deepseek.com/chat/completions"),
+            "https://api.deepseek.com/chat/completions"
+        );
+        assert_eq!(
+            normalize_address("anthropic", "https://relay.example.com"),
+            "https://relay.example.com/v1/messages"
+        );
+        assert_eq!(normalize_address("magpie", "not a url"), "not a url");
+    }
+
+    #[test]
+    fn account_providers_come_first_and_need_no_typed_key() {
+        assert_eq!(PROVIDERS[0].id, "chatgpt");
+        assert_eq!(PROVIDERS[1].id, "codex");
+        assert!(PROVIDERS[..2].iter().all(|p| p.group == Group::Account));
+        assert_eq!(
+            provider("tokendance").unwrap().sign_in,
+            Some(SignIn::TokenDance)
+        );
+        assert!(!provider("magpie").unwrap().needs_key());
+    }
     use std::io::{Read as _, Write as _};
 
     fn model_server(responses: Vec<String>) -> (String, std::thread::JoinHandle<Vec<String>>) {
