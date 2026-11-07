@@ -247,6 +247,7 @@ struct Hub {
     download: Option<ModelDownload>,
     /// `None` until the first disk scan.
     downloaded: Option<HashSet<String>>,
+    disk_bytes: HashMap<String, u64>,
     deleting: Option<String>,
     generating: HashSet<PathBuf>,
     generation_errors: HashMap<PathBuf, String>,
@@ -324,7 +325,35 @@ pub fn refresh_downloaded_models() {
         .filter(|model| model_files_present(model))
         .map(|model| (*model).to_string())
         .collect();
-    hub().downloaded = Some(downloaded);
+    let disk_bytes = downloaded
+        .iter()
+        .map(|model| (model.clone(), disk_usage(&model_path(model))))
+        .collect();
+    let mut hub = hub();
+    hub.downloaded = Some(downloaded);
+    hub.disk_bytes = disk_bytes;
+}
+
+/// What each downloaded model takes on disk, as of the last scan.
+pub fn downloaded_model_bytes() -> HashMap<String, u64> {
+    hub().disk_bytes.clone()
+}
+
+fn disk_usage(path: &Path) -> u64 {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !meta.is_dir() {
+        return meta.len();
+    }
+    std::fs::read_dir(path)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| disk_usage(&entry.path()))
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 pub fn begin_download(model: &str) -> bool {
