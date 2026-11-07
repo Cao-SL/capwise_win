@@ -3792,6 +3792,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cap-cloud")]
     fn failed_instant_upload_preserves_resumable_identity_and_audio_intent() {
         let dir = temp_project("upload-identity");
         let video = cap_project::VideoUploadInfo {

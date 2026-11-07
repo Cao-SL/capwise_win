@@ -2520,6 +2520,7 @@ mod tests {
         assert_eq!(complete.mode, RecordingMode::Instant);
         assert_eq!(complete.clip_count, 1, "an instant recording is one clip");
         assert_eq!(complete.status, RecordingStatus::Complete);
+        #[cfg(feature = "cap-cloud")]
         assert!(
             complete.upload.is_some(),
             "the listing still reads saved instant upload state"
