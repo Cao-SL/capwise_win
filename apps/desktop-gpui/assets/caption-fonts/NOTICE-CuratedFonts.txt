@@ -1,0 +1,50 @@
+Capwise curated caption fonts
+
+Original unmodified font binaries; all fonts use SIL Open Font License 1.1.
+Copyright and reserved font names are retained in the accompanying OFL-*.txt files.
+SongGu provenance: see NOTICE-SongGuHei.txt.
+
+Inter 4.1: https://github.com/rsms/inter/releases/tag/v4.1
+  Inter-Regular.ttf, Inter-Medium.ttf, Inter-Bold.ttf; LICENSE.txt -> OFL-Inter.txt
+Sarasa Gothic SC 1.0.43: https://github.com/be5invis/Sarasa-Gothic/releases/tag/v1.0.43
+  SarasaGothicSC-TTF-1.0.43.7z: Regular and Bold
+LXGW WenKai Lite 1.530: https://github.com/lxgw/LxgwWenKai-Lite/releases/tag/v1.530
+  LXGWWenKaiLite-Medium.ttf; OFL-LXGWWenKaiLite.txt
+Smiley Sans 2.0.1: https://github.com/atelier-anchor/smiley-sans/releases/tag/v2.0.1
+  SmileySans-Oblique.ttf; OFL-SmileySans.txt
+Noto Sans SC Bold: https://github.com/notofonts/noto-cjk/blob/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/SC/NotoSansSC-Bold.otf
+  OFL-NotoSansSC.txt
+
+Pinned direct downloads:
+NotoSansSC-Medium.otf
+  https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/SC/NotoSansSC-Medium.otf
+NotoSerifSC-Medium.otf
+  https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Serif/SubsetOTF/SC/NotoSerifSC-Medium.otf
+OFL-NotoSerifSC.txt
+  https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Serif/LICENSE
+Montserrat-Regular.ttf
+  https://raw.githubusercontent.com/JulietaUla/Montserrat/555facfb2a18c72c3c0380f0d9c0f060453a9058/fonts/ttf/Montserrat-Regular.ttf
+Montserrat-Medium.ttf
+  https://raw.githubusercontent.com/JulietaUla/Montserrat/555facfb2a18c72c3c0380f0d9c0f060453a9058/fonts/ttf/Montserrat-Medium.ttf
+Montserrat-Bold.ttf
+  https://raw.githubusercontent.com/JulietaUla/Montserrat/555facfb2a18c72c3c0380f0d9c0f060453a9058/fonts/ttf/Montserrat-Bold.ttf
+OFL-Montserrat.txt
+  https://raw.githubusercontent.com/JulietaUla/Montserrat/555facfb2a18c72c3c0380f0d9c0f060453a9058/OFL.txt
+SourceSerif4-Regular.ttf
+  https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/TTF/SourceSerif4-Regular.ttf
+SourceSerif4-Semibold.ttf
+  https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/TTF/SourceSerif4-Semibold.ttf
+SourceSerif4-Bold.ttf
+  https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/TTF/SourceSerif4-Bold.ttf
+OFL-SourceSerif4.txt
+  https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/LICENSE.md
+GenSenRounded2TW-M.otf
+  https://raw.githubusercontent.com/ButTaiwan/gensen-font/d347d3fffcb45e08857052433a0b432ed4f7ace8/otf/TW/GenSenRounded2TW-M.otf
+OFL-GenSenRounded.txt
+  https://raw.githubusercontent.com/ButTaiwan/gensen-font/d347d3fffcb45e08857052433a0b432ed4f7ace8/SIL_Open_Font_License_1.1.txt
+OFL-SarasaGothic.txt
+  https://raw.githubusercontent.com/be5invis/Sarasa-Gothic/v1.0.43/LICENSE
+
+GenSenRounded2 TW is the Traditional Chinese variant.
+Noto Sans SC / Noto Serif SC are the Simplified Chinese regional builds of the Noto / Source Han collaboration.
+SHA256SUMS covers every font and accompanying notice/license.
