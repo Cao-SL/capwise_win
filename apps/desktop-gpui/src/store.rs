@@ -1048,6 +1048,9 @@ pub struct GeneralSettings {
     /// `!!settings.outOfProcessMuxer` in experimental.tsx).
     pub enable_native_camera_preview: bool,
     pub out_of_process_muxer: bool,
+    /// GPUI-only `showAdvancedSettings`, switched from the About page: reveals
+    /// the CLI and Experimental pages and the General page's advanced rows.
+    pub show_advanced_settings: bool,
     /// Not part of `general_settings` at all: the mic-confirmation toggle
     /// lives in the store's own `recording_start_safety` section
     /// (`RECORDING_START_SAFETY_DEFAULTS`), and the page renders it in the
@@ -1062,6 +1065,7 @@ pub const SHOW_MAIN_WINDOW_AFTER_INSTANT_KEY: &str = "showMainWindowAfterInstant
 pub const EDITOR_PREVIEW_SPEED_KEY: &str = "editorPreviewSpeed";
 
 pub const RECORDING_MARKER_SOUND_KEY: &str = "recordingMarkerSound";
+pub const SHOW_ADVANCED_SETTINGS_KEY: &str = "showAdvancedSettings";
 
 /// Read on every marker press, so it goes through the cached store rather
 /// than a full [`GeneralSettings::load`].
@@ -1456,16 +1460,15 @@ impl GeneralSettings {
                 "deleteInstantRecordingsAfterUpload",
                 false,
             ),
-            crash_recovery_recording: bool_at(general, "crashRecoveryRecording", true),
-            // The one snake_case key in the store: `#[serde(rename =
-            // "custom_cursor_capture2")]` on `custom_cursor_capture`, which
-            // is how the setting was re-defaulted without inheriting the old
-            // key's values.
-            custom_cursor_capture: bool_at(general, "custom_cursor_capture2", true),
-            auto_zoom_on_clicks: bool_at(general, "autoZoomOnClicks", true),
+            // Capwise pins these on and no longer offers a switch, so a
+            // `false` left in the store by an older build or the Tauri app
+            // must not turn them off again.
+            crash_recovery_recording: true,
+            custom_cursor_capture: true,
+            auto_zoom_on_clicks: true,
             auto_captions_after_recording: bool_at(general, "autoCaptionsAfterRecording", true),
             default_zoom_amount: opt_f32_at(general, "defaultZoomAmount"),
-            capture_keyboard_events: bool_at(general, "captureKeyboardEvents", true),
+            capture_keyboard_events: true,
             macbook_notch_overlay: bool_at(general, "macbookNotchOverlay", false),
             recording_marker_sound: bool_at(general, RECORDING_MARKER_SOUND_KEY, false),
             max_fps: u32_at(general, "maxFps", 60),
@@ -1497,6 +1500,7 @@ impl GeneralSettings {
                 .unwrap_or_default(),
             enable_native_camera_preview: bool_at(general, "enableNativeCameraPreview", false),
             out_of_process_muxer: bool_at(general, "outOfProcessMuxer", false),
+            show_advanced_settings: bool_at(general, SHOW_ADVANCED_SETTINGS_KEY, false),
             confirm_without_microphone: bool_at(
                 safety,
                 "confirmBeforeRecordingWithoutMicrophone",
@@ -3188,7 +3192,7 @@ mod tests {
             PostDeletionBehaviour::DoNothing
         );
         assert_eq!(settings.recording_countdown, Some(5));
-        assert!(!settings.custom_cursor_capture);
+        assert!(settings.custom_cursor_capture);
         assert_eq!(settings.default_zoom_amount, Some(2.5));
         assert_eq!(settings.max_fps, 120);
         assert_eq!(settings.server_url, "https://cap.example.com");
@@ -3200,6 +3204,32 @@ mod tests {
         assert!(settings.confirm_without_microphone);
         assert!(settings.studio_sound_by_default);
         assert_eq!(settings.instant_mode_max_resolution, 1920);
+    }
+
+    #[test]
+    fn pinned_recording_switches_ignore_stored_false() {
+        let _store = TempStore::new(
+            "pinned-switches",
+            Some(
+                r#"{
+  "general_settings": {
+    "crashRecoveryRecording": false,
+    "custom_cursor_capture2": false,
+    "autoZoomOnClicks": false,
+    "captureKeyboardEvents": false,
+    "showAdvancedSettings": true
+  }
+}"#,
+            ),
+        );
+
+        let settings = GeneralSettings::load();
+        assert!(settings.crash_recovery_recording);
+        assert!(settings.custom_cursor_capture);
+        assert!(settings.auto_zoom_on_clicks);
+        assert!(settings.capture_keyboard_events);
+        assert!(settings.show_advanced_settings);
+        assert!(!GeneralSettings::default().show_advanced_settings);
     }
 
     /// The teleprompter's own section: defaults when absent, and a per-key
