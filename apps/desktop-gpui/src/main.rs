@@ -536,8 +536,8 @@ fn main() {
         }
         #[cfg(target_os = "linux")]
         single_instance::init_linux_reopen(cx);
-        // Auto-update and upload queue disabled — offline mode.
-        // updates::schedule_startup_check(cx);
+        updates::schedule_startup_check(cx);
+        // Upload queue disabled — offline mode.
         app_windows::schedule_launch_render_warmup(cx);
         // upload::queue::init(cx);
         // upload::instant_cleanup::init(cx);

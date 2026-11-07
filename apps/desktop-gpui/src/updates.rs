@@ -11,9 +11,8 @@ use crate::{
     store::{GeneralSettings, UpdateChannel, UpdateDownloadPolicy},
 };
 
-const STABLE_FIRST_CHECK_DELAY: Duration = Duration::from_secs(10);
-const NIGHTLY_FIRST_CHECK_DELAY: Duration = Duration::from_secs(60);
-const NIGHTLY_CHECK_INTERVAL: Duration = Duration::from_secs(2 * 60 * 60);
+const FIRST_CHECK_DELAY: Duration = Duration::from_secs(10);
+const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 const BUSY_RETRY_DELAY: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -48,7 +47,6 @@ pub(crate) enum UpdateStatus {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct PendingUpdateRequests {
     manual: bool,
-    channel: Option<UpdateChannel>,
 }
 
 impl PendingUpdateRequests {
@@ -59,10 +57,6 @@ impl PendingUpdateRequests {
 
         self.manual = true;
         true
-    }
-
-    fn request_channel(&mut self, channel: UpdateChannel) {
-        self.channel = Some(channel);
     }
 }
 
@@ -84,18 +78,10 @@ struct UpdateScheduler {
 
 impl Global for UpdateScheduler {}
 
-fn qualifies(
-    current: &Version,
-    remote: &Version,
-    configured_channel: UpdateChannel,
-    remote_channel: UpdateChannel,
-) -> bool {
-    remote > current
-        || (configured_channel == UpdateChannel::Stable
-            && remote_channel == UpdateChannel::Stable
-            && !current.pre.is_empty()
-            && remote.pre.is_empty()
-            && remote != current)
+/// A prerelease build moves onto the release it led up to, even when that
+/// release sorts lower (0.3.0-beta.2 → 0.2.9).
+fn qualifies(current: &Version, remote: &Version) -> bool {
+    remote > current || (!current.pre.is_empty() && remote.pre.is_empty() && remote != current)
 }
 
 /// A check the user asked for answers now; a scheduled one waits for the
@@ -104,58 +90,21 @@ fn holds_scheduled_prompt(manual: bool, busy: bool) -> bool {
     !manual && busy
 }
 
-/// A manual check or a channel change queued while an automatic prompt waits
-/// replaces it, so neither has to wait for the work in flight to finish.
+/// A manual check queued while an automatic prompt waits replaces it, so it
+/// does not have to wait for the work in flight to finish.
 fn supersedes_held_prompt(pending: &PendingUpdateRequests) -> bool {
-    pending.manual || pending.channel.is_some()
+    pending.manual
 }
 
 fn current_version() -> Result<Version, String> {
     Version::parse(env!("CARGO_PKG_VERSION")).map_err(|error| error.to_string())
 }
 
-async fn available_release(channel: UpdateChannel) -> Result<Option<Release>, String> {
+async fn available_release() -> Result<Option<Release>, String> {
     let current = current_version()?;
-    let stable = installer::fetch_release(UpdateChannel::Stable, &current)
+    installer::fetch_release()
         .await
-        .map(|candidate| {
-            candidate.filter(|remote| {
-                qualifies(&current, &remote.version, channel, UpdateChannel::Stable)
-            })
-        });
-
-    if channel == UpdateChannel::Stable {
-        return stable;
-    }
-
-    let nightly = installer::fetch_release(UpdateChannel::Nightly, &current)
-        .await
-        .map(|candidate| {
-            candidate.filter(|remote| {
-                qualifies(&current, &remote.version, channel, UpdateChannel::Nightly)
-            })
-        });
-
-    select_available_release(stable, nightly)
-}
-
-fn select_available_release(
-    stable: Result<Option<Release>, String>,
-    nightly: Result<Option<Release>, String>,
-) -> Result<Option<Release>, String> {
-    match (stable, nightly) {
-        (Ok(Some(stable)), Ok(Some(nightly))) => Ok(Some(if nightly.version > stable.version {
-            nightly
-        } else {
-            stable
-        })),
-        (Ok(stable), Ok(nightly)) => Ok(stable.or(nightly)),
-        (Ok(candidate), Err(error)) | (Err(error), Ok(candidate)) => {
-            tracing::warn!("update check failed for one channel: {error}");
-            Ok(candidate)
-        }
-        (Err(error), Err(_)) => Err(error),
-    }
+        .map(|candidate| candidate.filter(|remote| qualifies(&current, &remote.version)))
 }
 
 pub(crate) fn work_in_flight(cx: &mut App) -> bool {
@@ -219,48 +168,9 @@ pub(crate) fn check_manually(cx: &mut App) {
     let _ = scheduler.wake.try_send(());
 }
 
-pub(crate) fn update_channel_changed(channel: UpdateChannel, cx: &mut App) {
-    if !cx.has_global::<UpdateScheduler>() {
-        return;
-    }
-
-    drop_pending_update_from_previous_channel(cx);
-    let scheduler = cx.global_mut::<UpdateScheduler>();
-    scheduler.pending.request_channel(channel);
-    let _ = scheduler.wake.try_send(());
-}
-
-fn channel_switch_drops_pending_package(status: &UpdateStatus) -> bool {
-    matches!(
-        status,
-        UpdateStatus::Checking
-            | UpdateStatus::Available { .. }
-            | UpdateStatus::Downloading { .. }
-            | UpdateStatus::Ready { .. }
-    )
-}
-
-fn drop_pending_update_from_previous_channel(cx: &mut App) {
-    if !channel_switch_drops_pending_package(&status(cx)) {
-        return;
-    }
-    let scheduler = cx.global_mut::<UpdateScheduler>();
-    scheduler.download_epoch = scheduler.download_epoch.wrapping_add(1);
-    scheduler.download = None;
-    scheduler.staged = None;
-    set_status(UpdateStatus::Idle, cx);
-}
-
-fn first_check_delay(channel: UpdateChannel) -> Duration {
-    match channel {
-        UpdateChannel::Stable => STABLE_FIRST_CHECK_DELAY,
-        UpdateChannel::Nightly => NIGHTLY_FIRST_CHECK_DELAY,
-    }
-}
-
-fn next_check_delay(channel: UpdateChannel) -> Option<Duration> {
-    (channel == UpdateChannel::Nightly).then_some(NIGHTLY_CHECK_INTERVAL)
-}
+/// Capwise ships one channel; this stays only while the settings page still
+/// offers the old choice.
+pub(crate) fn update_channel_changed(_channel: UpdateChannel, _cx: &mut App) {}
 
 fn finish_manual_check(cx: &mut App, manual: bool) {
     if manual {
@@ -384,16 +294,17 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
         tracing::warn!("CAP_GPUI_UPDATE_SIMULATION_VERSION is ignored in release builds");
     }
 
+    let automatic = installer::updates_configured() && !cfg!(debug_assertions);
+    if !installer::updates_configured() {
+        tracing::info!("this build has no update signing key; automatic update checks are off");
+    }
+
     cx.spawn(async move |cx| {
-        let mut channel = cx
-            .background_executor()
-            .spawn(async { GeneralSettings::load().update_channel })
-            .await;
         let mut policy = cx.update(|cx| cx.global::<UpdateScheduler>().download_policy);
         let mut delay = if policy == UpdateDownloadPolicy::Never {
             None
         } else {
-            (!cfg!(debug_assertions)).then(|| first_check_delay(channel))
+            automatic.then_some(FIRST_CHECK_DELAY)
         };
         let mut ignored_version: Option<Version> = None;
 
@@ -430,8 +341,8 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
                 // switch before the first check does not cancel it.
                 if policy == UpdateDownloadPolicy::Never {
                     delay = None;
-                } else if was_never {
-                    delay = Some(first_check_delay(channel));
+                } else if was_never && automatic {
+                    delay = Some(FIRST_CHECK_DELAY);
                 }
             }
 
@@ -439,18 +350,12 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
                 continue;
             }
 
-            if let Some(next_channel) = request.channel {
-                channel = next_channel;
-                ignored_version = None;
-                cx.update(drop_pending_update_from_previous_channel);
-            }
-
             let manual = request.manual;
             if policy == UpdateDownloadPolicy::Never && !manual {
                 delay = None;
                 continue;
             }
-            if cfg!(debug_assertions) && !manual {
+            if !automatic && !manual {
                 delay = None;
                 continue;
             }
@@ -459,7 +364,7 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
                 cx.update(|cx| cx.global_mut::<UpdateScheduler>().manual_in_flight = true);
             }
 
-            delay = next_check_delay(channel);
+            delay = automatic.then_some(CHECK_INTERVAL);
 
             if cx.update(|cx| status(cx) != UpdateStatus::Idle) {
                 cx.update(|cx| finish_manual_check(cx, manual));
@@ -469,22 +374,15 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
             cx.update(|cx| set_status(UpdateStatus::Checking, cx));
 
             let result = match cx
-                .update(|cx| gpui_tokio::Tokio::spawn(cx, available_release(channel)))
+                .update(|cx| gpui_tokio::Tokio::spawn(cx, available_release()))
                 .await
             {
                 Ok(result) => result,
                 Err(error) => Err(error.to_string()),
             };
 
-            let superseded = cx.update(|cx| {
-                let scheduler = cx.global_mut::<UpdateScheduler>();
-                let channel_changed = scheduler.pending.channel.is_some();
-                if channel_changed && manual {
-                    scheduler.pending.manual = true;
-                    scheduler.manual_in_flight = false;
-                }
-                channel_changed || (!manual && scheduler.pending.manual)
-            });
+            let superseded =
+                cx.update(|cx| !manual && cx.global::<UpdateScheduler>().pending.manual);
             if superseded {
                 cx.update(|cx| set_status(UpdateStatus::Idle, cx));
                 continue;
@@ -524,7 +422,7 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
                 continue;
             }
 
-            // The prompt is modal and brings Cap forward, so an automatic
+            // The prompt is modal and brings Capwise forward, so an automatic
             // check holds it until a recording, export, import or
             // transcription has finished rather than interrupting it.
             let mut superseded = false;
@@ -547,7 +445,7 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
                 }
             }
             if superseded {
-                // Run the queued manual check or channel change straight away.
+                // Run the queued manual check straight away.
                 cx.update(|cx| set_status(UpdateStatus::Idle, cx));
                 delay = Some(Duration::ZERO);
                 continue;
@@ -556,7 +454,7 @@ pub(crate) fn schedule_startup_check(cx: &mut App) {
             let policy = cx.update(|cx| cx.global::<UpdateScheduler>().download_policy);
             if policy == UpdateDownloadPolicy::Never && !manual {
                 cx.update(|cx| set_status(UpdateStatus::Idle, cx));
-                delay = next_check_delay(channel);
+                delay = None;
                 continue;
             }
             if policy == UpdateDownloadPolicy::Auto {
@@ -791,7 +689,7 @@ pub(crate) fn install_and_relaunch(cx: &mut App) {
 
 /// The install can sit behind an administrator prompt for as long as the user
 /// leaves it, so anything started meanwhile defers the restart to a prompt
-/// that waits for Cap to be idle.
+/// that waits for Capwise to be idle.
 fn restart_after_install(version: Version, executable: PathBuf, cx: &mut App) {
     let deferred = if work_in_flight(cx) {
         tracing::info!(%version, "update installed; waiting for in-flight work before restarting");
@@ -838,7 +736,7 @@ fn apply_package(
     let bundle = executable
         .ancestors()
         .find(|path| path.extension().is_some_and(|extension| extension == "app"))
-        .ok_or_else(|| "This copy of Cap isn't running from an app bundle".to_string())?;
+        .ok_or_else(|| "This copy of Capwise isn't running from an app bundle".to_string())?;
     installer::install_app_bundle(package, bundle)?;
     Ok(Some(executable))
 }
@@ -865,7 +763,7 @@ fn apply_package(package: &std::path::Path, kind: ArtifactKind) -> Result<Option
             let image = std::env::var_os("APPIMAGE")
                 .map(PathBuf::from)
                 .filter(|path| path.is_absolute())
-                .ok_or_else(|| "This copy of Cap isn't running from an AppImage".to_string())?;
+                .ok_or_else(|| "This copy of Capwise isn't running from an AppImage".to_string())?;
             installer::install_appimage(package, &image)?;
             Ok(Some(image))
         }
@@ -889,15 +787,6 @@ mod tests {
         Version::parse(value).unwrap()
     }
 
-    fn release(value: &str) -> Release {
-        Release {
-            version: version(value),
-            url: format!("https://cdn.crabnebula.app/asset/{value}"),
-            signature: "c2ln".to_string(),
-            notes: None,
-        }
-    }
-
     #[test]
     fn only_scheduled_checks_wait_for_work_in_flight() {
         assert!(holds_scheduled_prompt(false, true));
@@ -907,115 +796,27 @@ mod tests {
     }
 
     #[test]
-    fn queued_manual_checks_and_channel_changes_replace_a_held_prompt() {
+    fn queued_manual_checks_replace_a_held_prompt() {
         assert!(!supersedes_held_prompt(&PendingUpdateRequests::default()));
         assert!(supersedes_held_prompt(&PendingUpdateRequests {
-            manual: true,
-            ..PendingUpdateRequests::default()
-        }));
-        assert!(supersedes_held_prompt(&PendingUpdateRequests {
-            channel: Some(UpdateChannel::Nightly),
-            ..PendingUpdateRequests::default()
+            manual: true
         }));
     }
 
     #[test]
-    fn stable_channel_accepts_newer_versions_and_explicit_prerelease_downgrades() {
-        assert!(qualifies(
-            &version("0.6.0"),
-            &version("0.6.1"),
-            UpdateChannel::Stable,
-            UpdateChannel::Stable,
-        ));
-        assert!(qualifies(
-            &version("0.6.1-nightly.4"),
-            &version("0.6.0"),
-            UpdateChannel::Stable,
-            UpdateChannel::Stable,
-        ));
-        assert!(!qualifies(
-            &version("0.6.1"),
-            &version("0.6.0"),
-            UpdateChannel::Stable,
-            UpdateChannel::Stable,
-        ));
+    fn newer_releases_and_prerelease_graduations_qualify() {
+        assert!(qualifies(&version("0.6.0"), &version("0.6.1")));
+        assert!(qualifies(&version("0.6.1-beta.4"), &version("0.6.1")));
+        assert!(qualifies(&version("0.6.1-beta.4"), &version("0.6.0")));
+        assert!(!qualifies(&version("0.6.1"), &version("0.6.0")));
+        assert!(!qualifies(&version("0.6.1"), &version("0.6.1")));
+        assert!(qualifies(&version("0.6.1"), &version("0.6.2-beta.1")));
     }
 
     #[test]
-    fn nightly_channel_never_uses_the_stable_downgrade_rule() {
-        assert!(!qualifies(
-            &version("0.6.1-nightly.4"),
-            &version("0.6.0"),
-            UpdateChannel::Nightly,
-            UpdateChannel::Stable,
-        ));
-        assert!(qualifies(
-            &version("0.6.1-nightly.4"),
-            &version("0.6.1-nightly.5"),
-            UpdateChannel::Nightly,
-            UpdateChannel::Nightly,
-        ));
-    }
-
-    #[test]
-    fn nightly_channel_survives_individual_endpoint_failures() {
-        assert_eq!(
-            select_available_release(Err("stable unavailable".into()), Ok(Some(release("0.6.1"))))
-                .unwrap(),
-            Some(release("0.6.1")),
-        );
-        assert_eq!(
-            select_available_release(
-                Ok(Some(release("0.6.2"))),
-                Err("nightly unavailable".into())
-            )
-            .unwrap(),
-            Some(release("0.6.2")),
-        );
-        assert_eq!(
-            select_available_release(
-                Err("stable unavailable".into()),
-                Err("nightly unavailable".into()),
-            ),
-            Err("stable unavailable".into()),
-        );
-    }
-
-    #[test]
-    fn nightly_channel_prefers_the_newest_successful_version() {
-        assert_eq!(
-            select_available_release(
-                Ok(Some(release("0.6.1"))),
-                Ok(Some(release("0.6.2-nightly.4"))),
-            )
-            .unwrap(),
-            Some(release("0.6.2-nightly.4")),
-        );
-        assert_eq!(
-            select_available_release(
-                Ok(Some(release("0.6.3"))),
-                Ok(Some(release("0.6.3-nightly.9"))),
-            )
-            .unwrap(),
-            Some(release("0.6.3")),
-        );
-    }
-
-    #[test]
-    fn check_cadence_preserves_each_update_channel_contract() {
-        assert_eq!(
-            first_check_delay(UpdateChannel::Stable),
-            Duration::from_secs(10)
-        );
-        assert_eq!(
-            first_check_delay(UpdateChannel::Nightly),
-            Duration::from_secs(60)
-        );
-        assert_eq!(next_check_delay(UpdateChannel::Stable), None);
-        assert_eq!(
-            next_check_delay(UpdateChannel::Nightly),
-            Some(Duration::from_secs(2 * 60 * 60))
-        );
+    fn checks_run_soon_after_launch_and_then_a_few_times_a_day() {
+        assert_eq!(FIRST_CHECK_DELAY, Duration::from_secs(10));
+        assert_eq!(CHECK_INTERVAL, Duration::from_secs(6 * 60 * 60));
     }
 
     #[test]
@@ -1028,47 +829,6 @@ mod tests {
         requests.manual = false;
         assert!(!requests.request_manual(true));
         assert!(requests.request_manual(false));
-    }
-
-    #[test]
-    fn channel_switch_drops_a_download_or_staged_package_and_keeps_an_install() {
-        let nightly = version("0.6.1-nightly.4");
-        assert!(channel_switch_drops_pending_package(
-            &UpdateStatus::Downloading {
-                version: nightly.clone(),
-                fraction: Some(0.4),
-            }
-        ));
-        assert!(channel_switch_drops_pending_package(&UpdateStatus::Ready {
-            version: nightly.clone(),
-        }));
-        assert!(!channel_switch_drops_pending_package(
-            &UpdateStatus::Installing { version: nightly }
-        ));
-        assert!(!channel_switch_drops_pending_package(
-            &UpdateStatus::Installed {
-                version: version("0.6.1"),
-                executable: PathBuf::from("/Applications/Cap.app"),
-            }
-        ));
-        assert!(!channel_switch_drops_pending_package(&UpdateStatus::Idle));
-    }
-
-    #[test]
-    fn channel_changes_coalesce_without_losing_manual_checks() {
-        let mut requests = PendingUpdateRequests::default();
-
-        assert!(requests.request_manual(false));
-        requests.request_channel(UpdateChannel::Nightly);
-        requests.request_channel(UpdateChannel::Stable);
-
-        assert_eq!(
-            requests,
-            PendingUpdateRequests {
-                manual: true,
-                channel: Some(UpdateChannel::Stable),
-            }
-        );
     }
 
     #[test]

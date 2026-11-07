@@ -3145,13 +3145,13 @@ busy_title = "Capwise is busy"
 check_failed = { text = "Couldn't check for updates: {error}", context = "{error} is a technical reason, usually in English." }
 download = { text = "Download", context = "Button: download the update now." }
 download_failed = { text = "Couldn't download version {version}: {error}", context = "{error} is a technical reason, usually in English." }
-failed = { text = "{message}\n\nYou can always download the latest version from Capwise.so/download.", context = "{message} is one of the other update error sentences." }
+failed = { text = "{message}\n\nYou can always download the latest version from github.com/joeseesun/capwise/releases.", context = "{message} is one of the other update error sentences." }
 install_failed = { text = "Couldn't install version {version}: {error}", context = "{error} is a technical reason, usually in English." }
 later = "Later"
 no_update = "You're already using the latest version of Capwise."
 no_update_title = "No Update Available"
 not_now = "Not Now"
-package_not_installed = "The package wasn't installed. Approve the system prompt, or install it from Capwise.so/download."
+package_not_installed = "The package wasn't installed. Approve the system prompt, or install it from github.com/joeseesun/capwise/releases."
 ready = { text = "Capwise {version} is ready. Restart Capwise to finish updating.", context = "{version} is a version number such as 0.6.2." }
 restart_now = "Restart Now"
 title = { text = "Update Capwise", context = "Title of every update dialog." }

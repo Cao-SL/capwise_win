@@ -868,7 +868,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         (tr::dialog::update::later(), "Later"),
         (
             tr::dialog::update::package_not_installed(),
-            "The package wasn't installed. Approve the system prompt, or install it from Capwise.so/download.",
+            "The package wasn't installed. Approve the system prompt, or install it from github.com/joeseesun/capwise/releases.",
         ),
     ];
     for (translated, literal) in pairs {
@@ -1177,7 +1177,7 @@ fn update_and_quit_messages_format_like_the_code_they_replaced() {
         (
             tr::dialog::update::failed(error),
             format!(
-                "{error}\n\nYou can always download the latest version from Capwise.so/download."
+                "{error}\n\nYou can always download the latest version from github.com/joeseesun/capwise/releases."
             ),
         ),
     ];
