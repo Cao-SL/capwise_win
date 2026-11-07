@@ -1151,10 +1151,24 @@ impl OnboardingWindow {
         let logo_y = -24. * logo_leave * travel;
         let logo_opacity = ease(beat(m.t, 0.6, 1.2)) * (1. - logo_leave);
 
-        let logo = img("onboarding/wordmark.svg")
-            .w(px(120.))
-            .h(px(40.))
-            .object_fit(ObjectFit::Contain);
+        // Capwise's app icon beside its localized name (灵录 / Capwise), so
+        // the lockup follows the UI language instead of a baked wordmark.
+        let logo = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(10.))
+            .child(
+                img("images/app-icon.png")
+                    .size(px(40.))
+                    .object_fit(ObjectFit::Contain),
+            )
+            .child(
+                copy(tr::brand::name(), 24., ink)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .line_height(px(40.))
+                    .whitespace_nowrap(),
+            );
 
         let shadow = |color: u32, y: f32, blur: f32, spread: f32, inset: bool| gpui::BoxShadow {
             color: rgba(color).into(),

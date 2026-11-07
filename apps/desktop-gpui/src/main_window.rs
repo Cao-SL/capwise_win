@@ -6545,15 +6545,27 @@ impl MainWindow {
     ///
     /// The app ships two files rather than recolouring one, so this picks the
     /// same way it does.
+    ///
+    /// Capwise draws its app icon beside the localized name (灵录 / Capwise)
+    /// instead of Cap's baked wordmark, so it follows the UI language and
+    /// theme without a second asset.
     fn render_logo(&self) -> impl IntoElement {
-        img(if self.theme.is_dark() {
-            "icons/logo-full-dark.svg"
-        } else {
-            "icons/logo-full.svg"
-        })
-        .w(px(84.))
-        .h(px(84. * 40. / 103.))
-        .flex_shrink_0()
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.))
+            .flex_shrink_0()
+            .child(img("images/app-icon.png").size(px(22.)).flex_shrink_0())
+            .child(
+                div()
+                    .text_size(px(15.))
+                    .line_height(px(22.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(self.theme.gray_12)
+                    .whitespace_nowrap()
+                    .child(tr::brand::name()),
+            )
     }
 
     fn clear_mode_hover(&mut self) {
