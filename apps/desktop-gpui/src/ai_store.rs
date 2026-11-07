@@ -51,7 +51,73 @@ fn keys() -> std::sync::MutexGuard<'static, HashMap<String, Option<String>>> {
     KEYS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-#[cfg(target_os = "macos")]
+// Tests never touch the login keychain: every `cargo test` build is signed
+// differently, so macOS would ask for the keychain password on each run, and a
+// test must never overwrite the user's real API keys. They use this stand-in:
+// writes stay in memory, reads fall back to a private dev-key file.
+#[cfg(test)]
+mod test_keychain {
+    use std::{cell::RefCell, collections::HashMap};
+
+    thread_local! {
+        /// What a test wrote (`Some`) or deleted (`None`) shadows the file.
+        static ITEMS: RefCell<HashMap<(String, String), Option<String>>> =
+            RefCell::new(HashMap::new());
+    }
+
+    /// Real keys for live tests, copied once from the keychain into a private
+    /// file outside the repo (`~/.config/capwise/dev-keys.json`, mode 600),
+    /// shaped `{ "<service>": { "<account>": "<key>" } }`. Override the path
+    /// with `CAPWISE_DEV_KEYS`. Missing file = no keys.
+    fn dev_key(service: &str, account: &str) -> Option<String> {
+        let path = std::env::var_os("CAPWISE_DEV_KEYS")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|home| std::path::PathBuf::from(home).join(".config/capwise/dev-keys.json"))
+            })?;
+        let text = std::fs::read_to_string(path).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+        json.get(service)?
+            .get(account)?
+            .as_str()
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+            .map(str::to_string)
+    }
+
+    pub fn get(service: &str, account: &str) -> Option<String> {
+        let key = (service.to_string(), account.to_string());
+        if let Some(value) = ITEMS.with(|items| items.borrow().get(&key).cloned()) {
+            return value;
+        }
+        dev_key(service, account)
+    }
+
+    pub fn set(service: &str, account: &str, key: &str) {
+        ITEMS.with(|items| {
+            items.borrow_mut().insert(
+                (service.to_string(), account.to_string()),
+                Some(key.to_string()),
+            );
+        });
+    }
+
+    pub fn delete(service: &str, account: &str) {
+        ITEMS.with(|items| {
+            items
+                .borrow_mut()
+                .insert((service.to_string(), account.to_string()), None);
+        });
+    }
+}
+
+#[cfg(test)]
+fn keychain_get(service: &str, account: &str) -> Option<String> {
+    test_keychain::get(service, account)
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
 fn keychain_get(service: &str, account: &str) -> Option<String> {
     security_framework::passwords::get_generic_password(service, account)
         .ok()
@@ -60,7 +126,7 @@ fn keychain_get(service: &str, account: &str) -> Option<String> {
         .filter(|key| !key.is_empty())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(target_os = "macos"), not(test)))]
 fn keychain_get(_service: &str, _account: &str) -> Option<String> {
     None
 }
@@ -75,6 +141,9 @@ fn read_key(kind: Kind, id: &str) -> Option<String> {
         && let Some(legacy) = keychain_get(LEGACY_KEYCHAIN_SERVICE, "doubao")
     {
         if set_key_uncached(kind, id, &legacy).is_ok() {
+            #[cfg(test)]
+            test_keychain::delete(LEGACY_KEYCHAIN_SERVICE, "doubao");
+            #[cfg(not(test))]
             let _ = security_framework::passwords::delete_generic_password(
                 LEGACY_KEYCHAIN_SERVICE,
                 "doubao",
@@ -125,7 +194,12 @@ pub fn cached_key_tail(kind: Kind, id: &str) -> Option<Option<String>> {
 }
 
 fn set_key_uncached(kind: Kind, id: &str, key: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(test)]
+    {
+        test_keychain::set(KEYCHAIN_SERVICE, &account(kind, id), key);
+        Ok(())
+    }
+    #[cfg(all(target_os = "macos", not(test)))]
     {
         security_framework::passwords::set_generic_password(
             KEYCHAIN_SERVICE,
@@ -134,7 +208,7 @@ fn set_key_uncached(kind: Kind, id: &str, key: &str) -> Result<(), String> {
         )
         .map_err(|error| format!("{}: {error}", tr::asr::keychain_failed()))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), not(test)))]
     {
         let _ = (kind, id, key);
         Err(tr::asr::keychain_failed().to_string())
@@ -176,7 +250,12 @@ fn delete_key_with(
 
 fn delete_key(kind: Kind, id: &str) -> Result<(), String> {
     delete_key_with(kind, id, || {
-        #[cfg(target_os = "macos")]
+        #[cfg(test)]
+        {
+            test_keychain::delete(KEYCHAIN_SERVICE, &account(kind, id));
+            Ok(())
+        }
+        #[cfg(all(target_os = "macos", not(test)))]
         {
             match security_framework::passwords::delete_generic_password(
                 KEYCHAIN_SERVICE,
@@ -187,7 +266,7 @@ fn delete_key(kind: Kind, id: &str) -> Result<(), String> {
                 Err(_) => Err(tr::asr::keychain_failed().to_string()),
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(all(not(target_os = "macos"), not(test)))]
         Err(tr::asr::keychain_failed().to_string())
     })
 }
