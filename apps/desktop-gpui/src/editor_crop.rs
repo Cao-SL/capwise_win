@@ -1319,6 +1319,7 @@ impl CropState {
     }
 
     /// `handleResizePointerMove` (`:798-868`).
+    #[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
     pub fn resize_move(&mut self, point: Vec2, alt: bool, shift: bool, snap_enabled: bool) {
         self.resize_move_with_alignment(point, alt, shift, snap_enabled, false);
     }
@@ -3190,6 +3191,7 @@ pub(crate) fn occluders(bounds: CropBounds, w: f32, h: f32) -> Vec<gpui::Div> {
 }
 
 /// The rule-of-thirds cross drawn inside the region during a drag.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub(crate) fn thirds_grid(bounds: CropBounds) -> gpui::Div {
     let line = gpui::hsla(0., 0., 1., 0.4);
     let (w, h) = (bounds.width as f32, bounds.height as f32);
@@ -3278,6 +3280,7 @@ pub(crate) fn corner_glyph(handle: Handle, bounds: CropBounds, too_small: bool) 
 }
 
 /// A handle's transparent hit zone, carrying its cursor.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub(crate) fn handle_zone(
     handle: Handle,
     bounds: CropBounds,
@@ -3290,6 +3293,7 @@ pub(crate) fn handle_zone(
     )
 }
 
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub(crate) fn handle_zone_with_cursor(
     handle: Handle,
     bounds: CropBounds,

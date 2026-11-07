@@ -7267,6 +7267,7 @@ fn open_controls(
 /// TargetSelectOverlay / CaptureArea / ModeSelect (`recording.rs:2876-2895`):
 /// an overlay still on screen would be in the shot. Returns whether anything
 /// was up -- the caller's cue to wait the same 150ms the Tauri command waits.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn prepare_for_screenshot_capture(cx: &mut App) -> bool {
     if cx.global::<AppWindows>().overlays.is_empty() {
         return false;
@@ -7284,6 +7285,7 @@ pub fn prepare_for_screenshot_capture(cx: &mut App) -> bool {
 /// the Tauri app -- and open the screenshot editor on the new bundle, the
 /// `automationShouldOpenScreenshotEditor` default. A failure reveals the main
 /// window if the picker had hidden it, since nothing else will.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn screenshot_finished(captured: Option<PathBuf>, cx: &mut App) {
     let Some(png) = captured else {
         let hidden = std::mem::take(&mut cx.global_mut::<AppWindows>().main_hidden_for_picker);
@@ -7463,6 +7465,7 @@ fn bring_screenshot_editor_forward(handle: WindowHandle<ScreenshotEditorWindow>,
 /// The screenshot editor's Delete finished: drop the window (its pending
 /// write is for a bundle that no longer exists), refresh every surface that
 /// lists screenshots, and run the ordinary closed bookkeeping.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn close_screenshot_editor_after_delete(bundle: &Path, cx: &mut App) {
     let key = editor_key(bundle);
     let handle = cx
@@ -7483,6 +7486,7 @@ pub fn close_screenshot_editor_after_delete(bundle: &Path, cx: &mut App) {
     refresh_screenshot_surfaces(cx);
 }
 
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn refresh_screenshot_surfaces(cx: &mut App) {
     crate::tray::refresh_previous(cx);
     if let Some(settings) = cx.global::<AppWindows>().settings {
@@ -7498,6 +7502,7 @@ pub fn refresh_screenshot_surfaces(cx: &mut App) {
 /// A screenshot editor window is going away: flush its pending config write
 /// and bring the main window back once the last editor of either kind closes
 /// -- the same `Destroyed` arm `editor_closed` mirrors.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn screenshot_editor_closed(bundle: &Path, cx: &mut App) {
     let key = editor_key(bundle);
     let handle = {

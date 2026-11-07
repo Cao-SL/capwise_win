@@ -798,6 +798,7 @@ settings_enum! {
     default = OpenEditor
 }
 
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 impl PostScreenshotBehaviour {
     pub fn copies(self) -> bool {
         matches!(self, Self::Copy | Self::CopyAndOpenEditor)

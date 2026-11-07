@@ -2113,6 +2113,7 @@ fn persist_instant_meta(
     })
 }
 
+#[cfg_attr(not(feature = "cap-cloud"), allow(dead_code))]
 pub(crate) fn persist_instant_upload_failure(
     project_path: &std::path::Path,
     error: &str,
@@ -2143,6 +2144,7 @@ pub(crate) fn persist_instant_upload_failure(
     })
 }
 
+#[cfg_attr(not(feature = "cap-cloud"), allow(dead_code))]
 fn check_instant_publication_cancelled(
     cancel: Option<&std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<()> {
@@ -2177,6 +2179,7 @@ pub(crate) async fn finish_instant_upload_locally(
     check_instant_publication_cancelled(cancel)
 }
 
+#[cfg_attr(not(feature = "cap-cloud"), allow(dead_code))]
 pub(crate) fn persist_instant_upload_complete(
     project_path: &std::path::Path,
     metadata_lock: &Mutex<()>,
