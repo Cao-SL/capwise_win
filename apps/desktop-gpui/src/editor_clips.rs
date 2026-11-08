@@ -425,6 +425,108 @@ pub(crate) fn move_clip(
     true
 }
 
+/// Each clip's place in output time, `[start, end)`.
+pub(crate) fn clip_output_ranges(timeline: &TimelineConfiguration) -> Vec<(f64, f64)> {
+    let holds = timeline.hold_windows();
+    crate::editor_timeline::clip_timeline_offsets(timeline)
+        .into_iter()
+        .zip(&timeline.segments)
+        .map(|(offset, segment)| {
+            (
+                edits::effective_to_output(&holds, offset),
+                edits::effective_to_output_end(&holds, offset + segment.duration()),
+            )
+        })
+        .collect()
+}
+
+/// Where a clip dragged to `time` would land: after every clip whose middle
+/// the pointer has passed, the way the sidebar list measures card midpoints.
+pub(crate) fn clip_insertion_at(timeline: &TimelineConfiguration, time: f64) -> usize {
+    clip_output_ranges(timeline)
+        .iter()
+        .filter(|(start, end)| time > (start + end) / 2.)
+        .count()
+}
+
+/// [`move_clip`] on the timeline, the way the main track works in 剪映:
+/// whatever sits wholly inside the moved clip -- text, stickers, shapes,
+/// zooms, sound effects -- travels with it, and the clips it passes carry
+/// theirs the other way. Layers that span several clips, like a music bed,
+/// stay put. Captions follow their source words and are re-derived by the
+/// caller.
+pub(crate) fn move_clip_with_layers(
+    timeline: &mut TimelineConfiguration,
+    from: usize,
+    insertion_index: usize,
+) -> bool {
+    let before = clip_output_ranges(timeline);
+    let count = before.len();
+    if from >= count || insertion_index > count {
+        return false;
+    }
+    let to = if from < insertion_index {
+        insertion_index - 1
+    } else {
+        insertion_index
+    };
+    if !move_clip(timeline, from, insertion_index) {
+        return false;
+    }
+    let mut order: Vec<usize> = (0..count).collect();
+    let moved = order.remove(from);
+    order.insert(to, moved);
+    let after = clip_output_ranges(timeline);
+    let mut shift = vec![0.0; count];
+    for (position, original) in order.iter().enumerate() {
+        if let Some((start, _)) = after.get(position) {
+            shift[*original] = start - before[*original].0;
+        }
+    }
+    const EPSILON: f64 = 1e-6;
+    let owner = |start: f64, end: f64| {
+        before
+            .iter()
+            .position(|(clip_start, clip_end)| {
+                start >= clip_start - EPSILON && end <= clip_end + EPSILON
+            })
+    };
+    fn carry<T: TrackSegmentOps>(
+        track: &mut Vec<T>,
+        owner: &dyn Fn(f64, f64) -> Option<usize>,
+        shift: &[f64],
+    ) {
+        for item in track.iter_mut() {
+            if let Some(clip) = owner(item.start(), item.end()) {
+                let delta = shift[clip];
+                item.set_start(item.start() + delta);
+                item.set_end(item.end() + delta);
+            }
+        }
+        track.sort_by(|a, b| a.start().total_cmp(&b.start()));
+    }
+    carry(&mut timeline.style_segments, &owner, &shift);
+    carry(&mut timeline.image_segments, &owner, &shift);
+    carry(&mut timeline.zoom_segments, &owner, &shift);
+    carry(&mut timeline.scene_segments, &owner, &shift);
+    carry(&mut timeline.mask_segments, &owner, &shift);
+    carry(&mut timeline.text_segments, &owner, &shift);
+    carry(&mut timeline.shape_segments, &owner, &shift);
+    carry(&mut timeline.caption_segments, &owner, &shift);
+    carry(&mut timeline.camera3d_segments, &owner, &shift);
+    carry(&mut timeline.audio_segments, &owner, &shift);
+    for segment in &mut timeline.keyboard_segments {
+        if let Some(clip) = owner(segment.start, segment.end) {
+            let delta = shift[clip];
+            segment.remap_times(|time| time + delta);
+        }
+    }
+    timeline
+        .keyboard_segments
+        .sort_by(|a, b| a.start.total_cmp(&b.start));
+    true
+}
+
 /// `computeDropIndex` (`ClipsSidebar.tsx:692-703`): the insertion point is
 /// after every card whose vertical midpoint the pointer has passed.
 fn compute_drop_index(pointer_y: Pixels, cards: &[ClipCardBounds]) -> usize {
@@ -871,6 +973,51 @@ impl EditorWindow {
                 .is_some_and(|timeline| move_clip(timeline, from, insertion))
         });
         self.set_selection(None, cx);
+    }
+
+    /// Commits a clip dragged along the timeline: the clip and its own
+    /// layers move, captions re-follow their words, one undo step.
+    pub(crate) fn reorder_clip_on_timeline(
+        &mut self,
+        from: usize,
+        insertion: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let to = if from < insertion { insertion - 1 } else { insertion };
+        if from == to || from >= self.clip_segments().len() {
+            return;
+        }
+        let durations = self.clip_display_durations.clone();
+        self.edit_project("clip-reorder", window, cx, move |project| {
+            let captions = project.captions.as_ref().map(|captions| captions.segments.clone());
+            let Some(timeline) = project.timeline.as_mut() else {
+                return false;
+            };
+            if !move_clip_with_layers(timeline, from, insertion) {
+                return false;
+            }
+            if let Some(captions) = captions {
+                timeline.caption_segments =
+                    cap_project::derive_caption_track_segments(&captions, timeline, &durations);
+            }
+            true
+        });
+        self.set_selection(
+            Some(crate::editor_edits::Selection::single(
+                crate::editor_timeline::TrackKind::Clip,
+                to,
+            )),
+            cx,
+        );
+        let start = self
+            .project
+            .timeline
+            .as_ref()
+            .and_then(|timeline| clip_output_ranges(timeline).get(to).map(|range| range.0));
+        if let Some(start) = start {
+            self.seek_to_time(start, cx);
+        }
     }
 
     // -- Thumbnails ------------------------------------------------------------
@@ -4739,6 +4886,45 @@ mod tests {
         assert!(!move_clip(&mut config, 1, 2));
         // ...and out-of-range indices do nothing.
         assert!(!move_clip(&mut config, 9, 0));
+    }
+
+    #[test]
+    fn moving_a_clip_carries_its_own_layers_and_leaves_shared_ones() {
+        let mut config = timeline(vec![
+            segment(0, 0.0, 2.0),
+            segment(1, 0.0, 2.0),
+            segment(2, 0.0, 2.0),
+        ]);
+        let mut sticker = cap_project::ImageSegment::default();
+        sticker.start = 0.5;
+        sticker.end = 1.5;
+        config.image_segments.push(sticker);
+        let mut later = cap_project::ImageSegment::default();
+        later.start = 2.5;
+        later.end = 3.0;
+        config.image_segments.push(later);
+        let mut music = cap_project::ImageSegment::default();
+        music.start = 0.0;
+        music.end = 6.0;
+        config.image_segments.push(music);
+
+        // The first clip goes to the end.
+        assert_eq!(clip_insertion_at(&config, 5.5), 3);
+        assert!(move_clip_with_layers(&mut config, 0, 3));
+        let spans: Vec<(f64, f64)> = config
+            .image_segments
+            .iter()
+            .map(|segment| (segment.start, segment.end))
+            .collect();
+        // Its sticker moved with it, the second clip's moved back, the
+        // whole-video layer stayed.
+        assert!(spans.contains(&(4.5, 5.5)));
+        assert!(spans.contains(&(0.5, 1.0)));
+        assert!(spans.contains(&(0.0, 6.0)));
+        let order: Vec<u32> = config.segments.iter().map(|s| s.recording_clip).collect();
+        assert_eq!(order, vec![1, 2, 0]);
+        // Dropping in place changes nothing.
+        assert!(!move_clip_with_layers(&mut config, 1, 1));
     }
 
     #[test]

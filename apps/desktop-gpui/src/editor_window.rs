@@ -1366,6 +1366,9 @@ enum DragKind {
     ClipTrimStart {
         start: f64,
     },
+    /// A clip's body dragged along the main track to a new place in the
+    /// order; the drop slot lives in `clip_reorder_target`.
+    ClipReorder,
     ClipTrimEnd {
         end: f64,
     },
@@ -1712,6 +1715,8 @@ pub struct EditorWindow {
     text_style_clipboard: Option<crate::editor_panels::TextStyle>,
     frame_controls: frame::FrameControls,
     add_track: Option<AddTrackMenu>,
+    /// Where a clip being dragged along the main track would land.
+    clip_reorder_target: Option<usize>,
     pub(crate) sticker_picker: Option<crate::editor_assets::StickerPicker>,
     add_track_opens: usize,
     pub(crate) voiceover: crate::editor_voiceover::VoiceoverUi,
@@ -2492,6 +2497,7 @@ impl EditorWindow {
             text_style_clipboard: None,
             frame_controls: frame::FrameControls::default(),
             add_track: None,
+            clip_reorder_target: None,
             sticker_picker: None,
             add_track_opens: 0,
             voiceover: Default::default(),
@@ -6193,6 +6199,20 @@ impl EditorWindow {
                     self.drag_transition(index, (initial, grow * delta), kind, cx);
                 }
             }
+            DragKind::ClipReorder => {
+                if drag.moved
+                    && let Some(timeline) = self.project.timeline.as_ref()
+                {
+                    let target = crate::editor_clips::clip_insertion_at(
+                        timeline,
+                        drag.press_time + delta,
+                    );
+                    if self.clip_reorder_target != Some(target) {
+                        self.clip_reorder_target = Some(target);
+                        cx.notify();
+                    }
+                }
+            }
             DragKind::ClipTrimStart { start } => {
                 self.clip_trim(
                     drag.index,
@@ -7300,6 +7320,13 @@ impl EditorWindow {
             self.clip_draft = None;
             return;
         };
+        let reorder_target = self.clip_reorder_target.take();
+        if matches!(drag.kind, DragKind::ClipReorder)
+            && drag.moved
+            && let Some(insertion) = reorder_target
+        {
+            self.reorder_clip_on_timeline(drag.index, insertion, window, cx);
+        }
         let transition_drag = matches!(drag.kind, DragKind::TransitionDuration { .. });
         if transition_drag {
             self.transition_drag_base = None;
@@ -7383,6 +7410,7 @@ impl EditorWindow {
                 (_, DragKind::CreateZoom { .. }) => "create",
                 (true, DragKind::TransitionDuration { .. }) => "clip-transition",
                 (true, DragKind::Move { .. }) => "move",
+                (true, DragKind::ClipReorder) => "clip-reorder",
                 (true, _) => "trim",
                 (false, _) => "select",
             },
@@ -9620,6 +9648,41 @@ impl EditorWindow {
     ) {
         // `stickers` opens the sticker picker under the toolbar; `sticker:<id>`
         // also places that sticker.
+        // `reorder` splits the video into three and shows the first clip
+        // mid-drag toward the end; `reorder-drop` also drops it there.
+        if let Some(rest) = spec.strip_prefix("reorder") {
+            let total = self.total_duration();
+            for fraction in [0.4, 0.7] {
+                self.seek_to_time(total * fraction, cx);
+                self.view.preview_time = None;
+                self.split_at_playhead(window, cx);
+            }
+            self.set_selection(None, cx);
+            let count = self.project.timeline.as_ref().map_or(0, |t| t.segments.len());
+            if rest == "-drop" {
+                self.reorder_clip_on_timeline(0, count, window, cx);
+            } else {
+                self.drag = Some(Drag {
+                    track: TrackKind::Clip,
+                    index: 0,
+                    kind: DragKind::ClipReorder,
+                    down_x: 0.,
+                    origin_x: Some(0.),
+                    moved: true,
+                    threshold: 4.,
+                    selects_on_click: true,
+                    shift: false,
+                    multi: false,
+                    press_time: 0.,
+                    paused: false,
+                    lane: 0,
+                    lane_target: None,
+                });
+                self.clip_reorder_target = Some(count);
+            }
+            cx.notify();
+            return;
+        }
         if let Some(rest) = spec.strip_prefix("sticker") {
             self.open_sticker_picker(px(260.), px(118.), window, cx);
             if rest == "s-icons" {
@@ -14251,7 +14314,7 @@ impl Render for EditorWindow {
         let timeline_drag_cursor = self
             .drag
             .map(|drag| match drag.kind {
-                DragKind::Move { .. } => gpui::CursorStyle::ClosedHand,
+                DragKind::Move { .. } | DragKind::ClipReorder => gpui::CursorStyle::ClosedHand,
                 DragKind::TrimStart { .. }
                 | DragKind::TrimEnd { .. }
                 | DragKind::ClipTrimStart { .. }
