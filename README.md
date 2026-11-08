@@ -2,30 +2,46 @@
 
 **中文** · [English](#english)
 
-把录屏做成一段讲得清楚、看得舒服的视频。
+**录下来，讲清楚。**
+
+免费的开源 Mac 录屏与剪辑工作台。字幕、画面、配音、封面与 AI 助手，从录制到成片，在一个窗口里完成。
 A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
-[下载 macOS 版](https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg) · [报告问题](https://github.com/joeseesun/capwise/issues) · [构建文档](apps/desktop-gpui/README.md) · [许可证](LICENSE)
+[官网与界面预览](https://capwise.qiaomu.ai/) · [下载 macOS 版](https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg) · [报告问题](https://github.com/joeseesun/capwise/issues) · [构建文档](apps/desktop-gpui/README.md) · [许可证](LICENSE)
 
-![灵录：视频、时间线与 AI 助手在同一工作区](docs/assets/assistant-workbench.png)
+![真实灵录编辑器：原创演示工程、双语字幕、可编辑文字与多轨时间线](docs/assets/workbench.webp)
+
+_真实安装版界面。演示中的 NOVA 是原创虚构素材，不包含私人录屏；标题、字幕和缩放均在灵录中编辑。_
 
 产品演示、操作教程、课程讲解，不必在录屏、字幕、配音和封面工具之间来回搬运。灵录把这些步骤放在一个本地编辑器里：先录下来，再慢慢打磨。
 
-**0.2.0 发布验证：** Developer ID 签名、Apple 公证及 Gatekeeper 检查通过；实际导出与助手交互已在 Apple Silicon Mac 上验证。
+[![最新版本](https://img.shields.io/github/v/release/joeseesun/capwise?label=macOS)](https://github.com/joeseesun/capwise/releases/latest) [![AGPLv3](https://img.shields.io/badge/license-AGPLv3-586B59)](LICENSE)
+
+适合做**产品演示、软件教程、课程录制和知识分享**。当前发布包支持 macOS 13.3+、Apple Silicon，经过 Developer ID 签名与 Apple 公证。
+
+## 录完之后，少折腾几步
+
+- **操作太细，看不清？** 自动缩放、光标效果与标注，把注意力带到重点。
+- **字幕太长，改不动？** 在文字列表里校对、查找替换，再翻译成双语字幕。
+- **画面做好了，还得换工具？** 文字、贴纸、配乐、配音和片头封面继续在同一工程里加工。
+- **不知道从哪调参数？** 告诉助手你想改什么，审阅后应用；也能直接操作画面。
 
 ## 你可以用它做什么
 
-| 能力 | 你得到的结果 |
-| --- | --- |
-| 屏幕、摄像头与声音录制 | 把操作过程和讲解录进同一个项目 |
-| 时间线编辑 | 裁剪、缩放、转场、文字与形状标注，突出观众该看的地方 |
-| 字幕工作台 | 在「内容 / 翻译 / 样式」中分别校对文字、审阅译文、调整外观 |
-| 双语字幕 | 选择常见语言或自定义目标语言，原文与译文分别设置颜色、描边、阴影与字体 |
-| 音乐与配音 | 从音频面板直接添加配乐或录制配音，调整音量与淡入淡出 |
-| AI 剪辑助手 | 用一句话提出需求，审阅修改方案后应用，也可以撤销 |
-| 助手内制作封面 | 从描述到背景生成、标题和时长设置、预览应用，在同一工作区完成 |
-| 模型与 ACP 接入 | 配置自己的模型服务，或连接本机已安装并登录的 ACP 助手 |
-| 本地项目与导出 | 保存可继续编辑的项目，再导出成视频或字幕文件 |
+| 能力                   | 你得到的结果                                                             |
+| ---------------------- | ------------------------------------------------------------------------ |
+| 屏幕、摄像头与声音录制 | 把操作过程和讲解录进同一个项目                                           |
+| 时间线编辑             | 裁剪、缩放、转场、文字与形状标注，突出观众该看的地方                     |
+| 字幕工作台             | 在「内容 / 翻译 / 样式」中分别校对文字、审阅译文、调整外观               |
+| 双语字幕               | 选择常见语言或自定义目标语言，原文与译文分别设置颜色、描边、阴影与字体   |
+| 音乐与配音             | 从音频面板直接添加配乐或录制配音，调整音量与淡入淡出                     |
+| AI 剪辑助手            | 用一句话提出需求，审阅修改方案后应用，也可以撤销                         |
+| 助手内制作封面         | 从描述到背景生成、标题和时长设置、预览应用，在同一工作区完成             |
+| 模型与 ACP 接入        | 配置自己的模型服务，或连接本机已安装并登录的 ACP 助手                    |
+| 共享素材库与在线搜索   | 图片、音乐、视频以缩略图管理，跨项目复用；图片与视频搜索分别进入对应来源 |
+| 文字与贴纸             | 直接编辑文字、设置动效，使用可搜索的 Emoji 和 Lucide 图标                |
+| 提词器                 | 写稿与读稿分开，支持滚动、调速、跳行和录制联动                           |
+| 本地项目与导出         | 保存可继续编辑的项目，再导出成视频或字幕文件                             |
 
 ## 五分钟开始
 
@@ -38,6 +54,32 @@ A native Mac studio for screen recordings, captions, and AI-assisted editing.
 基础录制与编辑不需要注册 Cap 云服务账号。AI 功能可选：请在「设置 → AI 模型」中配置自己的服务。
 
 本次提供 **macOS 13.3+、Apple Silicon** 安装包。Intel、Windows 和 Linux 暂未提供本项目验证过的发布包。
+
+## 先打开一份好看的工程
+
+[下载「灵感成片」演示工程](https://capwise.qiaomu.ai/downloads/capwise-demo.zip) · [看 24 秒导出视频](https://capwise.qiaomu.ai/downloads/capwise-demo.mp4)
+
+解压后在灵录中打开 `.cap` 文件：米白与墨绿配色、三个章节、8 个可编辑文字图层、6 条双语字幕、手动缩放，以及带淡入淡出的轻配乐。无需配置 AI 或开始录制，就能试试修改标题、翻译样式和时间线。
+
+## 看看实际工作区
+
+### 字幕与文字剪辑
+
+![字幕内容与双语预览](docs/assets/captions.webp)
+
+「内容 / 翻译 / 样式」分开操作。原文与译文字体、颜色、描边和阴影独立设置；翻译可选择常见语言，也支持自定义。审阅后导出视频或单独导出 SRT / VTT。
+
+普通字幕删除只修改文字；明确进入「按文字剪辑视频」，才会剪掉对应的音视频。两种操作的结果不同，应用前请检查范围。
+
+### AI 助手
+
+在声音标签右侧打开助手，选择模型、发送快捷任务或输入自己的要求。字幕与编辑方案可以审阅、应用和撤销。**制作封面会直接调用所配置的图片服务并应用结果**，对话内可预览、继续编辑、换一张或撤销；生成可能收费。
+
+### 素材、文字与提词器
+
+![项目素材、共享素材库与在线素材的真实界面](docs/assets/assets.webp)
+
+素材集中管理，常用内容跨项目复用。文字支持标题、字幕条、标签、高亮等样式，以及独立入场、持续和退场动效。提词器支持写稿和读稿，录制时不用来回找稿子。
 
 ## AI 助手如何工作
 
@@ -55,16 +97,16 @@ A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
 助手会先展示方案。对话中的模型选择只影响当前助手会话；你可以搜索模型，也可以进入模型设置管理服务。输入框支持 **⌘ Enter 发送**，运行中可以停止。
 
-封面背景通过你配置的图片服务生成。新封面默认 1 秒，时长可编辑；标题仍然是可修改的文字。
+封面背景通过你配置的图片服务生成并应用，可以继续编辑、换图或撤销。新封面默认 1 秒，时长可编辑；标题仍然是可修改的文字。请先确认服务配置和费用。
 
 ### 配置你的模型
 
-| 设置页 | 用途 |
-| --- | --- |
-| 字幕识别 | 把音频识别为字幕 |
-| 内容生成 | 字幕校对、翻译和编辑助手 |
-| 封面生成 | 生成封面背景，支持自定义地址和模型 ID |
-| 内容生成 → 本地 AI 助手（ACP） | 检测并连接已安装的助手，读取可用模型 |
+| 设置页                         | 用途                                  |
+| ------------------------------ | ------------------------------------- |
+| 字幕识别                       | 把音频识别为字幕                      |
+| 内容生成                       | 字幕校对、翻译和编辑助手              |
+| 封面生成                       | 生成封面背景，支持自定义地址和模型 ID |
+| 内容生成 → 本地 AI 助手（ACP） | 检测并连接已安装的助手，读取可用模型  |
 
 需要 API Key 的服务先填写密钥，再获取并选择模型；提供商没有开放模型列表时，可以手动填写模型 ID。火山方舟也支持以 `ep-…` 开头的推理接入点。
 
@@ -85,8 +127,8 @@ ACP 使用本机已有的登录状态。不同适配器的安装、登录和模�
 
 ## 当前边界
 
-- 助手一次最多读取 80 条字幕；长视频需要分步处理。
-- 「去口头禅」目前处理的是字幕文字，不会自动剪掉相应语音。
+- 通用字幕改写一次使用最多 80 条字幕的上下文；长视频需要分批处理。明确的关键词查找替换会在本地搜索全部字幕。
+- 「去口头禅」默认处理字幕显示，不自动剪除语音。只有明确要求剪掉对应语音 / 视频并审阅方案，才会执行媒体裁剪。
 - AI 可能改错专有名词、语气或翻译，请在应用和导出前审阅。
 - 配音质量也取决于麦克风、输入电平和环境；增益调整不能恢复原始录音中缺失的细节。
 - 本项目仍在持续迭代。重要项目建议保留原始媒体与备份。
@@ -141,14 +183,15 @@ Download the Apple Silicon [Capwise.dmg](https://github.com/joeseesun/capwise/re
 
 Core recording and editing do not require a Cap Cloud account. Optional AI features use your own model providers or installed ACP agents. Configure speech recognition, text generation, and image generation separately in Settings → AI Models.
 
-Version 0.2.0 is Developer ID signed and Apple notarized. Gatekeeper checks, an actual video export, and the core assistant interactions were verified on Apple Silicon.
+Published macOS packages are Developer ID signed and Apple notarized. See the [release notes](https://github.com/joeseesun/capwise/releases) for version-specific verification. Try the [editable 24-second demo project](https://capwise.qiaomu.ai/downloads/capwise-demo.zip) without configuring any AI provider.
 
 ### Highlights
 
 - Native Rust + GPUI editor with a timeline, zooms, captions, music, narration, and annotations.
 - Separate content, translation, and style workspaces; independent original/translated subtitle styling.
 - An editing assistant that proposes changes for review before applying them, with undo support.
-- In-assistant cover generation, editable titles and cover duration (1 second for a new cover).
+- In-assistant cover generation and application, editable titles and cover duration (1 second for a new cover).
+- Shared thumbnail-based assets, searchable Emoji/Lucide stickers, and an editable teleprompter.
 - Searchable model selection and local ACP connections.
 - Quick actions with task-specific instructions, plus a local SKILL.md picker and import. Only the selected skill body is sent; scripts and referenced files are not run automatically.
 
@@ -156,6 +199,6 @@ Version 0.2.0 is Developer ID signed and Apple notarized. Gatekeeper checks, an 
 
 Projects remain local. Cloud transcription sends audio to the selected service; AI text features send relevant text and editing context. Cover generation sends the image description. API keys are stored in the macOS login Keychain. Provider charges may apply.
 
-The assistant reads at most 80 captions per request. Filler removal changes subtitle text only, not the recording's speech. Always review AI output. ACP integrations require their own installation and login; the in-app agent does not receive filesystem or terminal permissions.
+General AI rewrites use up to 80 captions of context per request; explicit keyword search/replacement searches the complete caption list locally. Filler hiding changes the displayed text. Explicit speech/video removal is a separate operation and must be reviewed. Image generation directly calls your configured provider and applies a cover, with edit and undo controls; provider charges may apply. Always review AI output. ACP integrations require their own installation and login; the in-app agent does not receive filesystem or terminal permissions.
 
 See the [desktop development guide](apps/desktop-gpui/README.md), [release notes](https://github.com/joeseesun/capwise/releases), and [license](LICENSE). Capwise retains Cap's upstream licensing: primarily AGPLv3, with MIT and third-party exceptions as documented. [Report a bug](https://github.com/joeseesun/capwise/issues) without including credentials or private recordings.

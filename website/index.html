@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#f7f7f8" />
+		<title>灵录 Capwise · 录下来，讲清楚。</title>
+		<meta
+			name="description"
+			content="灵录 Capwise 是免费的开源 Mac 录屏与剪辑工作台。录屏、双语字幕、画面美化、音乐配音、提词器和 AI 辅助剪辑，从一段录制到可以发布的视频。"
+		/>
+		<link rel="canonical" href="https://capwise.qiaomu.ai/" />
+		<meta property="og:type" content="website" />
+		<meta property="og:locale" content="zh_CN" />
+		<meta property="og:site_name" content="灵录 Capwise" />
+		<meta property="og:title" content="灵录 Capwise · 录下来，讲清楚。" />
+		<meta
+			property="og:description"
+			content="录屏、字幕、配音、封面，在一个原生 Mac 工作台里完成。免费开源，项目保存在本机。"
+		/>
+		<meta property="og:url" content="https://capwise.qiaomu.ai/" />
+		<meta property="og:image" content="https://capwise.qiaomu.ai/assets/social-card.png" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:site" content="@vista8" />
+		<meta name="twitter:title" content="灵录 Capwise · 录下来，讲清楚。" />
+		<meta
+			name="twitter:description"
+			content="从录屏到成片：字幕、配音、画面美化与 AI 辅助剪辑，一个工作台完成。"
+		/>
+		<meta name="twitter:image" content="https://capwise.qiaomu.ai/assets/social-card.png" />
+		<link rel="icon" href="/assets/app-icon.png" type="image/png" />
+		<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+		<link rel="manifest" href="/site.webmanifest" />
+		<link rel="stylesheet" href="/styles.css?v=__ASSET_VERSION__" />
+		<script
+			defer
+			src="https://umami.qiaomu.ai/script.js"
+			data-website-id="__UMAMI_ID__"
+			data-domains="capwise.qiaomu.ai"
+		></script>
+		<script defer src="/app.js?v=__ASSET_VERSION__"></script>
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "SoftwareApplication",
+				"name": "灵录 Capwise",
+				"url": "https://capwise.qiaomu.ai/",
+				"applicationCategory": "MultimediaApplication",
+				"operatingSystem": "macOS 13.3 or later, Apple Silicon",
+				"description": "开源 Mac 录屏与剪辑工作台，支持字幕、配音、画面美化、提词器及 AI 辅助剪辑。",
+				"offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+				"downloadUrl": "https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg",
+				"license": "https://github.com/joeseesun/capwise/blob/main/LICENSE",
+				"author": { "@type": "Person", "name": "向阳乔木", "url": "https://qiaomu.ai" },
+				"isBasedOn": "https://github.com/CapSoftware/Cap"
+			}
+		</script>
+	</head>
+	<body>
+		<a class="skip-link" href="#main">跳到正文</a>
+		<header class="site-header">
+			<div class="nav-wrap">
+				<a class="brand" href="/" aria-label="灵录 Capwise 首页"
+					><img src="/assets/app-icon.png" width="34" height="34" alt="" /><span
+						>灵录 <span class="brand-en">Capwise</span></span
+					></a
+				>
+				<nav aria-label="主导航">
+					<a href="#features">功能</a><a href="#tour">看界面</a><a href="#download">下载</a
+					><a href="#faq">常见问题</a
+					><a class="nav-github" href="https://github.com/joeseesun/capwise"
+						>GitHub <span aria-hidden="true">↗</span></a
+					>
+				</nav>
+				<a
+					class="button button-small button-primary nav-download"
+					href="https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg"
+					data-umami-event="download-nav"
+					><svg aria-hidden="true"><use href="#i-download"></use></svg>下载 Mac 版</a
+				>
+			</div>
+		</header>
+		<main id="main">
+			<section class="hero section-wrap">
+				<p class="eyebrow"><span class="status-dot"></span> 为产品演示、教程与知识分享而做</p>
+				<h1>录下来，<br class="mobile-break" />讲清楚。</h1>
+				<p class="hero-description">
+					录屏、字幕、配音、封面，<br class="mobile-break" /><mark>从录屏到成片</mark>，在一个 Mac
+					工作台里完成。
+				</p>
+				<div class="workflow-pills" aria-label="制作流程">
+					<a href="#record"
+						><svg aria-hidden="true"><use href="#i-record"></use></svg>录下来</a
+					><a href="#captions"
+						><svg aria-hidden="true"><use href="#i-captions"></use></svg>改字幕</a
+					><a href="#visuals"
+						><svg aria-hidden="true"><use href="#i-sparkles"></use></svg>做漂亮</a
+					><a href="#assistant"
+						><svg aria-hidden="true"><use href="#i-wand"></use></svg>让 AI 帮忙</a
+					>
+				</div>
+				<div class="hero-actions">
+					<a
+						class="button button-primary"
+						href="https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg"
+						data-umami-event="download-hero"
+						><svg aria-hidden="true"><use href="#i-download"></use></svg>免费下载 Mac 版</a
+					><a class="button button-secondary" href="https://github.com/joeseesun/capwise"
+						><svg aria-hidden="true"><use href="#i-github"></use></svg>在 GitHub 看源码</a
+					>
+				</div>
+				<p class="install-note">macOS 13.3+ · Apple Silicon · 免费开源</p>
+				<figure class="hero-media">
+					<img
+						src="/assets/workbench.webp"
+						width="2000"
+						height="1257"
+						alt="灵录真实编辑器：视频预览、多轨时间线与字幕工作台在同一个窗口"
+						fetchpriority="high"
+					/>
+					<figcaption>真实应用截图 · 使用公开演示素材</figcaption>
+				</figure>
+				<div class="proof-strip">
+					<span
+						><svg aria-hidden="true"><use href="#i-folder"></use></svg>项目保存在本机</span
+					><span
+						><svg aria-hidden="true"><use href="#i-monitor"></use></svg>原生 Mac 工作台</span
+					><span
+						><svg aria-hidden="true"><use href="#i-check"></use></svg>Developer ID 签名与 Apple 公证</span
+					><span
+						><svg aria-hidden="true"><use href="#i-key"></use></svg>AI 服务自己选</span
+					>
+				</div>
+			</section>
+			<section class="section-wrap pain-section" id="features">
+				<div class="section-heading">
+					<p class="eyebrow">录完之后，不必再折腾一圈</p>
+					<h2>把时间留给内容，<br />把重复操作留给工具。</h2>
+					<p>做一段教程，往往要在录屏、字幕、音频和封面工具之间来回切换。灵录把这些步骤接在一起。</p>
+				</div>
+				<div class="pain-grid">
+					<article>
+						<span class="step-number">01</span>
+						<h3>操作录下来了，细节看不清？</h3>
+						<p>自动缩放、光标效果、背景与标注，把观众的注意力带到重点。</p>
+					</article>
+					<article>
+						<span class="step-number">02</span>
+						<h3>字幕一句句改，太费时间？</h3>
+						<p>在文字列表里校对和查找替换，再翻译、审阅、设置双语样式。</p>
+					</article>
+					<article>
+						<span class="step-number">03</span>
+						<h3>做好内容，还差一段配音和封面？</h3>
+						<p>直接添加音乐、录制配音、制作片头封面，继续在同一个项目里编辑。</p>
+					</article>
+				</div>
+			</section>
+			<section class="tour-section section-wrap" id="tour">
+				<div class="section-heading centered">
+					<p class="eyebrow">先看看，再决定</p>
+					<h2>从录制到发布，<br />每一步都看得见。</h2>
+				</div>
+				<div class="tour-tabs" role="tablist" aria-label="产品界面">
+					<button
+						type="button"
+						role="tab"
+						id="tour-tab-captions"
+						aria-controls="tour-panel"
+						aria-selected="true"
+						data-tour="captions"
+					>
+						字幕工作台</button
+					><button
+						type="button"
+						role="tab"
+						id="tour-tab-assets"
+						aria-controls="tour-panel"
+						aria-selected="false"
+						tabindex="-1"
+						data-tour="assets"
+					>
+						共享素材库</button
+					><button
+						type="button"
+						role="tab"
+						id="tour-tab-demo"
+						aria-controls="tour-panel"
+						aria-selected="false"
+						tabindex="-1"
+						data-tour="demo"
+					>
+						演示工程成片
+					</button>
+				</div>
+				<div
+					id="tour-panel"
+					class="tour-panel"
+					role="tabpanel"
+					aria-labelledby="tour-tab-captions"
+					tabindex="0"
+				>
+					<img
+						id="tour-image"
+						src="/assets/captions.webp"
+						width="2000"
+						height="1257"
+						loading="lazy"
+						alt="灵录字幕工作台真实界面"
+					/>
+					<div class="tour-caption">
+						<strong id="tour-title">字幕不只是生成，还要改得顺、看得清。</strong>
+						<p id="tour-description">内容、翻译、样式各有入口，校对文字与调整外观互不打扰。</p>
+						<button class="text-button" id="enlarge-screenshot" type="button">
+							放大查看 <span aria-hidden="true">↗</span>
+						</button>
+					</div>
+				</div>
+			</section>
+			<section class="story section-wrap" id="captions">
+				<div class="story-copy">
+					<p class="eyebrow">字幕工作台</p>
+					<h2>把口头表达，<br />变成好读的字幕。</h2>
+					<p>
+						支持本地与云端识别。识别之后，继续校对文字、查找替换，或请 AI
+						帮你润色。原文和译文可以分别设置字体、颜色、描边与阴影。
+					</p>
+					<ul class="check-list">
+						<li>内容、翻译、样式分开操作</li>
+						<li>常见语种与自定义翻译语言</li>
+						<li>审阅译文，切换原文、译文或双语</li>
+						<li>导出视频，也可以单独导出 SRT / VTT</li>
+					</ul>
+					<a class="text-link" href="https://github.com/joeseesun/capwise#字幕与文字剪辑"
+						>了解字幕工作流 <span aria-hidden="true">↗</span></a
+					>
+				</div>
+				<figure class="story-media">
+					<img
+						src="/assets/caption-styles.webp"
+						width="2000"
+						height="1257"
+						loading="lazy"
+						alt="真实字幕工作台局部，内容、翻译与样式各有入口"
+					/>
+				</figure>
+			</section>
+			<section class="story reverse section-wrap" id="assistant">
+				<div class="story-copy">
+					<p class="eyebrow">AI 剪辑助手</p>
+					<h2>说出你想改什么，<br />先看方案，再应用。</h2>
+					<p>
+						润色字幕、翻译内容、调整声音，或准备一张封面。常用快捷任务直接发送，也可以带上本地技能，让模型按你的方法处理。
+					</p>
+					<div class="prompt-examples">
+						<span>“润色字幕，保留原意。”</span><span>“把背景音乐调低一点。”</span
+						><span>“做一张浅绿色的教程封面。”</span>
+					</div>
+					<p class="fine-print">
+						使用你配置的模型或本机 ACP
+						助手。字幕与编辑方案先审阅再应用；封面生成会直接调用图片服务并应用，可继续编辑或撤销。云端服务可能按量收费。
+					</p>
+				</div>
+				<div class="assistant-flow" aria-label="AI 辅助剪辑工作流示意">
+					<p class="flow-label">AI 辅助剪辑 / 操作流程示意</p>
+					<div class="flow-request">
+						<svg aria-hidden="true"><use href="#i-wand"></use></svg>
+						<p>润色字幕，<br />保留我的意思。</p>
+					</div>
+					<ol>
+						<li>
+							<span>01</span>
+							<div>
+								<strong>说出目标</strong>
+								<p>选择自己的模型，发送编辑需求。</p>
+							</div>
+						</li>
+						<li>
+							<span>02</span>
+							<div>
+								<strong>查看方案</strong>
+								<p>检查修改范围，确认表达准确。</p>
+							</div>
+						</li>
+						<li>
+							<span>03</span>
+							<div>
+								<strong>应用，或继续调整</strong>
+								<p>保留控制权，随时撤销。</p>
+							</div>
+						</li>
+					</ol>
+					<p class="flow-note">封面生成会直接调用图片服务并应用，可继续编辑或撤销。</p>
+				</div>
+			</section>
+			<section class="story section-wrap" id="visuals">
+				<div class="story-copy">
+					<p class="eyebrow">画面与表达</p>
+					<h2>让人看清操作，<br />也看得舒服。</h2>
+					<p>
+						用背景、留白、圆角和边框整理画面；用缩放、文字、形状与贴纸强调重点。摄像头可以调整画幅与取景，封面标题也能继续移动和编辑。
+					</p>
+					<ul class="check-list">
+						<li>自动与手动缩放，跟上讲解节奏</li>
+						<li>标题、字幕条、标签与高亮文字样式</li>
+						<li>可调整画幅的摄像头画中画</li>
+						<li>片头封面与片尾，停留时长自己定</li>
+					</ul>
+				</div>
+				<figure class="story-media">
+					<img
+						src="/assets/visuals.webp"
+						width="2000"
+						height="1257"
+						loading="lazy"
+						alt="演示工程原生导出的画面，章节标题与字幕在工程中保留为可编辑图层"
+					/>
+				</figure>
+			</section>
+			<section class="feature-catalog section-wrap" id="record">
+				<div class="section-heading centered">
+					<p class="eyebrow">从第一句话，到最后一帧</p>
+					<h2>用得上的细节，也都在。</h2>
+				</div>
+				<div class="capability-grid">
+					<article>
+						<svg aria-hidden="true"><use href="#i-monitor"></use></svg>
+						<h3>屏幕、摄像头与声音</h3>
+						<p>录制屏幕、窗口或区域，按需加入摄像头、麦克风与系统声音。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-scissors"></use></svg>
+						<h3>多轨时间线</h3>
+						<p>裁剪、拆分、转场与标记，让文字、画面、音频在同一条时间线上配合。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-mic"></use></svg>
+						<h3>音乐与录制配音</h3>
+						<p>从音频面板直接进入录音或添加音乐，调整音量及淡入淡出。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-folder"></use></svg>
+						<h3>共享素材库</h3>
+						<p>图片、配乐与素材集中管理；常用内容留在库里，下次继续用。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-text"></use></svg>
+						<h3>提词器</h3>
+						<p>把要讲的话放在眼前，在阅读与编辑之间切换，减少忘词和反复重录。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-key"></use></svg>
+						<h3>模型与 ACP 接入</h3>
+						<p>语音、文本、图片分别配置，也可以连接本机已安装并登录的 AI 助手。</p>
+					</article>
+				</div>
+			</section>
+			<section class="local-section section-wrap">
+				<div>
+					<p class="eyebrow">你的素材，你来掌握</p>
+					<h2>基础工作在本机。<br />AI 用不用、用谁，你决定。</h2>
+				</div>
+				<div class="local-details">
+					<p>
+						<strong>不用注册 Cap 云账号。</strong
+						>基础录制、编辑与本地导出可以直接开始，项目和媒体保存在你的电脑里。
+					</p>
+					<p>
+						<strong>密钥留在登录钥匙串。</strong
+						>云端识别会发送音频；翻译、校对和助手发送相关文字与编辑上下文；生图发送图片描述。
+					</p>
+					<p>
+						<strong>免费开源，AI 费用独立。</strong
+						>应用没有云服务订阅门槛。使用第三方模型、在线素材时，其费用、额度与内容许可遵循对应服务。
+					</p>
+				</div>
+			</section>
+			<section class="download-section section-wrap" id="download">
+				<div class="section-heading centered">
+					<img class="download-icon" src="/assets/app-icon.png" width="72" height="72" alt="灵录应用图标" />
+					<h2>下一段讲解，<br />从灵录开始。</h2>
+					<p>产品演示、软件教程、课程录制、知识分享。<br />先录一小段，看看它能替你省掉多少来回切换。</p>
+					<div class="hero-actions">
+						<a
+							class="button button-primary"
+							href="https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg"
+							data-umami-event="download-bottom"
+							><svg aria-hidden="true"><use href="#i-download"></use></svg>免费下载 Mac 版</a
+						><a class="button button-secondary" href="https://github.com/joeseesun/capwise/releases"
+							>查看更新记录</a
+						>
+					</div>
+					<p class="install-note">macOS 13.3+ · Apple Silicon · Developer ID 签名与 Apple 公证</p>
+					<p class="demo-download">
+						<a href="/downloads/capwise-demo.zip">下载可编辑演示工程</a><span aria-hidden="true"> · </span
+						><a href="/downloads/capwise-demo.mp4">看 24 秒演示成片</a>
+					</p>
+				</div>
+				<ol class="install-steps">
+					<li>
+						<span>1</span>
+						<div>
+							<strong>下载安装</strong>
+							<p>打开 DMG，把 Capwise 拖入 Applications。</p>
+						</div>
+					</li>
+					<li>
+						<span>2</span>
+						<div>
+							<strong>按需授权</strong>
+							<p>授权屏幕录制；需要人声或摄像头时再授权。</p>
+						</div>
+					</li>
+					<li>
+						<span>3</span>
+						<div>
+							<strong>录一段，试一试</strong>
+							<p>也可以导入已有视频，编辑后导出到本机。</p>
+						</div>
+					</li>
+				</ol>
+				<div class="agent-card" id="agent">
+					<div class="agent-card-heading">
+						<div>
+							<p class="eyebrow">让安装也省一步</p>
+							<h3>交给 Agent</h3>
+						</div>
+						<button
+							id="copy-agent"
+							class="button button-secondary button-small"
+							type="button"
+							data-copy="agent-prompt"
+						>
+							复制安装提示词
+						</button>
+					</div>
+					<p>交给 Codex 或 Claude Code 检查环境、下载并验签。系统授权、密钥和登录仍由你本人完成。</p>
+					<pre id="agent-prompt">
+请帮我安装灵录 Capwise。先阅读 https://capwise.qiaomu.ai/llms.txt 并确认这是 macOS 13.3+ 的 Apple Silicon Mac。使用官方 https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg 下载，挂载后验证 Capwise.app 的 Developer ID 签名和 Apple 公证。若已安装或正在运行，请先让我保存并退出，保留原应用备份与全部项目、设置。不要使用 sudo，不要关闭 Gatekeeper，不要索取、输入或保存我的 API Key。权限和账号登录交由我自己操作。安装后用 codesign --verify --deep --strict 和 spctl -a -vv 核验，通过后再打开应用。</pre
+					>
+					<a class="text-link" href="/llms.txt">给 Agent 阅读的安装说明 ↗</a>
+					<p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
+				</div>
+			</section>
+			<section class="faq-section section-wrap" id="faq">
+				<div class="section-heading">
+					<p class="eyebrow">开始之前</p>
+					<h2>你可能还想知道</h2>
+				</div>
+				<div class="faq-list">
+					<details>
+						<summary>这是免费的软件吗？</summary>
+						<p>
+							灵录免费开源。基础录制、编辑与本地导出不需要购买应用订阅。第三方 AI
+							服务可能按量计费，需要使用你自己的服务或账号。
+						</p>
+					</details>
+					<details>
+						<summary>支持哪些电脑？</summary>
+						<p>
+							当前提供 macOS 13.3 及以上的 Apple Silicon 安装包。Intel Mac、Windows、Linux
+							尚无本项目验证过的发布包，暂不建议按同样步骤安装。
+						</p>
+					</details>
+					<details>
+						<summary>不开通 AI 服务，可以用吗？</summary>
+						<p>
+							可以。录制、时间线编辑、画面美化、文字标注、配乐与本地导出都可以先用。AI
+							校对、翻译和封面生图需要配置相应模型；本地识别可能需要先下载模型文件。
+						</p>
+					</details>
+					<details>
+						<summary>AI 会直接替我修改整个视频吗？</summary>
+						<p>
+							字幕与编辑操作会先提出可审阅的修改方案，应用后可以撤销。生成封面会直接调用你配置的图片服务并应用结果，对话内可编辑、重做或撤销。AI
+							可能改错术语和语气，重要内容请在导出前检查。长字幕会分批处理，不等于一次请求检查了全片。
+						</p>
+					</details>
+					<details>
+						<summary>“删字幕”会不会把声音也删掉？</summary>
+						<p>
+							普通字幕修改只改变文字。明确进入“按文字剪辑视频”时，删除文字也会剪掉对应的音视频区间；AI
+							助手只有在你明确要求剪除语音或视频时才使用这类操作，请审阅时长变化。
+						</p>
+					</details>
+					<details>
+						<summary>视频和 API Key 会被上传吗？</summary>
+						<p>
+							项目和媒体保存在本机，macOS API Key 保存在登录钥匙串。云端识别会上传音频；文本 AI
+							使用相关字幕和编辑上下文；封面生图发送图片描述。你可以选择本地模型，或不启用云端 AI。
+						</p>
+					</details>
+					<details>
+						<summary>安装或使用遇到问题怎么办？</summary>
+						<p>
+							先确认系统与芯片符合要求，再查看
+							<a href="https://github.com/joeseesun/capwise/releases">更新说明</a>。也欢迎在
+							<a href="https://github.com/joeseesun/capwise/issues">GitHub 报告问题</a
+							>，附上版本、系统和复现步骤，别上传密钥或私人录屏。
+						</p>
+					</details>
+				</div>
+			</section>
+		</main>
+		<footer class="site-footer section-wrap">
+			<div class="footer-top">
+				<a class="brand" href="/"
+					><img src="/assets/app-icon.png" width="32" height="32" alt="" /><span>灵录 Capwise</span></a
+				>
+				<p>把你知道的，讲给更多人。</p>
+				<div class="social-actions">
+					<button class="icon-button" type="button" data-modal="reward" aria-label="打赏支持" title="打赏">
+						<svg aria-hidden="true"><use href="#i-heart"></use></svg></button
+					><button
+						class="icon-button"
+						type="button"
+						data-modal="follow"
+						aria-label="关注向阳乔木"
+						title="关注"
+					>
+						<svg aria-hidden="true"><use href="#i-message"></use></svg></button
+					><a class="icon-button" href="https://github.com/joeseesun/capwise" aria-label="GitHub"
+						><svg aria-hidden="true"><use href="#i-github"></use></svg></a
+					><a class="icon-button social-x" href="https://x.com/vista8" aria-label="X @vista8">𝕏</a>
+				</div>
+			</div>
+			<div class="footer-bottom">
+				<span
+					>由 <a href="https://qiaomu.ai">向阳乔木</a> 维护 · 基于
+					<a href="https://github.com/CapSoftware/Cap">Cap</a> ·
+					<a href="https://github.com/joeseesun/capwise/blob/main/LICENSE">AGPLv3 与许可说明</a></span
+				>
+				<div>
+					<a href="https://tuijian.qiaomu.ai/">乔木推荐</a><a href="https://blog.qiaomu.ai/">博客</a
+					><a href="https://github.com/joeseesun/capwise#english">English docs</a
+					><a href="/llms.txt">llms.txt</a>
+				</div>
+			</div>
+		</footer>
+		<dialog class="support-dialog" id="support-dialog" aria-labelledby="support-title">
+			<div class="dialog-heading">
+				<h2 id="support-title">关注向阳乔木</h2>
+				<button class="icon-button" type="button" data-close-dialog aria-label="关闭弹窗">
+					<svg aria-hidden="true"><use href="#i-close"></use></svg>
+				</button>
+			</div>
+			<img
+				id="support-image"
+				src="/assets/follow-qr.jpg"
+				width="400"
+				height="400"
+				alt="向阳乔木推荐看公众号二维码"
+			/>
+			<p id="support-description">微信公众号「向阳乔木推荐看」</p>
+			<div class="dialog-links">
+				<a href="https://github.com/joeseesun">GitHub</a><a href="https://x.com/vista8">X @vista8</a
+				><a href="https://tuijian.qiaomu.ai/">乔木推荐</a>
+			</div>
+		</dialog>
+		<dialog class="image-dialog" id="image-dialog" aria-label="放大产品截图">
+			<button class="icon-button" type="button" data-close-dialog aria-label="关闭截图">
+				<svg aria-hidden="true"><use href="#i-close"></use></svg></button
+			><img id="large-screenshot" src="/assets/captions.webp" alt="灵录产品截图放大查看" />
+		</dialog>
+		<svg class="icon-definitions" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+			<defs>
+				<symbol id="i-download" viewBox="0 0 24 24">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+				</symbol>
+				<symbol id="i-record" viewBox="0 0 24 24">
+					<rect x="3" y="3" width="18" height="18" rx="4" />
+					<circle cx="12" cy="12" r="4" />
+				</symbol>
+				<symbol id="i-monitor" viewBox="0 0 24 24">
+					<rect x="2" y="3" width="20" height="14" rx="2" />
+					<path d="M8 21h8m-4-4v4" />
+				</symbol>
+				<symbol id="i-captions" viewBox="0 0 24 24">
+					<rect x="2" y="4" width="20" height="16" rx="2" />
+					<path d="M6 9h2m4 0h6M6 15h6m4 0h2" />
+				</symbol>
+				<symbol id="i-sparkles" viewBox="0 0 24 24">
+					<path
+						d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3ZM5 3v4M3 5h4m12 12v4m-2-2h4"
+					/>
+				</symbol>
+				<symbol id="i-wand" viewBox="0 0 24 24">
+					<path d="m15 4 5 5L7 22l-5-5L15 4Zm-3 3 5 5M5 2v4M3 4h4m13 10v4m-2-2h4" />
+				</symbol>
+				<symbol id="i-folder" viewBox="0 0 24 24">
+					<path d="M3 7V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+				</symbol>
+				<symbol id="i-key" viewBox="0 0 24 24">
+					<circle cx="8" cy="8" r="5" />
+					<path d="m12 12 9 9m-3-3 3-3m-6 0 3-3" />
+				</symbol>
+				<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+				<symbol id="i-scissors" viewBox="0 0 24 24">
+					<circle cx="6" cy="6" r="3" />
+					<circle cx="6" cy="18" r="3" />
+					<path d="m8 8 12 12M8 16 20 4" />
+				</symbol>
+				<symbol id="i-mic" viewBox="0 0 24 24">
+					<rect x="9" y="2" width="6" height="12" rx="3" />
+					<path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8" />
+				</symbol>
+				<symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6V3h16v3M12 3v18m-4 0h8" /></symbol>
+				<symbol id="i-heart" viewBox="0 0 24 24">
+					<path
+						d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"
+					/>
+				</symbol>
+				<symbol id="i-message" viewBox="0 0 24 24">
+					<path
+						d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"
+					/>
+				</symbol>
+				<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6" /></symbol>
+				<symbol id="i-github" viewBox="0 0 24 24">
+					<path
+						d="M9 19c-4.3 1.3-4.3-2.5-6-3m12 6v-3.9a3.4 3.4 0 0 0-.9-2.7c3-.3 6.2-1.5 6.2-6.9a5.4 5.4 0 0 0-1.5-3.7 5 5 0 0 0-.1-3.7s-1.2-.4-3.8 1.4a12.8 12.8 0 0 0-6.8 0C5.5.7 4.3 1.1 4.3 1.1a5 5 0 0 0-.1 3.7 5.4 5.4 0 0 0-1.5 3.7c0 5.4 3.2 6.6 6.2 6.9a3.4 3.4 0 0 0-.9 2.7V22"
+					/>
+				</symbol>
+			</defs>
+		</svg>
+	</body>
+</html>

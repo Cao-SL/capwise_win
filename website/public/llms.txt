@@ -1,0 +1,40 @@
+# 灵录 Capwise
+
+> 免费开源的 macOS 录屏与剪辑工作台。中文名：灵录；应用文件：Capwise.app。
+
+官网：https://capwise.qiaomu.ai/
+源码：https://github.com/joeseesun/capwise
+发布：https://github.com/joeseesun/capwise/releases
+下载：https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg
+问题反馈：https://github.com/joeseesun/capwise/issues
+许可：https://github.com/joeseesun/capwise/blob/main/LICENSE
+
+## 安装前
+
+仅对 macOS 13.3 或更高版本、Apple Silicon（arm64）使用上述安装包。其他系统不执行安装。
+先用 sw_vers 与 uname -m 确认环境。不要索取 API Key、密码或验证码；系统权限和账号登录交给用户本人。
+
+## 安装
+
+1. 从官方 GitHub 发布下载 DMG，使用临时目录，不覆盖用户文件。发布页若提供 SHA256SUMS，核对匹配资产的 SHA256。
+2. 使用 hdiutil attach 挂载 DMG。安装前运行 codesign --verify --deep --strict --verbose=2 <挂载目录>/Capwise.app 及 spctl -a -vv <挂载目录>/Capwise.app。预期为有效 Developer ID 签名与 Notarized Developer ID。任一失败即停止，不绕过保护。
+3. 若应用正在运行，让用户保存工程并退出。若已安装，保留原应用备份。复制新应用到 /Applications；如果需要管理员权限，让用户自行完成，不使用 sudo。
+4. 不删除、重命名或迁移用户项目、Application Support、偏好设置和登录钥匙串。不要运行清除配置命令。
+5. 对 /Applications/Capwise.app 再次验签和 Gatekeeper 核验，通过后打开。用 hdiutil detach 卸载安装镜像。
+6. 屏幕录制、麦克风、摄像头权限由用户本人按需授权。不要操作或验证私人录屏，不自动播放音乐或开始录音。
+
+## 功能与边界
+
+本地录制、编辑、文字与形状、配乐和导出可以先用；第三方 AI 服务需要用户自行配置，可能收费。
+云端识别发送音频；字幕翻译、校对及助手使用相关文字和编辑上下文；生图发送描述。不要代用户输入密钥。
+普通字幕修改只修改文字。“按文字剪辑视频”会剪除对应媒体，先审阅方案并保留原工程。
+不要承诺 Intel、Windows、Linux 已提供本项目验证的发布包；也不要承诺模型在所有语言或超长工程上完全准确。
+
+## 维护者
+
+向阳乔木：https://qiaomu.ai
+GitHub：https://github.com/joeseesun
+X：https://x.com/vista8
+推荐：https://tuijian.qiaomu.ai/
+
+上游为 CapSoftware/Cap，AGPLv3 与个别 crate/资源许可见仓库 LICENSE 和资产 NOTICE。

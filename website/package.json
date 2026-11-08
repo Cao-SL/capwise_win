@@ -1,0 +1,9 @@
+{
+	"name": "capwise-website",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "node scripts/build.mjs",
+		"deploy": "npm run build && wrangler deploy"
+	}
+}

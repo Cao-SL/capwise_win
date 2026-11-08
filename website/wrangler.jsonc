@@ -1,0 +1,11 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "capwise-website",
+	"account_id": "d060d68463fc12fa91fa2aa216bbab02",
+	"compatibility_date": "2026-11-08",
+	"assets": {
+		"directory": "./dist",
+		"not_found_handling": "404-page"
+	},
+	"routes": [{ "pattern": "capwise.qiaomu.ai", "custom_domain": true }]
+}

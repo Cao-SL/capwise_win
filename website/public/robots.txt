@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://capwise.qiaomu.ai/sitemap.xml

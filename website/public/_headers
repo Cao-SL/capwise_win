@@ -1,0 +1,9 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://umami.qiaomu.ai https://static.cloudflareinsights.com 'sha256-__JSONLD_HASH__'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://umami.qiaomu.ai https://cloudflareinsights.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'; object-src 'none'; upgrade-insecure-requests
+/assets/*
+  Cache-Control: public, max-age=86400
+/sw.js
+  Cache-Control: no-cache

@@ -1,0 +1,32 @@
+{
+	"id": "/",
+	"name": "灵录 Capwise",
+	"short_name": "灵录",
+	"description": "录下来，讲清楚。Mac 录屏、字幕与 AI 辅助剪辑工作台。",
+	"lang": "zh-CN",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#f7f7f8",
+	"theme_color": "#f7f7f8",
+	"icons": [
+		{
+			"src": "/assets/icon-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/assets/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/assets/icon-maskable.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	]
+}
