@@ -11,8 +11,9 @@ use cap_project::{
     ProjectConfiguration, TitleCardBackground, TitleCardImageFit, TitleCardTemplate, XY,
 };
 use gpui::{
-    AnyElement, AppContext as _, Context, Entity, Hsla, IntoElement, ParentElement, RenderImage,
-    Styled, StyledImage, Window, div, img, px,
+    AnyElement, AppContext as _, Context, Entity, Hsla, InteractiveElement, IntoElement,
+    ParentElement, RenderImage, StatefulInteractiveElement, Styled, StyledImage, Window, div, img,
+    prelude::FluentBuilder, px,
 };
 
 use crate::{
@@ -43,6 +44,9 @@ pub(crate) struct CoverUi {
     applying: bool,
     result: Option<Arc<GeneratedBackground>>,
     preview: Option<Arc<RenderImage>>,
+    /// The last applied image, kept for the assistant's result card after the
+    /// generation state is cleared.
+    shown: Option<Arc<RenderImage>>,
     save_pending: Option<String>,
     error: Option<String>,
     saved: bool,
@@ -250,7 +254,23 @@ impl EditorWindow {
         }) else {
             return;
         };
-        self.focus_title_card(cap_project::TitleCardRole::Intro, cx);
+        // Show the cover in the player but keep the assistant on screen:
+        // selecting the card would swap the sidebar to its settings, which
+        // only a click on the result should do.
+        if let Some(time) = self
+            .project
+            .timeline
+            .as_ref()
+            .and_then(|timeline| timeline.text_segments.get(index))
+            .and_then(|segment| {
+                crate::editor_title_cards::card_preview_time(
+                    segment,
+                    crate::editor_window::EDITOR_PREVIEW_FPS,
+                )
+            })
+        {
+            self.seek_to_time(time, cx);
+        }
         self.open_cover_generator(index, window, cx);
         if let Some(input) = &self.sidebar.title_cards.cover.input {
             input.update(cx, |input, cx| input.set_text(description, cx));
@@ -287,9 +307,6 @@ impl EditorWindow {
         let state = &mut self.sidebar.title_cards.cover;
         state.target = Some(card.id);
         state.open = true;
-        if let Some(input) = &state.input {
-            window.focus(&input.read(cx).focus_handle(), cx);
-        }
         cx.notify();
     }
 
@@ -443,6 +460,11 @@ impl EditorWindow {
                         Ok((result, preview)) if state.scope.accepts(&result, &context) => {
                             state.result = Some(result);
                             state.preview = Some(preview);
+                            // From the assistant the image goes straight in;
+                            // undo takes it back out.
+                            if this.assistant.cover_active {
+                                this.apply_cover_background(window, cx);
+                            }
                         }
                         Ok(_) => {}
                         Err(error) => state.error = Some(error_message(error)),
@@ -465,7 +487,7 @@ impl EditorWindow {
                 }
                 state.save_pending = None;
                 state.result = None;
-                state.preview = None;
+                state.shown = state.preview.take();
                 state.saved = true;
                 state.error = None;
             }
@@ -571,7 +593,10 @@ impl EditorWindow {
                                 segment.title_card.as_mut().unwrap().background =
                                     TitleCardBackground::ProjectImage {
                                         path: path.clone(),
-                                        fit: TitleCardImageFit::Contain,
+                                        // Fill the canvas: a model that
+                                        // returns a near ratio crops a sliver
+                                        // instead of leaving bars.
+                                        fit: TitleCardImageFit::Cover,
                                         focus: XY::new(0.5, 0.5),
                                         dim: 0.25,
                                     };
@@ -603,217 +628,188 @@ impl EditorWindow {
         state.busy || state.applying || state.save_pending.is_some()
     }
 
+    /// The assistant's cover result: a placeholder while the image is made,
+    /// then the image itself. No prompt, no form -- clicking the image opens
+    /// the cover's own settings (title, duration) in the sidebar.
     pub(crate) fn render_assistant_cover(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let theme = self.theme;
         let state = &self.sidebar.title_cards.cover;
-        if !state.open {
+        let image = state.preview.clone().or_else(|| state.shown.clone());
+        let busy = state.busy || state.applying;
+        if !busy && image.is_none() && state.error.is_none() {
             return None;
         }
-        let index = self
+        let title = self
             .project
-            .timeline
-            .as_ref()?
-            .text_segments
-            .iter()
-            .position(|segment| {
-                segment
-                    .title_card
-                    .as_ref()
-                    .is_some_and(|card| Some(card.id.as_str()) == state.target.as_deref())
-            })?;
-        Some(
-            div()
+            .title_card(cap_project::TitleCardRole::Intro)
+            .map(|segment| segment.content.clone())
+            .unwrap_or_default();
+        let frame = div()
+            .id("assistant-cover-image")
+            .relative()
+            .w_full()
+            .h(px(168.))
+            .rounded(px(10.))
+            .overflow_hidden()
+            .bg(Hsla::from(theme.editor.ctl));
+        let frame = match (&image, busy) {
+            (Some(image), false) => frame
+                .cursor_pointer()
+                .child(
+                    img(image.clone())
+                        .size_full()
+                        .rounded(px(10.))
+                        .object_fit(gpui::ObjectFit::Cover),
+                )
+                .tooltip(move |_, cx| {
+                    ui::Tooltip::new(&theme, tr::editor::assistant::cover_settings()).view(cx)
+                })
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.close_assistant(window, cx);
+                    this.focus_title_card(cap_project::TitleCardRole::Intro, cx);
+                    cx.notify();
+                })),
+            _ => frame
                 .flex()
                 .flex_col()
-                .gap(px(12.))
-                .p(px(12.))
-                .border_1()
-                .border_color(Hsla::from(self.theme.editor.line))
-                .rounded(px(12.))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
+                .items_center()
+                .justify_center()
+                .gap(px(8.))
+                .when(busy, |frame| {
+                    frame
                         .child(
-                            gpui::svg()
-                                .path("icons/image.svg")
-                                .size(px(16.))
-                                .text_color(Hsla::from(self.theme.editor.text_2)),
+                            ui::CircularProgress::new(
+                                px(16.),
+                                px(1.5),
+                                Hsla::from(theme.editor.line),
+                                Hsla::from(theme.editor.text_2),
+                            )
+                            .indeterminate(),
                         )
                         .child(
                             div()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .child(tr::editor::assistant::cover()),
-                        ),
-                )
-                .child(
-                    ui::Field::stacked(&self.theme, tr::editor::title_cards::title()).child(
-                        self.render_field_input(
-                            crate::editor_panels::FieldKey::TextContent(index),
-                            Some(56.),
-                        ),
-                    ),
-                )
-                .child(
-                    ui::Field::inline(&self.theme, tr::editor::title_cards::duration()).child(
-                        self.render_number_field(
-                            crate::editor_panels::FieldKey::TitleCardDuration(index),
-                            tr::editor::title_cards::seconds(),
-                            64.,
-                        ),
-                    ),
-                )
-                .child(self.render_cover_generator(index, cx))
-                .into_any_element(),
-        )
-    }
-
-    pub(crate) fn render_cover_generator(
-        &self,
-        index: usize,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let theme = self.theme;
-        let state = &self.sidebar.title_cards.cover;
-        let target = self
-            .project
-            .timeline
-            .as_ref()
-            .and_then(|timeline| timeline.text_segments.get(index))
-            .and_then(|segment| segment.title_card.as_ref())
-            .map(|card| card.id.as_str());
-        let mut body = div().flex().flex_col().gap(px(10.));
-        if !self.assistant.cover_active {
-            body = body.child(
-                ui::Button::plain(
-                    &theme,
-                    "cover-ai-open",
-                    ui::ButtonVariant::Gray,
-                    ui::ButtonSize::Sm,
-                )
-                .label(tr::editor::cover::open())
-                .disabled(state.applying)
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.open_cover_generator(index, window, cx)
-                })),
-            );
-        }
-        if !state.open || state.target.as_deref() != target {
-            return body.into_any_element();
-        }
-        body = body.child(
-            div()
-                .text_size(px(11.))
-                .text_color(Hsla::from(theme.editor.text_2))
-                .child(tr::editor::cover::network_notice()),
-        );
-        if settings_cover::configured_model().is_none() {
-            body = body.child(
-                div()
-                    .text_size(px(12.))
-                    .child(tr::editor::cover::configure()),
-            );
-        }
-        if let Some(input) = &state.input {
-            body = body.child(
-                ui::TextInput::plain(&theme, "cover-visual-description", input)
-                    .height(px(88.))
-                    .line_height(px(20.))
-                    .padding_y(px(8.)),
-            );
-        }
-        body =
-            body.child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(
-                        ui::Button::plain(
-                            &theme,
-                            "cover-ai-generate",
-                            ui::ButtonVariant::Primary,
-                            ui::ButtonSize::Sm,
+                                .text_size(px(12.))
+                                .text_color(Hsla::from(theme.editor.text_2))
+                                .child(tr::editor::assistant::cover_working()),
                         )
-                        .label(if state.busy {
-                            tr::editor::cover::generating()
-                        } else {
-                            tr::editor::cover::generate()
-                        })
-                        .disabled(
-                            state.busy
-                                || state.applying
-                                || state.save_pending.is_some()
-                                || settings_cover::configured_model().is_none(),
-                        )
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.generate_cover_background(window, cx)
-                        })),
+                })
+                .when(!busy, |frame| {
+                    frame.child(
+                        gpui::svg()
+                            .path("icons/image-off.svg")
+                            .size(px(18.))
+                            .text_color(Hsla::from(theme.editor.text_3)),
                     )
-                    .child(
-                        ui::Button::plain(
-                            &theme,
-                            "cover-ai-cancel",
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(tr::common::cancel())
-                        .disabled(state.applying)
-                        .on_click(cx.listener(|this, _, _, cx| this.cancel_cover_generation(cx))),
-                    ),
-            );
-        if let Some(preview) = &state.preview {
-            body = body.child(
-                img(preview.clone())
-                    .w_full()
-                    .h(px(170.))
-                    .object_fit(gpui::ObjectFit::Contain),
-            );
-        }
-        if let Some(result) = &state.result {
-            body = body
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(Hsla::from(theme.editor.text_2))
-                        .child(tr::editor::cover::dimensions(
-                            result.origin.actual.width,
-                            result.origin.actual.height,
-                            result.origin.target.width,
-                            result.origin.target.height,
-                        )),
-                )
-                .child(
-                    ui::Button::plain(
-                        &theme,
-                        "cover-ai-apply",
-                        ui::ButtonVariant::Primary,
-                        ui::ButtonSize::Sm,
-                    )
-                    .label(if state.save_pending.is_some() {
-                        tr::editor::cover::retry_save()
-                    } else if state.applying {
-                        tr::editor::cover::applying()
-                    } else {
-                        tr::editor::cover::apply()
-                    })
-                    .disabled(state.busy || state.applying || self.asset_import_busy())
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.apply_cover_background(window, cx)),
-                    ),
-                );
-        }
+                }),
+        };
+        let mut card = div().flex().flex_col().gap(px(8.)).child(frame);
         if let Some(error) = &state.error {
-            body = body.child(
+            card = card.child(
                 div()
                     .text_size(px(12.))
+                    .line_height(px(18.))
                     .text_color(gpui::rgb(0xdc2626))
                     .child(error.clone()),
             );
         }
-        if state.saved {
-            body = body.child(div().text_size(px(12.)).child(tr::editor::cover::applied()));
-        }
-        body.into_any_element()
+        card = card.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(2.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.))
+                        .text_color(Hsla::from(theme.editor.text_2))
+                        .child(title),
+                )
+                .when(busy, |row| {
+                    row.child(
+                        ui::EditorButton::plain(&theme, "assistant-cover-stop")
+                            .left_icon("icons/square.svg")
+                            .icon_size(px(12.))
+                            .height(px(26.))
+                            .tooltip(&theme, tr::editor::assistant::stop())
+                            .disabled(state.applying)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.cancel_cover_generation(cx);
+                            })),
+                    )
+                })
+                .when(!busy, |row| {
+                    row.child(
+                        ui::EditorButton::plain(&theme, "assistant-cover-again")
+                            .left_icon("icons/refresh-cw.svg")
+                            .icon_size(px(13.))
+                            .height(px(26.))
+                            .tooltip(&theme, tr::editor::assistant::regenerate())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.generate_cover_background(window, cx)
+                            })),
+                    )
+                    .when(image.is_some(), |row| {
+                        row.child(
+                            ui::EditorButton::plain(&theme, "assistant-cover-edit")
+                                .left_icon("icons/sliders-horizontal.svg")
+                                .icon_size(px(13.))
+                                .height(px(26.))
+                                .tooltip(&theme, tr::editor::assistant::cover_settings())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.close_assistant(window, cx);
+                                    this.focus_title_card(
+                                        cap_project::TitleCardRole::Intro,
+                                        cx,
+                                    );
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            ui::EditorButton::plain(&theme, "assistant-cover-undo")
+                                .left_icon("icons/undo.svg")
+                                .icon_size(px(13.))
+                                .height(px(26.))
+                                .tooltip(&theme, tr::menu::edit::undo())
+                                .disabled(!self.history.can_undo())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.undo(window, cx);
+                                    let state = &mut this.sidebar.title_cards.cover;
+                                    state.shown = None;
+                                    state.preview = None;
+                                    cx.notify();
+                                })),
+                        )
+                    })
+                }),
+        );
+        Some(card.into_any_element())
+    }
+
+    /// The title card panel's way in: one button that asks the assistant for a
+    /// cover. The assistant writes the image brief and the image goes in.
+    pub(crate) fn render_cover_generator(
+        &self,
+        _index: usize,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = self.theme;
+        let busy = self.assistant_cover_busy() || self.assistant.busy;
+        ui::Button::plain(
+            &theme,
+            "cover-ai-open",
+            ui::ButtonVariant::Gray,
+            ui::ButtonSize::Sm,
+        )
+        .label(if busy {
+            tr::editor::cover::generating()
+        } else {
+            tr::editor::cover::open()
+        })
+        .disabled(busy || !self.project_ready())
+        .on_click(cx.listener(|this, _, window, cx| this.request_assistant_cover(window, cx)))
+        .into_any_element()
     }
 }
 

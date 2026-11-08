@@ -2338,7 +2338,7 @@ pub fn default_text_segment(start: f64, end: f64, track: u32) -> TextSegment {
         font_size: 48.0,
         font_weight: 700.0,
         italic: false,
-        color: "#ffffff".to_string(),
+        color: "#111111".to_string(),
         background_color: None,
         background_style: Default::default(),
         uppercase: false,

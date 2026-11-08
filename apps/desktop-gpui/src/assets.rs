@@ -99,6 +99,7 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "gift.svg",
     "hotkeys.svg",
     "image.svg",
+    "image-off.svg",
     "info.svg",
     "instant.svg",
     "keyboard.svg",
@@ -194,7 +195,6 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "circle-info.svg",
     "sparkles.svg",
     "star.svg",
-    "grid.svg",
     "history.svg",
     // The settings Recordings page. `link` is Cap's own
     // (`packages/ui-solid/icons/link.svg`, which is Lucide's glyph); `import`

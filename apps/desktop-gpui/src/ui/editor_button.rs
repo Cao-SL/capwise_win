@@ -57,6 +57,9 @@ pub struct EditorButton {
     border: Option<Hsla>,
     radius: Pixels,
     full: bool,
+    /// Content sits at the leading edge instead of the centre -- for a
+    /// button that stretches but reads like a field or a list row.
+    start: bool,
     tooltip: Option<(Theme, SharedString)>,
     on_click: Option<ClickHandler>,
     on_open: Option<OpenHandler>,
@@ -91,6 +94,7 @@ impl EditorButton {
             border: None,
             radius: px(7.),
             full: false,
+            start: false,
             tooltip: None,
             on_click: None,
             on_open: None,
@@ -139,6 +143,11 @@ impl EditorButton {
 
     pub fn radius(mut self, radius: Pixels) -> Self {
         self.radius = radius;
+        self
+    }
+
+    pub fn start(mut self) -> Self {
+        self.start = true;
         self
     }
 
@@ -254,6 +263,7 @@ impl RenderOnce for EditorButton {
             border,
             radius,
             full,
+            start,
             tooltip,
             on_click,
             on_open,
@@ -295,6 +305,7 @@ impl RenderOnce for EditorButton {
             .min_w(height)
             .rounded(radius)
             .flex_shrink_0()
+            .when(start, |this| this.justify_start())
             .when(right_icon_end, |this| this.justify_between())
             .when_some(width, |this, width| this.w(width))
             .when(full, |this| this.flex_1().min_w_0())

@@ -3547,50 +3547,27 @@ impl EditorWindow {
             Some(column.into_any_element())
         };
 
+        // One toolbar: find and replace reads like a search field, the AI
+        // check sits beside it. Editing is the list itself -- click a line.
         let quick_actions = has_captions.then(|| {
             div()
                 .flex()
                 .gap(px(8.))
                 .child(
-                    ui::EditorButton::plain(&theme, "caption-edit-content")
-                        .filled(&theme)
-                        .grow()
-                        .height(px(32.))
-                        .left_icon("icons/pencil.svg")
-                        .label(tr::editor::workbench::edit_captions())
-                        .disabled(generating)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            if let Some(first) = this
-                                .project
-                                .timeline
-                                .as_ref()
-                                .and_then(|t| t.caption_segments.first())
-                            {
-                                let time = first.start;
-                                this.set_selection(
-                                    Some(crate::editor_edits::Selection::single(
-                                        crate::editor_timeline::TrackKind::Caption,
-                                        0,
-                                    )),
-                                    cx,
-                                );
-                                this.seek_to_time(time, cx);
-                                this.focus_root(window, cx);
-                            }
-                        })),
-                )
-                .child(
                     ui::EditorButton::plain(&theme, "caption-find-replace")
-                        .tinted(&theme)
+                        .outlined(&theme)
                         .grow()
+                        .start()
                         .height(px(32.))
                         .left_icon("icons/search.svg")
+                        .icon_size(px(14.))
                         .label(tr::editor::tabs::captions::find_replace())
                         .disabled(generating)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.open_transcript_search(window, cx)
                         })),
                 )
+                .child(self.render_caption_review_button(cx))
                 .into_any_element()
         });
         let regenerate = (has_captions && model_downloaded && has_audio).then(|| {
@@ -3757,8 +3734,15 @@ impl EditorWindow {
                 .flex()
                 .flex_col()
                 .gap(px(14.))
-                .children(quick_actions)
-                .child(self.render_caption_review(cx))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .children(quick_actions)
+                        .child(self.render_caption_review(cx)),
+                )
+                .child(self.render_caption_content_list(cx))
                 .child(self.more_settings("captions", cx, move |_, cx| {
                     div()
                         .flex()
@@ -3784,7 +3768,6 @@ impl EditorWindow {
                         .child(transcription)
                         .into_any_element()
                 }))
-                .child(self.render_caption_content_list(cx))
                 .into_any_element()
         } else {
             div()

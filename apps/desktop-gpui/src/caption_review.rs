@@ -1,7 +1,7 @@
 use std::{collections::HashSet, path::Path};
 
 use cap_project::{CaptionSegment, ProjectConfiguration};
-use gpui::{Context, IntoElement, ParentElement, Styled, Window, div, px};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, px};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -1126,7 +1126,9 @@ impl EditorWindow {
         }
     }
 
-    pub(crate) fn render_caption_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The toolbar's AI check: one compact button beside find and replace.
+    /// Its progress, errors and results stay in `render_caption_review`.
+    pub(crate) fn render_caption_review_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let state = &self.sidebar.caption_review;
         let generating = crate::transcription::ui_snapshot(&self.project_path);
@@ -1137,6 +1139,50 @@ impl EditorWindow {
                     .iter()
                     .any(|segment| !segment.words.is_empty())
         });
+        let loaded = processing(&self.project_path);
+        let waiting_save = loaded.as_ref().ok().and_then(Option::as_ref).is_some_and(
+            |request| request.status == ProcessingStatus::AwaitingSave,
+        );
+        let mut button = ui::EditorButton::plain(&theme, "caption-review-start")
+            .tinted(&theme)
+            .height(px(32.))
+            .left_icon("icons/sparkles.svg")
+            .icon_size(px(14.))
+            .label(if state.running {
+                tr::editor::review::running()
+            } else {
+                tr::editor::review::action()
+            });
+        if crate::llm::default_provider().is_none() {
+            button = button.tooltip(&theme, tr::editor::workbench::setup_ai());
+        }
+        button
+            .disabled(
+                state.running
+                    || self.sidebar.caption_translation.is_running()
+                    || generating.generating
+                    || generating.refining
+                    || waiting_save
+                    || loaded.is_err()
+                    || !has_words,
+            )
+            .on_click(cx.listener(|this, _, window, cx| {
+                if crate::llm::default_provider().is_none() {
+                    cx.defer(|cx| {
+                        crate::app_windows::open_ai_settings(crate::settings_ai::AiTab::Content, cx)
+                    });
+                    return;
+                }
+                this.cancel_caption_export_wait(cx);
+                this.start_caption_review(window, cx);
+            }))
+            .into_any_element()
+    }
+
+    pub(crate) fn render_caption_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let state = &self.sidebar.caption_review;
+        let generating = crate::transcription::ui_snapshot(&self.project_path);
         let loaded = processing(&self.project_path);
         let request = loaded.as_ref().ok().and_then(Option::as_ref);
         let waiting_save = request
@@ -1228,41 +1274,6 @@ impl EditorWindow {
                 ),
             );
         }
-        column = column.child(
-            ui::Button::plain(
-                &theme,
-                "caption-review-start",
-                ui::ButtonVariant::Gray,
-                ui::ButtonSize::Md,
-            )
-            .label(if state.running {
-                tr::editor::review::running()
-            } else if crate::llm::default_provider().is_none() {
-                tr::editor::workbench::setup_ai()
-            } else {
-                tr::editor::review::action()
-            })
-            .full_width()
-            .disabled(
-                state.running
-                    || self.sidebar.caption_translation.is_running()
-                    || generating.generating
-                    || generating.refining
-                    || waiting_save
-                    || loaded.is_err()
-                    || !has_words,
-            )
-            .on_click(cx.listener(|this, _, window, cx| {
-                if crate::llm::default_provider().is_none() {
-                    cx.defer(|cx| {
-                        crate::app_windows::open_ai_settings(crate::settings_ai::AiTab::Content, cx)
-                    });
-                    return;
-                }
-                this.cancel_caption_export_wait(cx);
-                this.start_caption_review(window, cx);
-            })),
-        );
         if state.running {
             column = column.child(
                 ui::Button::plain(

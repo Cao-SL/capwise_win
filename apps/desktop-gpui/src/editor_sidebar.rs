@@ -268,7 +268,9 @@ impl SidebarTab {
 
     pub fn icon(self) -> &'static str {
         match self {
-            Self::Background => "icons/image.svg",
+            // Background, padding, corners and the cursor: the look of the
+            // frame, not an image.
+            Self::Background => "icons/app-window.svg",
             Self::Camera => "icons/camera.svg",
             Self::Audio => "icons/audio-on.svg",
             Self::Cursor => "icons/cursor.svg",
@@ -4184,22 +4186,19 @@ impl EditorWindow {
         let toggle = div()
             .id(SharedString::from(format!("more-settings-{key}")))
             .group(group.clone())
+            // A quiet text disclosure, not a grey slab: the settings it hides
+            // are secondary, so the row should read that way.
             .flex()
             .flex_row()
             .items_center()
-            .justify_between()
-            .h(px(32.))
-            .px(px(10.))
-            .rounded(px(8.))
-            .bg(Hsla::from(theme.editor.ctl))
+            .gap(px(4.))
+            .self_start()
+            .h(px(26.))
             .cursor_pointer()
             .text_size(px(12.))
             .font_weight(FontWeight::MEDIUM)
             .text_color(rest)
-            .hover(move |this| {
-                this.bg(Hsla::from(theme.editor.ctl_hover))
-                    .text_color(hover)
-            })
+            .hover(move |this| this.text_color(hover))
             .child(if key == "captions" {
                 tr::editor::workbench::more_actions()
             } else if key == "text-typography" {
@@ -4241,9 +4240,9 @@ pub(crate) fn section_title(
     label: impl Into<SharedString>,
 ) -> AnyElement {
     div()
-        .text_size(px(12.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(Hsla::from(theme.editor.text_2))
+        .text_size(px(13.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(Hsla::from(theme.editor.text_1))
         .child(label.into())
         .into_any_element()
 }
@@ -4481,6 +4480,29 @@ impl EditorWindow {
             }
             cx.notify();
             tracing::info!(tab = name, "auto sidebar tab");
+            window.refresh();
+            return;
+        }
+        // `assistant` / `assistant-models` open the assistant directly (the
+        // rail's indices shift when a tab is hidden), the latter with its
+        // model menu showing. `CAP_GPUI_AUTO_ASSISTANT_SEND=<request>` then
+        // sends a request the way the composer does.
+        if name.eq_ignore_ascii_case("assistant") || name.eq_ignore_ascii_case("assistant-models")
+        {
+            self.sidebar.tab = SidebarTab::Assistant;
+            if !self.assistant.open {
+                self.open_assistant(window, cx);
+            }
+            if name.eq_ignore_ascii_case("assistant-models") && !self.assistant.model_menu {
+                self.toggle_assistant_models(window, cx);
+            }
+            if let Ok(request) = std::env::var("CAP_GPUI_AUTO_ASSISTANT_SEND")
+                && !request.is_empty()
+            {
+                let task = crate::assistant_skills::QuickTask::for_label(&request);
+                self.send_assistant_request(request, task, window, cx);
+            }
+            cx.notify();
             window.refresh();
             return;
         }

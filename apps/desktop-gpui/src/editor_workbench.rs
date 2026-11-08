@@ -114,60 +114,79 @@ impl EditorWindow {
         let page = self
             .sidebar
             .caption_page
-            .min(segments.len().saturating_sub(1) / 8);
-        let pages = segments.len().div_ceil(8).max(1);
+            .min(segments.len().saturating_sub(1) / CAPTIONS_PER_PAGE);
+        let pages = segments.len().div_ceil(CAPTIONS_PER_PAGE).max(1);
+        // A subtitle list the way CapCut and Descript show one: the start time
+        // in a narrow column, the line beside it, the selected line tinted and
+        // opened in place. No numbering, rules or instructions.
         div()
             .flex()
             .flex_col()
-            .gap(px(10.))
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::workbench::content_hint()),
-            )
+            .gap(px(2.))
             .children(
                 segments
                     .iter()
                     .enumerate()
-                    .skip(page * 8)
-                    .take(8)
+                    .skip(page * CAPTIONS_PER_PAGE)
+                    .take(CAPTIONS_PER_PAGE)
                     .map(|(index, segment)| {
                         let time = segment.start;
                         let active = selected == Some(index);
                         div()
                             .flex()
                             .flex_col()
-                            .gap(px(8.))
-                            .pb(px(10.))
-                            .border_b_1()
-                            .border_color(Hsla::from(theme.editor.line))
+                            .rounded(px(8.))
+                            .when(active, |row| {
+                                row.bg(Hsla::from(theme.editor.ctl)).pb(px(10.))
+                            })
                             .child(
                                 div()
                                     .id(SharedString::from(format!("caption-entry-{index}")))
                                     .flex()
-                                    .flex_col()
-                                    .gap(px(5.))
-                                    .py(px(6.))
+                                    .items_start()
+                                    .gap(px(10.))
+                                    .px(px(8.))
+                                    .py(px(7.))
+                                    .rounded(px(8.))
                                     .cursor_pointer()
-                                    .hover(|s| s.bg(Hsla::from(theme.editor.ctl_hover)))
+                                    .when(!active, |row| {
+                                        row.hover(|s| s.bg(Hsla::from(theme.editor.ctl_hover)))
+                                    })
                                     .child(
                                         div()
+                                            .flex_none()
+                                            .w(px(34.))
+                                            .pt(px(1.))
                                             .text_size(px(11.))
-                                            .text_color(Hsla::from(theme.editor.text_2))
-                                            .child(format!(
-                                                "{}  ·  {} — {}",
-                                                index + 1,
-                                                workbench_time(segment.start),
-                                                workbench_time(segment.end)
-                                            )),
+                                            .line_height(px(19.))
+                                            .text_color(Hsla::from(if active {
+                                                theme.editor.accent
+                                            } else {
+                                                theme.editor.text_3
+                                            }))
+                                            .child(workbench_time(segment.start)),
                                     )
-                                    .when(!active, |row| {
-                                        row.child(
-                                            div().text_size(px(13.)).child(segment.text.clone()),
-                                        )
-                                    })
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_size(px(13.))
+                                            .line_height(px(20.))
+                                            .text_color(Hsla::from(theme.editor.text_1))
+                                            .when(active, |text| {
+                                                text.font_weight(gpui::FontWeight::MEDIUM)
+                                            })
+                                            .child(segment.text.clone()),
+                                    )
                                     .on_click(cx.listener(move |this, _, window, cx| {
+                                        // A second click on the open line
+                                        // folds it again.
+                                        if active {
+                                            this.set_selection(None, cx);
+                                            this.focus_root(window, cx);
+                                            cx.notify();
+                                            return;
+                                        }
                                         this.set_selection(
                                             Some(Selection::single(TrackKind::Caption, index)),
                                             cx,
@@ -177,7 +196,9 @@ impl EditorWindow {
                                         cx.notify();
                                     })),
                             )
-                            .children(active.then(|| self.render_caption_panel(index, cx)))
+                            .children(active.then(|| {
+                                div().px(px(8.)).child(self.render_caption_panel(index, cx))
+                            }))
                     }),
             )
             .when(pages > 1, |column| {
@@ -377,12 +398,11 @@ impl EditorWindow {
     }
 }
 
+/// Lines per page of the subtitle list.
+pub(crate) const CAPTIONS_PER_PAGE: usize = 30;
+
+/// `m:ss` -- enough to find a line; exact timing lives in the line's editor.
 fn workbench_time(seconds: f64) -> String {
-    let centiseconds = (seconds.max(0.) * 100.).round() as u64;
-    format!(
-        "{:02}:{:02}.{:02}",
-        centiseconds / 6000,
-        centiseconds / 100 % 60,
-        centiseconds % 100
-    )
+    let seconds = seconds.max(0.).floor() as u64;
+    format!("{}:{:02}", seconds / 60, seconds % 60)
 }

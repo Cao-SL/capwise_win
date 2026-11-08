@@ -209,15 +209,37 @@ fn impossible_exact_ratios_and_invalid_dimensions_fail_before_a_request() {
             width: 1700,
             height: 100,
         },
-        Dimensions {
-            width: 4097,
-            height: 2160,
-        },
     ] {
         assert_eq!(
             plan_size(dimensions, ArkProfile::Seedream5ProOrFlash),
             Err(GenerationError::UnsupportedDimensions)
         );
+    }
+}
+
+/// Window recordings and odd crops have no exact multiple in a model's
+/// range; they get the nearest legal size instead of an error, and the cover
+/// fills the canvas so the 2% difference is cropped.
+#[test]
+fn odd_canvases_get_a_close_legal_size() {
+    for (width, height) in [(4097, 2160), (1919, 1080), (1366, 768), (1017, 1793), (2999, 1687)] {
+        let target = Dimensions { width, height };
+        for profile in [
+            ArkProfile::Seedream4,
+            ArkProfile::Seedream45Or5Lite,
+            ArkProfile::Seedream5ProOrFlash,
+            ArkProfile::SingleImageCommon,
+        ] {
+            let plan = plan_size(target, profile).unwrap();
+            let (minimum, maximum) = profile.pixel_range();
+            assert!(
+                (minimum..=maximum).contains(&plan.request.pixels()),
+                "{width}x{height} {profile:?} -> {:?}",
+                plan.request
+            );
+            assert!(plan.request.close_ratio(target));
+            assert!(plan.request.width % 16 == 0 || plan.request.same_ratio(target));
+        }
     }
 }
 

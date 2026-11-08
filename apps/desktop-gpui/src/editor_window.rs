@@ -5145,7 +5145,7 @@ impl EditorWindow {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
                     self.sidebar.caption_tab = crate::editor_workbench::CaptionTab::Content;
                     if let Some(index) = selected.indices.first() {
-                        self.sidebar.caption_page = index / 8;
+                        self.sidebar.caption_page = index / crate::editor_workbench::CAPTIONS_PER_PAGE;
                     }
                 } else if selected.track == TrackKind::Audio {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Audio;
@@ -11957,6 +11957,17 @@ impl EditorWindow {
                     .child(self.history_button("editor-undo", "icons/undo.svg", true, cx))
                     .child(self.history_button("editor-redo", "icons/redo.svg", false, cx))
                     .child(self.header_divider())
+                    // Back to the recorder without hunting through menus.
+                    .child(
+                        ui::EditorButton::plain(&theme, "editor-new-recording")
+                            .left_icon("icons/record-fill.svg")
+                            .icon_size(px(14.))
+                            .when(!compact, |button| {
+                                button.label(tr::editor::window::header::new_recording())
+                            })
+                            .tooltip(&theme, tr::editor::window::header::new_recording())
+                            .on_click(|_, _, cx| cx.defer(crate::app_windows::show_main_window)),
+                    )
                     .child(
                         ui::EditorButton::plain(&theme, "presets")
                             .left_icon("icons/sliders-horizontal.svg")

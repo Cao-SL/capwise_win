@@ -12,7 +12,7 @@ use cap_project::{
 };
 use gpui::{
     AnyElement, AsyncWindowContext, Context, Hsla, IntoElement, ParentElement, Styled, Window, div,
-    px,
+    prelude::FluentBuilder, px,
 };
 
 use crate::{
@@ -296,7 +296,7 @@ pub(crate) fn edit_error_message(error: &CardEditError) -> String {
     }
 }
 
-fn card_preview_time(segment: &TextSegment, fps: u32) -> Option<f64> {
+pub(crate) fn card_preview_time(segment: &TextSegment, fps: u32) -> Option<f64> {
     if fps == 0
         || !segment.start.is_finite()
         || !segment.end.is_finite()
@@ -905,10 +905,6 @@ impl EditorWindow {
             TitleCardBackground::Solid { color } => Some(color.clone()),
             TitleCardBackground::ProjectImage { .. } => None,
         };
-        let label = match role {
-            TitleCardRole::Intro => tr::editor::title_cards::intro(),
-            TitleCardRole::Outro => tr::editor::title_cards::outro(),
-        };
         let exporting = self.sidebar.title_cards.export_request.is_some();
         let dimensions = self.instance.as_ref().map(|instance| {
             cap_rendering::ProjectUniforms::get_output_size(
@@ -917,26 +913,181 @@ impl EditorWindow {
                 XY::new(1920, 1920),
             )
         });
+        let image_background = solid_color.is_none();
+        let ai_busy = self.assistant_cover_busy() || self.assistant.busy;
+        let divider = || {
+            div()
+                .h(px(1.))
+                .bg(Hsla::from(theme.editor.line))
+                .into_any_element()
+        };
+        // Ordered the way people work on a cover: the words, how they are
+        // laid out, what sits behind them, how long it stays -- then type
+        // styling, then the rare actions. No instructions in between.
         div()
             .flex()
             .flex_col()
             .gap(px(16.))
             .child(
-                ui::EditorButton::plain(&theme, "edit-text-on-canvas")
-                    .left_icon("icons/pencil.svg")
-                    .label(tr::editor::canvas::edit_text())
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.begin_canvas_text_edit(index, window, cx);
-                    })),
+                ui::Field::stacked(&theme, tr::editor::title_cards::title())
+                    .value(
+                        ui::EditorButton::plain(&theme, "edit-text-on-canvas")
+                            .left_icon("icons/pencil.svg")
+                            .icon_size(px(13.))
+                            .height(px(24.))
+                            .tooltip(&theme, tr::editor::canvas::edit_text())
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.begin_canvas_text_edit(index, window, cx);
+                            }))
+                            .into_any_element(),
+                    )
+                    .child(self.render_field_input(FieldKey::TextContent(index), Some(64.))),
             )
             .child(
-                ui::Field::stacked(&theme, tr::editor::title_cards::title())
-                    .child(self.render_field_input(FieldKey::TextContent(index), Some(72.))),
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            ui::Field::stacked(&theme, tr::editor::title_cards::subtitle())
+                                .child(self.render_field_input(
+                                    FieldKey::TitleCardSubtitle(index),
+                                    None,
+                                )),
+                        ),
+                    )
+                    .child(
+                        div().w(px(120.)).flex_none().child(
+                            ui::Field::stacked(&theme, tr::editor::title_cards::kicker()).child(
+                                self.render_field_input(FieldKey::TitleCardKicker(index), None),
+                            ),
+                        ),
+                    ),
             )
+            .child(
+                ui::Field::stacked(&theme, tr::editor::title_cards::template()).child(
+                    ui::SegmentedControl::editor(
+                        &theme,
+                        "title-card-template",
+                        [
+                            (TitleCardTemplate::Hero, tr::editor::title_cards::hero()),
+                            (
+                                TitleCardTemplate::Editorial,
+                                tr::editor::title_cards::editorial(),
+                            ),
+                            (TitleCardTemplate::Split, tr::editor::title_cards::split()),
+                        ]
+                        .into_iter()
+                        .map(|(value, label)| ui::SegmentOption::new(label, value == template))
+                        .collect(),
+                    )
+                    .stretch()
+                    .on_select(cx.listener(
+                        move |this, selected: &usize, window, cx| {
+                            let template = [
+                                TitleCardTemplate::Hero,
+                                TitleCardTemplate::Editorial,
+                                TitleCardTemplate::Split,
+                            ][*selected];
+                            this.update_title_card(index, window, cx, move |segment| {
+                                segment.title_card.as_mut().unwrap().template = template
+                            });
+                        },
+                    )),
+                ),
+            )
+            .child(
+                ui::Field::stacked(&theme, tr::editor::title_cards::background()).child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .flex()
+                                .gap(px(6.))
+                                .child(
+                                    ui::EditorButton::plain(&theme, "title-card-solid")
+                                        .outlined(&theme)
+                                        .grow()
+                                        .height(px(32.))
+                                        .text_size(px(12.))
+                                        .label(tr::editor::title_cards::solid())
+                                        .pressed(!image_background)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.update_title_card(index, window, cx, |segment| {
+                                                segment.title_card.as_mut().unwrap().background =
+                                                    TitleCardBackground::default()
+                                            });
+                                        })),
+                                )
+                                .child(
+                                    ui::EditorButton::plain(&theme, "title-card-image")
+                                        .outlined(&theme)
+                                        .grow()
+                                        .height(px(32.))
+                                        .text_size(px(12.))
+                                        .left_icon("icons/image.svg")
+                                        .icon_size(px(13.))
+                                        .label(tr::editor::title_cards::image())
+                                        .pressed(image_background)
+                                        .disabled(self.asset_import_busy())
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.pick_title_card_image(index, window, cx)
+                                        })),
+                                )
+                                .child(
+                                    ui::EditorButton::plain(&theme, "cover-ai-open")
+                                        .outlined(&theme)
+                                        .grow()
+                                        .height(px(32.))
+                                        .text_size(px(12.))
+                                        .left_icon("icons/sparkles.svg")
+                                        .icon_size(px(13.))
+                                        .label(if ai_busy {
+                                            tr::editor::cover::generating()
+                                        } else {
+                                            tr::editor::cover::open()
+                                        })
+                                        .disabled(ai_busy || !self.project_ready())
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.request_assistant_cover(window, cx)
+                                        })),
+                                ),
+                        )
+                        .children(solid_color.map(|color| {
+                            self.render_color_input(
+                                ColorTarget::TitleCardBackground(index),
+                                &color,
+                                cx,
+                            )
+                        })),
+                ),
+            )
+            .child(
+                ui::Field::inline(&theme, tr::editor::title_cards::duration()).child(
+                    self.render_number_field(
+                        FieldKey::TitleCardDuration(index),
+                        tr::editor::title_cards::seconds(),
+                        64.,
+                    ),
+                ),
+            )
+            .children(self.sidebar.title_cards.error.as_ref().map(|error| {
+                div()
+                    .text_size(px(12.))
+                    .text_color(gpui::rgb(0xdc2626))
+                    .child(error.clone())
+            }))
+            .child(divider())
             .child(self.render_text_font_controls(index, true, cx))
             .child(
-                ui::Field::stacked(&theme, tr::editor::panel::text_segment::color()).child(
-                    self.render_color_input(ColorTarget::TextColor(index), &segment.color, cx),
+                ui::Field::inline(&theme, tr::editor::panel::text_segment::color()).child(
+                    div().w(px(170.)).child(self.render_color_input(
+                        ColorTarget::TextColor(index),
+                        &segment.color,
+                        cx,
+                    )),
                 ),
             )
             .child(
@@ -991,201 +1142,78 @@ impl EditorWindow {
                         .into_any_element()
                 }),
             )
+            .child(divider())
             .child(self.render_title_card_library(Some(role), cx))
-            .child(
-                ui::Field::section(&theme, label).child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(Hsla::from(theme.editor.text_2))
-                        .child(match role {
-                            TitleCardRole::Intro => tr::editor::title_cards::hint(),
-                            TitleCardRole::Outro => tr::editor::title_cards::outro_hint(),
-                        }),
-                ),
-            )
-            .children(self.sidebar.title_cards.error.as_ref().map(|error| {
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(error.clone())
-            }))
-            .child(
-                ui::Field::stacked(&theme, tr::editor::title_cards::template()).child(
-                    ui::SegmentedControl::editor(
-                        &theme,
-                        "title-card-template",
-                        [
-                            (TitleCardTemplate::Hero, tr::editor::title_cards::hero()),
-                            (
-                                TitleCardTemplate::Editorial,
-                                tr::editor::title_cards::editorial(),
-                            ),
-                            (TitleCardTemplate::Split, tr::editor::title_cards::split()),
-                        ]
-                        .into_iter()
-                        .map(|(value, label)| ui::SegmentOption::new(label, value == template))
-                        .collect(),
-                    )
-                    .on_select(cx.listener(
-                        move |this, selected: &usize, window, cx| {
-                            let template = [
-                                TitleCardTemplate::Hero,
-                                TitleCardTemplate::Editorial,
-                                TitleCardTemplate::Split,
-                            ][*selected];
-                            this.update_title_card(index, window, cx, move |segment| {
-                                segment.title_card.as_mut().unwrap().template = template
-                            });
-                        },
-                    )),
-                ),
-            )
-            .child(
-                ui::Field::stacked(&theme, tr::editor::title_cards::subtitle())
-                    .child(self.render_field_input(FieldKey::TitleCardSubtitle(index), Some(56.))),
-            )
-            .child(
-                ui::Field::stacked(&theme, tr::editor::title_cards::kicker())
-                    .child(self.render_field_input(FieldKey::TitleCardKicker(index), None)),
-            )
-            .child(
-                ui::Field::inline(&theme, tr::editor::title_cards::duration()).child(
-                    self.render_number_field(
-                        FieldKey::TitleCardDuration(index),
-                        tr::editor::title_cards::seconds(),
-                        64.,
-                    ),
-                ),
-            )
-            .child(
-                ui::Field::section(&theme, tr::editor::title_cards::background()).child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(8.))
-                        .child(
-                            div()
-                                .flex()
-                                .gap(px(6.))
-                                .child(
-                                    ui::Button::plain(
-                                        &theme,
-                                        "title-card-solid",
-                                        ui::ButtonVariant::Gray,
-                                        ui::ButtonSize::Sm,
-                                    )
-                                    .label(tr::editor::title_cards::solid())
-                                    .on_click(cx.listener(
-                                        move |this, _, window, cx| {
-                                            this.update_title_card(index, window, cx, |segment| {
-                                                segment.title_card.as_mut().unwrap().background =
-                                                    TitleCardBackground::default()
-                                            });
-                                        },
-                                    )),
-                                )
-                                .child(
-                                    ui::Button::plain(
-                                        &theme,
-                                        "title-card-image",
-                                        ui::ButtonVariant::Gray,
-                                        ui::ButtonSize::Sm,
-                                    )
-                                    .label(tr::editor::title_cards::image())
-                                    .disabled(self.asset_import_busy())
-                                    .on_click(cx.listener(
-                                        move |this, _, window, cx| {
-                                            this.pick_title_card_image(index, window, cx)
-                                        },
-                                    )),
-                                ),
-                        )
-                        .children(solid_color.map(|color| {
-                            self.render_color_input(
-                                ColorTarget::TitleCardBackground(index),
-                                &color,
-                                cx,
-                            )
-                        })),
-                ),
-            )
-            .child(self.render_cover_generator(index, cx))
             .child(
                 div()
                     .flex()
-                    .flex_col()
-                    .gap(px(8.))
+                    .items_center()
+                    .gap(px(6.))
                     .child(
-                        ui::Button::plain(
-                            &theme,
-                            "title-card-export-png",
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(if exporting {
-                            tr::editor::title_cards::exporting()
-                        } else {
-                            match role {
-                                TitleCardRole::Intro => tr::editor::title_cards::export_cover(),
-                                TitleCardRole::Outro => tr::editor::title_cards::export_image(),
-                            }
-                        })
-                        .disabled(
-                            exporting
-                                || self.sidebar.title_cards.picking_image
-                                || !self.project_ready(),
-                        )
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
+                        ui::EditorButton::plain(&theme, "title-card-export-png")
+                            .outlined(&theme)
+                            .left_icon("icons/download.svg")
+                            .icon_size(px(13.))
+                            .text_size(px(12.))
+                            .height(px(30.))
+                            .label(if exporting {
+                                tr::editor::title_cards::exporting()
+                            } else {
+                                match role {
+                                    TitleCardRole::Intro => tr::editor::title_cards::export_cover(),
+                                    TitleCardRole::Outro => tr::editor::title_cards::export_image(),
+                                }
+                            })
+                            .when_some(dimensions, |button, (width, height)| {
+                                button.tooltip(
+                                    &theme,
+                                    tr::editor::title_cards::export_size(format!(
+                                        "{width} × {height}"
+                                    )),
+                                )
+                            })
+                            .disabled(
+                                exporting
+                                    || self.sidebar.title_cards.picking_image
+                                    || !self.project_ready(),
+                            )
+                            .on_click(cx.listener(move |this, _, window, cx| {
                                 this.export_title_card_image(index, window, cx)
-                            },
-                        )),
+                            })),
                     )
-                    .children(dimensions.map(|(width, height)| {
-                        div()
-                            .text_size(px(12.))
-                            .text_color(Hsla::from(theme.editor.text_2))
-                            .child(tr::editor::title_cards::export_size(format!(
-                                "{width} × {height}"
-                            )))
-                    }))
                     .children(exporting.then(|| {
-                        ui::Button::plain(
-                            &theme,
-                            "title-card-cancel-png",
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(tr::editor::title_cards::export_cancel())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.sidebar.title_cards.cancel_export();
-                            cx.notify();
-                        }))
-                    }))
-                    .children(self.sidebar.title_cards.exported.as_ref().map(|message| {
-                        div()
+                        ui::EditorButton::plain(&theme, "title-card-cancel-png")
                             .text_size(px(12.))
-                            .text_color(Hsla::from(theme.editor.text_2))
-                            .child(message.clone())
-                    })),
+                            .height(px(30.))
+                            .label(tr::editor::title_cards::export_cancel())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar.title_cards.cancel_export();
+                                cx.notify();
+                            }))
+                    }))
+                    .child(div().flex_1())
+                    .child(
+                        ui::EditorButton::plain(&theme, "title-card-remove")
+                            .danger(&theme)
+                            .text_size(px(12.))
+                            .height(px(30.))
+                            .label(tr::editor::title_cards::remove())
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.end_field_edit(cx);
+                                if this.title_card_edit("title-card-remove", window, cx, |project| {
+                                    project.remove_title_card(role)
+                                }) {
+                                    this.set_selection(None, cx);
+                                }
+                            })),
+                    ),
             )
-            .child(
-                ui::Button::plain(
-                    &theme,
-                    "title-card-remove",
-                    ui::ButtonVariant::Gray,
-                    ui::ButtonSize::Sm,
-                )
-                .label(tr::editor::title_cards::remove())
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.end_field_edit(cx);
-                    if this.title_card_edit("title-card-remove", window, cx, |project| {
-                        project.remove_title_card(role)
-                    }) {
-                        this.set_selection(None, cx);
-                    }
-                })),
-            )
+            .children(self.sidebar.title_cards.exported.as_ref().map(|message| {
+                div()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(message.clone())
+            }))
             .into_any_element()
     }
 }
