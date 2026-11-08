@@ -209,15 +209,37 @@ fn impossible_exact_ratios_and_invalid_dimensions_fail_before_a_request() {
             width: 1700,
             height: 100,
         },
-        Dimensions {
-            width: 4097,
-            height: 2160,
-        },
     ] {
         assert_eq!(
             plan_size(dimensions, ArkProfile::Seedream5ProOrFlash),
             Err(GenerationError::UnsupportedDimensions)
         );
+    }
+}
+
+/// Window recordings and odd crops have no exact multiple in a model's
+/// range; they get the nearest legal size instead of an error, and the cover
+/// fills the canvas so the 2% difference is cropped.
+#[test]
+fn odd_canvases_get_a_close_legal_size() {
+    for (width, height) in [(4097, 2160), (1919, 1080), (1366, 768), (1017, 1793), (2999, 1687)] {
+        let target = Dimensions { width, height };
+        for profile in [
+            ArkProfile::Seedream4,
+            ArkProfile::Seedream45Or5Lite,
+            ArkProfile::Seedream5ProOrFlash,
+            ArkProfile::SingleImageCommon,
+        ] {
+            let plan = plan_size(target, profile).unwrap();
+            let (minimum, maximum) = profile.pixel_range();
+            assert!(
+                (minimum..=maximum).contains(&plan.request.pixels()),
+                "{width}x{height} {profile:?} -> {:?}",
+                plan.request
+            );
+            assert!(plan.request.close_ratio(target));
+            assert!(plan.request.width % 16 == 0 || plan.request.same_ratio(target));
+        }
     }
 }
 
@@ -755,4 +777,24 @@ async fn image_errors_preserve_activation_reason_without_exposing_provider_detai
         assert_eq!(bounded_response_bytes(response, 1024).await, Err(expected));
         server.join().unwrap();
     }
+}
+
+#[test]
+#[ignore = "requires an explicitly provided saved image-service response"]
+fn decode_saved_service_response_without_another_paid_request() {
+    let path = std::env::var("CAPWISE_IMAGE_RESPONSE").unwrap();
+    let body = std::fs::read(path).unwrap();
+    let request = BackgroundRequest {
+        model: "ep-saved-service-response".into(),
+        profile: ArkProfile::SingleImageCommon,
+        target: Dimensions {
+            width: 1920,
+            height: 1080,
+        },
+        ..request()
+    };
+    let (size, _) = request.prepare().unwrap();
+    let decoded = decode_response(&body, size, &request.model).unwrap();
+    assert!(decoded.origin.actual.pixels() > 0);
+    assert!(!decoded.bytes.is_empty());
 }

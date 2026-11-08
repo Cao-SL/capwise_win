@@ -145,6 +145,78 @@ fn flattening_folds_punctuation_and_sorts() {
 }
 
 #[test]
+fn clicking_the_first_glyph_of_a_joined_chinese_word_never_selects_the_previous_word() {
+    let data = captions(&[
+        ("导出", 0.0, 0.3),
+        ("之前", 0.4, 0.7),
+        ("请", 0.8, 1.0),
+        ("检查", 1.1, 1.4),
+        ("修改", 1.5, 1.8),
+        ("结果", 1.9, 2.2),
+    ]);
+    let doc = TranscriptDoc::build(&data);
+    let paragraph = &doc.paragraphs[0];
+    let please = paragraph.text.find('请').unwrap();
+    assert_eq!(doc.words[paragraph.word_at_byte(please)].text, "请");
+    for (offset, span) in paragraph.spans.iter().enumerate() {
+        for byte in span.clone() {
+            assert_eq!(paragraph.word_at_byte(byte), paragraph.words.start + offset);
+        }
+    }
+}
+
+#[test]
+fn mixed_script_hits_use_byte_spans_in_later_paragraphs() {
+    let doc = TranscriptDoc::build(&captions(&[
+        ("开场。", 0.0, 0.5),
+        ("请", 3.0, 3.3),
+        ("check", 3.3, 3.6),
+        ("字幕✅", 3.6, 4.0),
+        ("now!", 4.0, 4.3),
+    ]));
+    assert_eq!(doc.paragraphs.len(), 2);
+    let paragraph = &doc.paragraphs[1];
+    for (offset, span) in paragraph.spans.iter().enumerate() {
+        assert_eq!(
+            paragraph.word_at_byte(span.start),
+            paragraph.words.start + offset
+        );
+        assert_eq!(
+            paragraph.word_at_byte(span.end - 1),
+            paragraph.words.start + offset
+        );
+    }
+    assert_eq!(
+        paragraph.word_at_byte(paragraph.text.len()),
+        paragraph.words.end - 1
+    );
+}
+
+#[test]
+fn chinese_word_hit_deletes_only_its_own_source_interval() {
+    let words = [
+        ("导出", 1.0, 1.3),
+        ("之前", 1.5, 1.8),
+        ("请", 2.0, 2.3),
+        ("检查", 2.5, 2.8),
+        ("修改", 3.0, 3.3),
+        ("结果", 3.5, 3.8),
+    ];
+    let mut project = project(&words, &[6.0]);
+    let (doc, _) = model(&project, &[6.0]);
+    let paragraph = &doc.paragraphs[0];
+    let selected = paragraph.word_at_byte(paragraph.text.find('请').unwrap());
+    assert_eq!(
+        cut_words(&mut project, &[6.0], &[(selected, selected + 1)]).skipped(),
+        0
+    );
+    assert_eq!(
+        kept(&project, &[6.0]),
+        [true, true, false, true, true, true]
+    );
+}
+
+#[test]
 fn paragraphs_break_at_long_pauses_and_sentence_ends() {
     let data = captions(&[
         ("One", 0.0, 0.2),
@@ -1855,7 +1927,13 @@ fn chinese_transcripts_read_without_spaces_and_search_across_characters() {
     let words: Vec<(&str, f64, f64)> = "欢迎使用零路，零路很好"
         .chars()
         .enumerate()
-        .map(|(index, c)| (&*Box::leak(c.to_string().into_boxed_str()), index as f64, index as f64 + 0.5))
+        .map(|(index, c)| {
+            (
+                &*Box::leak(c.to_string().into_boxed_str()),
+                index as f64,
+                index as f64 + 0.5,
+            )
+        })
         .collect();
     let doc = TranscriptDoc::build(&captions(&words));
     let text: String = doc.paragraphs.iter().map(|p| p.text.to_string()).collect();

@@ -287,7 +287,7 @@ fn transcript_row_width(viewport_width: f32) -> f32 {
 // ---------------------------------------------------------------------------
 
 use crate::editor_timeline::{
-    self as timeline, ADD_TRACK_MORE, ADD_TRACK_OPTIONS, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT,
+    self as timeline, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT,
     START_SNAP_PX, TIMELINE_BOTTOM_PADDING, TIMELINE_CARD_BORDER, TIMELINE_HEADER_HEIGHT,
     TIMELINE_PADDING, TIMELINE_SLOT_PADDING, TIMELINE_TOP_PADDING, TRACK_GUTTER, TRACK_ICON_WIDTH,
     TRACK_ROW_GAP, TimelineModel, TimelineView, TrackKind, TrackLanes, TrackRow, Transform,
@@ -866,9 +866,7 @@ impl Render for EditorSectionView {
                             LoadState::Failed(_)
                         ));
                     }
-                    let sidebar = if let Some(assistant) = editor.render_assistant(cx) {
-                        assistant
-                    } else if editor.clips.open {
+                    let sidebar = if editor.clips.open && !editor.assistant.open {
                         editor.render_clips_sidebar(cx).into_any_element()
                     } else {
                         editor.with_style_controls(|editor| {
@@ -1676,6 +1674,7 @@ pub struct EditorWindow {
     pub(crate) player_panel_hovered: bool,
     /// `editorState.canvasSelection`.
     pub(crate) canvas_selection: Option<crate::editor_canvas::CanvasSelection>,
+    pub(crate) canvas_text_edit: Option<crate::editor_canvas::CanvasTextEdit>,
     /// `hovered` on `ElementBox` (`CanvasElementsOverlay.tsx:790`).
     pub(crate) hovered_canvas: Option<crate::editor_canvas::CanvasSelection>,
     /// The live display/camera drag.
@@ -1713,6 +1712,7 @@ pub struct EditorWindow {
     text_style_clipboard: Option<crate::editor_panels::TextStyle>,
     frame_controls: frame::FrameControls,
     add_track: Option<AddTrackMenu>,
+    pub(crate) sticker_picker: Option<crate::editor_assets::StickerPicker>,
     add_track_opens: usize,
     pub(crate) voiceover: crate::editor_voiceover::VoiceoverUi,
     pub(crate) assistant: crate::editor_assistant::AssistantUi,
@@ -1743,6 +1743,7 @@ pub struct EditorWindow {
     /// exactly as the Solid dialogs replace the dropdown.
     presets_menu: Option<PresetsMenu>,
     preset_dialog: Option<PresetDialog>,
+    pub(crate) camera_framing: crate::editor_camera_framing::CameraFramingUi,
     pub(crate) caption_style_editor: bool,
     caption_style_scroll: gpui::ScrollHandle,
     style_presets: style_preset_ui::StylePresetsState,
@@ -1789,10 +1790,34 @@ struct AddTrackMenu {
     left: Pixels,
     /// Distance from the window's bottom edge to the tray's bottom edge.
     bottom: Pixels,
+    top: Option<Pixels>,
     /// Bumped per open so the entrance animation replays each time.
     generation: usize,
-    hovered: Option<TrackKind>,
+    hovered: Option<CanvasTool>,
 }
+
+/// One tile in the toolbar's "more" tray: a track to add, or one of the two
+/// canvas tools that used to sit on the toolbar itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CanvasTool {
+    Track(TrackKind),
+    Crop,
+    Frame,
+}
+
+/// The tray in the order people are likely to reach for things: zoom and
+/// images on most videos, crop and blur masks often, frames, keystrokes and
+/// per-range style overrides less, 3D rarely.
+const CANVAS_TOOLS: [CanvasTool; 8] = [
+    CanvasTool::Track(TrackKind::Zoom),
+    CanvasTool::Track(TrackKind::Image),
+    CanvasTool::Crop,
+    CanvasTool::Track(TrackKind::Mask),
+    CanvasTool::Frame,
+    CanvasTool::Track(TrackKind::Keyboard),
+    CanvasTool::Track(TrackKind::Style),
+    CanvasTool::Track(TrackKind::ThreeD),
+];
 
 const ADD_TRACK_TRAY_ANIMATION: Duration = Duration::from_millis(620);
 const ADD_TRACK_TRAY_IN_MS: f32 = 220.;
@@ -2439,6 +2464,7 @@ impl EditorWindow {
             crop_area_rect: ui::SliderTrack::default(),
             player_frame_rect,
             canvas_selection: None,
+            canvas_text_edit: None,
             hovered_canvas: None,
             player_panel_bounds: ui::SliderTrack::default(),
             player_panel_hovered: false,
@@ -2466,6 +2492,7 @@ impl EditorWindow {
             text_style_clipboard: None,
             frame_controls: frame::FrameControls::default(),
             add_track: None,
+            sticker_picker: None,
             add_track_opens: 0,
             voiceover: Default::default(),
             assistant: Default::default(),
@@ -2485,6 +2512,7 @@ impl EditorWindow {
             timeline_resize: None,
             presets_menu: None,
             preset_dialog: None,
+            camera_framing: Default::default(),
             caption_style_editor: false,
             caption_style_scroll: gpui::ScrollHandle::new(),
             style_presets: style_preset_ui::StylePresetsState::load(),
@@ -3119,7 +3147,19 @@ impl EditorWindow {
         let Some(instance) = &self.instance else {
             return;
         };
-        instance.project_config.0.send(self.project.clone()).ok();
+        let mut preview = self.project.clone();
+        if let Some(edit) = &self.canvas_text_edit {
+            preview.editing_text_segment = Some(edit.index);
+            if let Some(segment) = preview
+                .timeline
+                .as_mut()
+                .and_then(|timeline| timeline.text_segments.get_mut(edit.index))
+                && segment.content.trim().is_empty()
+            {
+                segment.content = edit.before.clone();
+            }
+        }
+        instance.project_config.0.send(preview).ok();
         if !self.playing {
             let time = self.view.preview_time.unwrap_or(self.playhead).max(0.0);
             request_frame(
@@ -3161,6 +3201,7 @@ impl EditorWindow {
         if self.voiceover.is_busy() {
             return;
         }
+        self.stop_canvas_text_edit(cx);
         self.close_frame_controls(window, cx);
         self.end_field_edit(cx);
         self.close_color_picker(cx);
@@ -3176,6 +3217,7 @@ impl EditorWindow {
         if self.voiceover.is_busy() {
             return;
         }
+        self.stop_canvas_text_edit(cx);
         self.close_frame_controls(window, cx);
         self.end_field_edit(cx);
         self.close_color_picker(cx);
@@ -3741,6 +3783,7 @@ impl EditorWindow {
     }
 
     fn start_playback(&mut self, from: f64, cx: &mut Context<Self>) {
+        self.stop_canvas_text_edit(cx);
         if self.voiceover.is_busy() {
             return;
         }
@@ -3888,6 +3931,7 @@ impl EditorWindow {
         if self.voiceover.is_busy() {
             return;
         }
+        self.stop_canvas_text_edit(cx);
         if self.apply_seek(time) {
             self.transcript_sync_active(true, cx);
             cx.notify();
@@ -3957,6 +4001,7 @@ impl EditorWindow {
     /// the 3D panel's "on the playhead" pose marker, which is only redrawn
     /// when it changes. Playing and handoff seeks keep the full invalidation.
     fn scrub_to_time(&mut self, time: f64, cx: &mut Context<Self>) {
+        self.stop_canvas_text_edit(cx);
         let poses = self.camera3d_poses_at_playhead();
         if !self.apply_seek(time) {
             return;
@@ -4177,6 +4222,7 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) {
         if self.voiceover.is_open()
+            || self.camera_framing.is_open()
             || self.caption_style_editor
             || self.sidebar.caption_translation.review_is_open()
             || self.preset_dialog.is_some()
@@ -4255,6 +4301,18 @@ impl EditorWindow {
         if self.sidebar.caption_translation.review_is_open() {
             if event.keystroke.key == "escape" && !event.is_held {
                 self.close_translation_review(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.camera_framing.is_open() {
+            if event.keystroke.key == "tab" {
+                self.camera_ratio_dialog_tab(window, cx);
+                window.prevent_default();
+                cx.stop_propagation();
+            }
+            if event.keystroke.key == "escape" {
+                self.close_camera_ratio_dialog(window, cx);
                 cx.stop_propagation();
             }
             return;
@@ -4386,6 +4444,11 @@ impl EditorWindow {
         }
 
         if event.is_held {
+            return;
+        }
+        if self.sticker_picker.is_some() && event.keystroke.key == "escape" {
+            self.sticker_picker = None;
+            cx.notify();
             return;
         }
         // `useEditorShortcuts`' scope gate (`Player.tsx:236-245`) and the
@@ -5071,6 +5134,7 @@ impl EditorWindow {
     /// `setEditorState("timeline", "selection", ...)`.
     pub(crate) fn set_selection(&mut self, selection: Option<Selection>, cx: &mut Context<Self>) {
         if self.selection != selection {
+            self.stop_canvas_text_edit(cx);
             self.text_menu = None;
             self.style_presets.close_menu();
             self.dismiss_frame_controls(cx);
@@ -5093,7 +5157,6 @@ impl EditorWindow {
                         .timeline
                         .as_ref()
                         .and_then(|timeline| timeline.text_segments.get(index))
-                        .filter(|segment| segment.title_card.is_none())
                         .map(|_| crate::editor_canvas::CanvasSelection::Text(index)),
                     TrackKind::Mask => Some(crate::editor_canvas::CanvasSelection::Mask(index)),
                     TrackKind::Shape => Some(crate::editor_canvas::CanvasSelection::Shape(index)),
@@ -5112,7 +5175,7 @@ impl EditorWindow {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
                     self.sidebar.caption_tab = crate::editor_workbench::CaptionTab::Content;
                     if let Some(index) = selected.indices.first() {
-                        self.sidebar.caption_page = index / 8;
+                        self.sidebar.caption_page = index / crate::editor_workbench::CAPTIONS_PER_PAGE;
                     }
                 } else if selected.track == TrackKind::Audio {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Audio;
@@ -6874,6 +6937,32 @@ impl EditorWindow {
         self.import_audio_from_file(request, window, cx);
     }
 
+    /// Adds an audio file that is already on disk (the shared library) at the
+    /// playhead, through the same checks as the file picker.
+    pub(crate) fn import_audio_path(
+        &mut self,
+        source: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(request) = self.begin_audio_import(self.playhead, window, cx) else {
+            return;
+        };
+        let project_path = self.project_path.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let imported = cx
+                .background_executor()
+                .spawn(async move { import_audio_file(&project_path, &source) })
+                .await
+                .map(Some);
+            this.update_in(cx, |this, window, cx| {
+                this.finish_audio_import(request, imported, window, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn accepts_audio_import(&self, request: &AudioImportRequest) -> bool {
         self.audio_import_pending == Some(request.generation)
             && self.project_ready()
@@ -7181,6 +7270,12 @@ impl EditorWindow {
         );
         if !inserted {
             return;
+        }
+        if kind == TrackKind::Text {
+            self.assistant.open = false;
+            self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+            self.sidebar.text_style_group = 0;
+            self.sidebar.text_panel_tab = Default::default();
         }
         self.set_selection(Some(Selection::single(kind, index)), cx);
         let target = match reveal {
@@ -8250,7 +8345,9 @@ impl EditorWindow {
 
     fn aspect_ratio_label(aspect: Option<&cap_project::AspectRatio>) -> &'static str {
         match aspect {
-            None => tr::editor::window::aspect::auto(),
+            // "Auto" alone did not say what it set; the button names the
+            // control until a ratio is picked.
+            None => tr::editor::window::aspect::button(),
             Some(cap_project::AspectRatio::Wide) => tr::editor::window::aspect::wide(),
             Some(cap_project::AspectRatio::Vertical) => tr::editor::window::aspect::vertical(),
             Some(cap_project::AspectRatio::Square) => tr::editor::window::aspect::square(),
@@ -8462,6 +8559,7 @@ impl EditorWindow {
             || self.sidebar.color_picker.is_some()
             || self.presets_menu.is_some()
             || self.preset_dialog.is_some()
+            || self.camera_framing.is_open()
             || self.caption_style_editor
             || self.sidebar.caption_translation.review_is_open()
             || self.clips.has_open_menu()
@@ -8652,6 +8750,7 @@ impl EditorWindow {
                 + TIMELINE_PADDING
                 + TRACK_GUTTER),
             bottom: px(f32::from(viewport.height) - header_bottom),
+            top: None,
             generation: self.add_track_opens,
             hovered: None,
         });
@@ -9041,6 +9140,12 @@ impl EditorWindow {
                 .unwrap_or(0),
             _ => 0,
         };
+        if kind == TrackKind::Text {
+            self.assistant.open = false;
+            self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+            self.sidebar.text_style_group = 0;
+            self.sidebar.text_panel_tab = Default::default();
+        }
         self.set_selection(Some(Selection::single(kind, index)), cx);
         let target = match reveal {
             Some((animation_in, animation_out)) => {
@@ -9513,7 +9618,27 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // `stickers` opens the sticker picker under the toolbar; `sticker:<id>`
+        // also places that sticker.
+        if let Some(rest) = spec.strip_prefix("sticker") {
+            self.open_sticker_picker(px(260.), px(118.), window, cx);
+            if rest == "s-icons" {
+                self.auto_sticker_icons(cx);
+            } else if let Some(id) = rest.strip_prefix(':') {
+                self.auto_insert_sticker(id, window, cx);
+            }
+            return;
+        }
         self.open_add_track(window, cx);
+        // `open` leaves the tray showing where the toolbar's "more" opens it.
+        if spec == "open" {
+            if let Some(menu) = &mut self.add_track {
+                menu.left = px(200.);
+                menu.top = Some(px(118.));
+            }
+            cx.notify();
+            return;
+        }
         let kind = match spec {
             "style" => TrackKind::Style,
             "image" => TrackKind::Image,
@@ -10931,7 +11056,9 @@ impl EditorWindow {
         let scene_available = self.scene_available();
         let hint: SharedString = match menu.hovered {
             None => tr::editor::window::add_track::hint().into(),
-            Some(kind) => {
+            Some(CanvasTool::Crop) => tr::editor::window::crop_tooltip().into(),
+            Some(CanvasTool::Frame) => tr::editor::window::frame::add_tooltip().into(),
+            Some(CanvasTool::Track(kind)) => {
                 if kind == TrackKind::Scene && !scene_available {
                     kind.picker_unavailable().into()
                 } else if kind == TrackKind::ThreeD && self.tracks.is_active(kind) {
@@ -10971,7 +11098,8 @@ impl EditorWindow {
                         .id("add-track-tray")
                         .absolute()
                         .left(menu.left)
-                        .bottom(menu.bottom)
+                        .when_some(menu.top, |element, top| element.top(top))
+                        .when(menu.top.is_none(), |element| element.bottom(menu.bottom))
                         .occlude()
                         .flex()
                         .flex_col()
@@ -10983,44 +11111,18 @@ impl EditorWindow {
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .w(px(ADD_TRACK_TRAY_WIDTH))
                         .child(
-                            div().flex().flex_row().gap(px(4.)).p(px(6.)).children(
-                                ADD_TRACK_OPTIONS.iter().copied().enumerate().map(
-                                    |(index, kind)| {
-                                        self.render_add_track_tile(
-                                            index,
-                                            kind,
-                                            generation,
-                                            scene_available,
-                                            cx,
-                                        )
-                                    },
-                                ),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .px(px(12.))
-                                .pt(px(4.))
-                                .border_t_1()
-                                .border_color(Hsla::from(theme.editor.line))
-                                .text_size(px(10.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(Hsla::from(theme.editor.text_3))
-                                .child(tr::editor::window::add_track::more()),
-                        )
-                        .child(
                             div()
                                 .flex()
                                 .flex_row()
                                 .flex_wrap()
                                 .gap(px(4.))
                                 .px(px(6.))
-                                .pb(px(6.))
-                                .children(ADD_TRACK_MORE.iter().copied().enumerate().map(
-                                    |(index, kind)| {
+                                .py(px(6.))
+                                .children(CANVAS_TOOLS.iter().copied().enumerate().map(
+                                    |(index, tool)| {
                                         self.render_add_track_tile(
-                                            ADD_TRACK_OPTIONS.len() + index,
-                                            kind,
+                                            index,
+                                            tool,
                                             generation,
                                             scene_available,
                                             cx,
@@ -11058,16 +11160,34 @@ impl EditorWindow {
     fn render_add_track_tile(
         &self,
         index: usize,
-        kind: TrackKind,
+        tool: CanvasTool,
         generation: usize,
         scene_available: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = self.theme;
-        let available = kind != TrackKind::Scene || scene_available;
-        let active = !kind.supports_multiple() && self.tracks.is_active(kind);
-        let color = kind.color();
-        let group = SharedString::from(format!("add-track-tile-{kind:?}"));
+        let (available, active, color, icon, label): (bool, bool, Hsla, &'static str, &'static str) =
+            match tool {
+                CanvasTool::Track(kind) => (
+                    kind != TrackKind::Scene || scene_available,
+                    !kind.supports_multiple() && self.tracks.is_active(kind),
+                    kind.color(),
+                    kind.icon(),
+                    kind.picker_label(),
+                ),
+                CanvasTool::Crop => (
+                    true,
+                    false,
+                    TrackKind::Clip.color(),
+                    "icons/crop.svg",
+                    tr::editor::window::crop(),
+                ),
+                CanvasTool::Frame => {
+                    let (label, icon) = self.frame_tool_content();
+                    (true, false, TrackKind::Style.color(), icon, label)
+                }
+            };
+        let group = SharedString::from(format!("add-track-tile-{tool:?}"));
         let badge = |this: gpui::Div| {
             this.absolute()
                 .top(px(-4.))
@@ -11082,7 +11202,7 @@ impl EditorWindow {
                 .border_color(Hsla::from(theme.editor.card))
         };
         div()
-            .id(SharedString::from(format!("add-track-{kind:?}")))
+            .id(SharedString::from(format!("add-track-{tool:?}")))
             .group(group.clone())
             .relative()
             .flex()
@@ -11115,7 +11235,7 @@ impl EditorWindow {
                             } else {
                                 Hsla::from(theme.editor.ctl)
                             })
-                            .child(svg().path(kind.icon()).size(px(14.)).text_color(
+                            .child(svg().path(icon).size(px(14.)).text_color(
                                 if available {
                                     timeline::tile_fg(&theme, color)
                                 } else {
@@ -11152,15 +11272,15 @@ impl EditorWindow {
                             this.text_color(Hsla::from(theme.editor.text_1))
                         })
                     })
-                    .child(kind.picker_label()),
+                    .child(label),
             )
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 let Some(menu) = this.add_track.as_mut() else {
                     return;
                 };
                 let next = if *hovered {
-                    Some(kind)
-                } else if menu.hovered == Some(kind) {
+                    Some(tool)
+                } else if menu.hovered == Some(tool) {
                     None
                 } else {
                     menu.hovered
@@ -11173,10 +11293,21 @@ impl EditorWindow {
             .when(available, |this| {
                 this.on_click(cx.listener(move |this, _, window, cx| {
                     this.add_track = None;
-                    if kind.supports_multiple() {
-                        this.add_track_kind(kind, window, cx);
-                    } else {
-                        this.toggle_track(kind, !this.tracks.is_active(kind), window, cx);
+                    match tool {
+                        CanvasTool::Crop => this.open_crop(window, cx),
+                        CanvasTool::Frame => this.open_frame_controls(window, cx),
+                        CanvasTool::Track(TrackKind::Image) => {
+                            this.shape_tool = None;
+                            this.assistant.open = false;
+                            this.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+                            this.add_track_kind(TrackKind::Image, window, cx);
+                        }
+                        CanvasTool::Track(kind) if kind.supports_multiple() => {
+                            this.add_track_kind(kind, window, cx);
+                        }
+                        CanvasTool::Track(kind) => {
+                            this.toggle_track(kind, !this.tracks.is_active(kind), window, cx);
+                        }
                     }
                 }))
             })
@@ -11935,6 +12066,17 @@ impl EditorWindow {
                     .child(self.history_button("editor-undo", "icons/undo.svg", true, cx))
                     .child(self.history_button("editor-redo", "icons/redo.svg", false, cx))
                     .child(self.header_divider())
+                    // Back to the recorder without hunting through menus.
+                    .child(
+                        ui::EditorButton::plain(&theme, "editor-new-recording")
+                            .left_icon("icons/record-fill.svg")
+                            .icon_size(px(14.))
+                            .when(!compact, |button| {
+                                button.label(tr::editor::window::header::new_recording())
+                            })
+                            .tooltip(&theme, tr::editor::window::header::new_recording())
+                            .on_click(|_, _, cx| cx.defer(crate::app_windows::show_main_window)),
+                    )
                     .child(
                         ui::EditorButton::plain(&theme, "presets")
                             .left_icon("icons/sliders-horizontal.svg")
@@ -11954,18 +12096,6 @@ impl EditorWindow {
                     .when(self.sharing.is_some(), |group| {
                         group.child(self.render_reupload_button(cx))
                     })
-                    .child(
-                        ui::EditorButton::plain(&theme, "assistant-open")
-                            .left_icon("icons/sparkles.svg")
-                            .when(!compact, |button| {
-                                button.label(tr::editor::assistant::title())
-                            })
-                            .tooltip(&theme, tr::editor::assistant::title())
-                            .disabled(!self.project_ready() || self.voiceover.is_busy())
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.open_assistant(window, cx)),
-                            ),
-                    )
                     .child(self.render_export_button(cx))
                     .relative()
                     .children((!self.visual_ready()).then(|| {
@@ -12282,22 +12412,68 @@ impl EditorWindow {
                         this.open_toolbar_menu(ToolbarMenu::AspectRatio, *bounds, window, cx);
                     })),
             )
-            // `EditorButton tooltipText="Crop Video"` (`Player.tsx:293-299`)
-            // -> `cropDialogHandler`.
+            .child(self.render_shape_tool_button(narrow, cx))
             .child(
-                ui::EditorButton::plain(&theme, "crop")
+                ui::EditorButton::plain(&theme, "insert-text")
                     .text(&theme)
-                    .left_icon("icons/crop.svg")
-                    .when(!narrow, |button| button.label(tr::editor::window::crop()))
-                    .tooltip(&theme, tr::editor::window::crop_tooltip())
+                    .left_icon("icons/type.svg")
+                    .when(!narrow, |button| button.label(TrackKind::Text.label()))
+                    .tooltip(&theme, TrackKind::Text.picker_description())
                     .disabled(!self.project_ready())
-                    .pressed(self.crop.is_some())
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_crop(window, cx);
+                        this.shape_tool = None;
+                        this.add_overlay_segment(TrackKind::Text, window, cx);
                     })),
             )
-            .child(self.render_frame_button(narrow, cx))
-            .child(self.render_shape_tool_button(narrow, cx))
+            // Emoji and icons: as common in a tutorial as text, so they sit
+            // beside it.
+            .child(
+                ui::EditorButton::plain(&theme, "insert-sticker")
+                    .text(&theme)
+                    .left_icon("icons/smile.svg")
+                    .when(!narrow, |button| button.label(tr::editor::stickers::title()))
+                    .tooltip(&theme, tr::editor::stickers::tooltip())
+                    .disabled(!self.project_ready())
+                    .pressed(self.sticker_picker.is_some())
+                    .on_open(cx.listener(|this, bounds: &Bounds<Pixels>, window, cx| {
+                        if this.sticker_picker.is_some() {
+                            this.sticker_picker = None;
+                            cx.notify();
+                            return;
+                        }
+                        this.add_track = None;
+                        this.toolbar_menu = None;
+                        let left = bounds
+                            .origin
+                            .x
+                            .min(window.viewport_size().width - px(384.))
+                            .max(px(12.));
+                        this.open_sticker_picker(left, bounds.bottom() + px(6.), window, cx);
+                    })),
+            )
+            // Crop, frame and image live in this tray now; the frame popover
+            // hangs from it.
+            .child(
+                div().relative().flex_none().child(self.frame_anchor()).child(
+                ui::EditorButton::plain(&theme, "canvas-more-tools")
+                    .text(&theme)
+                    .left_icon("icons/more-horizontal.svg")
+                    .tooltip(&theme, tr::editor::window::add_track::more())
+                    .disabled(!self.project_ready())
+                    .pressed(self.add_track.is_some() || self.frame_controls_open() || self.crop.is_some())
+                    .on_open(cx.listener(|this, bounds: &Bounds<Pixels>, window, cx| {
+                        this.open_add_track(window, cx);
+                        if let Some(menu) = &mut this.add_track {
+                            menu.left = bounds
+                                .origin
+                                .x
+                                .min(window.viewport_size().width - px(ADD_TRACK_TRAY_WIDTH + 12.))
+                                .max(px(12.));
+                            menu.top = Some(bounds.bottom() + px(6.));
+                        }
+                    })),
+                ),
+            )
     }
 
     /// The preview-resolution control: a segmented `Full | Half | Quarter`.
@@ -13049,7 +13225,6 @@ impl EditorWindow {
         live: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = self.theme;
         div()
             .relative()
             .h(px(TIMELINE_HEADER_HEIGHT))
@@ -13059,55 +13234,6 @@ impl EditorWindow {
                 self.view,
                 viewport_width,
             ))
-            // `TrackManager`'s trigger (`TL/TrackManager.tsx`): a solid pill
-            // in the gutter (`bg-ed-text-1 text-ed-card`, so black on the
-            // light theme and white on the dark one). Its plus turns into an
-            // x while the tray is open.
-            .child(
-                div()
-                    .id("add-track")
-                    .absolute()
-                    .bottom_0()
-                    .left(px(4.))
-                    .h(px(24.))
-                    .flex()
-                    .flex_row()
-                    .flex_none()
-                    .items_center()
-                    .justify_start()
-                    .gap(px(5.))
-                    .pl(px(6.))
-                    .pr(px(8.))
-                    .rounded(px(6.))
-                    .cursor_pointer()
-                    .bg(Hsla::from(theme.editor.text_1))
-                    .hover(|style| style.opacity(0.85))
-                    .active(|style| style.opacity(0.7))
-                    .text_size(px(12.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(Hsla::from(theme.editor.card))
-                    .child(
-                        svg()
-                            .path(if self.add_track.is_some() {
-                                "icons/x.svg"
-                            } else {
-                                "icons/plus.svg"
-                            })
-                            .size(px(12.))
-                            .flex_none()
-                            .text_color(Hsla::from(theme.editor.card)),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .whitespace_nowrap()
-                            .child(tr::editor::window::add_track::button()),
-                    )
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(|this, _: &gpui::ClickEvent, window, cx| {
-                        this.open_add_track(window, cx);
-                    })),
-            )
             // `absolute inset-y-0 right-0 z-40` at
             // `left: TRACK_GUTTER - START_SNAP_PX` -- the ruler's scrub
             // surface, which reaches into the snap-to-zero zone so hitting
@@ -14020,6 +14146,7 @@ fn dismiss_indexed_sidebar_menu(menu: &mut Option<crate::editor_tabs::OpenMenu>)
         SidebarMenu::BackgroundCornerStyle
         | SidebarMenu::CameraBlur
         | SidebarMenu::CameraShape
+        | SidebarMenu::CameraMoreShape
         | SidebarMenu::CameraCornerStyle
         | SidebarMenu::AudioStereo
         | SidebarMenu::CaptionModel
@@ -14603,6 +14730,7 @@ impl Render for EditorWindow {
                         .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 }),
             )
+            .children(self.render_camera_ratio_dialog(cx))
             .children(self.render_caption_style_editor(window, cx))
             .children(self.render_translation_review(window, cx))
             .children(self.with_style_controls(|this| this.render_sidebar_menu(cx)))
@@ -14610,6 +14738,7 @@ impl Render for EditorWindow {
             .children(self.render_text_menu(cx))
             .children(self.render_frame_controls(window, cx))
             .children(self.render_add_track_popover(cx))
+            .children(self.render_sticker_picker(cx))
             .children(self.render_shape_tool_popover(cx))
             .children(self.render_clip_speed_popover(cx))
             .children(self.render_track_menu(cx))
@@ -15972,7 +16101,7 @@ mod tests {
         assert!(near(add_track_tray_progress(at(ADD_TRACK_TRAY_IN_MS)), 1.));
         assert!(near(add_track_tray_progress(1.), 1.));
 
-        let last = ADD_TRACK_OPTIONS.len() + ADD_TRACK_MORE.len() - 1;
+        let last = CANVAS_TOOLS.len() - 1;
         assert!(near(add_track_tile_progress(0., 0), 0.));
         assert!(near(
             add_track_tile_progress(at(ADD_TRACK_TILE_DELAY_MS), 0),
@@ -17589,6 +17718,7 @@ mod tests {
             display: [0., 0., 1920., 1080.],
             camera: None,
             output_size: [1920, 1080],
+            title_text: None,
             caption: None,
         };
         let preset = |bounds| FrameLayout {

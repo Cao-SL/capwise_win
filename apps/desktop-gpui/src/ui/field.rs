@@ -174,7 +174,7 @@ impl RenderOnce for Field {
             gap,
             style,
             text,
-            muted,
+            muted: _,
             value_color,
             disabled_text,
             badge_bg,
@@ -183,7 +183,6 @@ impl RenderOnce for Field {
         } = self;
         let label_color = match (disabled, style) {
             (true, _) => disabled_text,
-            (false, FieldStyle::Section) => muted,
             (false, _) => text,
         };
 
@@ -232,7 +231,9 @@ impl RenderOnce for Field {
         }
 
         let (label_size, label_weight) = match style {
-            FieldStyle::Section => (px(12.), FontWeight::MEDIUM),
+            // Group titles read as headings: one weight step above the
+            // field labels under them, same ink.
+            FieldStyle::Section => (px(13.), FontWeight::SEMIBOLD),
             FieldStyle::Stacked => (px(13.), FontWeight::NORMAL),
             _ => (px(13.), FontWeight::SEMIBOLD),
         };

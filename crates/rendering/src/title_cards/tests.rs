@@ -323,3 +323,30 @@ fn title_wrap_preserves_explicit_breaks_and_bounds_candidate_work() {
         vec![32, 32]
     );
 }
+
+#[test]
+fn custom_text_geometry_moves_and_scales_text_without_moving_the_cover_image() {
+    let mut segment = TextSegment::new_title_card(TitleCardRole::Intro, "Editable title");
+    segment.title_card.as_mut().unwrap().template = TitleCardTemplate::Split;
+    let original = segment_title_card_layout((1920, 1080), &segment).unwrap();
+    assert!(!segment.title_card.as_ref().unwrap().custom_text_layout);
+    segment.center = XY::new(0.6, 0.4);
+    segment.size = XY::new(0.5, 0.4);
+    segment.title_card.as_mut().unwrap().custom_text_layout = true;
+    let modified = segment_title_card_layout((1920, 1080), &segment).unwrap();
+    let bounds = title_card_text_bounds((1920, 1080), &segment).unwrap();
+    for (actual, expected) in bounds.into_iter().zip([672.0, 216.0, 1632.0, 648.0]) {
+        assert!((actual - expected).abs() < 0.01);
+    }
+    assert_eq!(original.image, modified.image);
+    assert_eq!(original.accent, modified.accent);
+    assert!(modified.scale < original.scale);
+    let saved = serde_json::to_vec(&segment).unwrap();
+    let restored: TextSegment = serde_json::from_slice(&saved).unwrap();
+    assert_eq!(
+        title_card_text_bounds((1920, 1080), &restored),
+        Some(bounds)
+    );
+    segment.size.x = f64::NAN;
+    assert!(title_card_text_bounds((1920, 1080), &segment).is_none());
+}

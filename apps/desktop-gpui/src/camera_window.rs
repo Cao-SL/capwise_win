@@ -92,7 +92,7 @@ pub fn preview_dimensions(state: &CameraWindowState, frame_aspect: Option<f32>) 
     let aspect = match state.shape {
         CameraShape::Full => frame_aspect
             .filter(|aspect| aspect.is_finite() && *aspect > 0.)
-            .map_or(WIDE_ASPECT, |aspect| aspect.max(WIDE_ASPECT)),
+            .unwrap_or(WIDE_ASPECT),
         _ => 1.,
     };
     (base * aspect, base)
@@ -149,6 +149,22 @@ mod inline_preview_tests {
         }
         // A portrait sliver keeps close, size and shape.
         assert_eq!(toolbar_fit(1., Some(81.)).1, 3);
+    }
+
+    #[test]
+    fn source_preview_preserves_square_and_portrait_inputs() {
+        let state = CameraWindowState {
+            size: 230.,
+            shape: CameraShape::Full,
+            ..Default::default()
+        };
+        assert_eq!(preview_dimensions(&state, Some(1.0)), (230., 230.));
+        let (width, height) = preview_dimensions(&state, Some(3. / 4.));
+        assert!((width / height - 0.75).abs() < 0.001);
+        assert_eq!(
+            preview_dimensions(&state, Some(f32::NAN)),
+            preview_dimensions(&state, None)
+        );
     }
 
     #[test]

@@ -15,6 +15,7 @@ pub(crate) mod model;
 #[cfg(test)]
 mod tests;
 mod view;
+pub(crate) use view::find_matches;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

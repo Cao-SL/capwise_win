@@ -1212,3 +1212,157 @@ async fn the_instance_buffer_grows_once_for_a_hundred_shapes() {
     assert!(!layers.overlays.as_ref().unwrap().shapes.has_content());
     assert_ne!(first.pixels, base.pixels);
 }
+
+#[tokio::test]
+async fn cover_text_moves_in_rendered_frames_and_accepts_inserted_text() {
+    let directory = tempfile::tempdir().unwrap();
+    let constants = constants(directory.path()).await;
+    let mut layers = RendererLayers::new(&constants.device, &constants.queue);
+    let mut project = project();
+    let mut card =
+        cap_project::TextSegment::new_title_card(cap_project::TitleCardRole::Intro, "HELLO");
+    card.end = 3.0;
+    card.title_card.as_mut().unwrap().background = cap_project::TitleCardBackground::Solid {
+        color: "#000000".into(),
+    };
+    project.timeline.as_mut().unwrap().text_segments.push(card);
+    let resolution = XY::new(640, 480);
+    let (before, _) = render_for(&constants, &project, &mut layers, 15, resolution, frames()).await;
+    let centroid = |frame: &RenderedFrame| {
+        let bytes = pixels(frame);
+        let mut weight = 0.0;
+        let mut x = 0.0;
+        let mut y = 0.0;
+        for (index, pixel) in bytes.chunks_exact(4).enumerate() {
+            let column = index % frame.width as usize;
+            let row = index / frame.width as usize;
+            if column < 2
+                || row < 2
+                || column + 2 >= frame.width as usize
+                || row + 2 >= frame.height as usize
+            {
+                continue;
+            }
+            let value = f64::from(pixel[0].min(pixel[1]).min(pixel[2]));
+            weight += value;
+            x += (index % frame.width as usize) as f64 * value;
+            y += (index / frame.width as usize) as f64 * value;
+        }
+        assert!(weight > 1000.0);
+        (x / weight, y / weight)
+    };
+    let bounds = crate::title_card_text_bounds(
+        (640, 480),
+        &project.timeline.as_ref().unwrap().text_segments[0],
+    )
+    .unwrap();
+    let card = &mut project.timeline.as_mut().unwrap().text_segments[0];
+    card.center = XY::new(0.6, 0.3);
+    card.size = XY::new(
+        f64::from(bounds[2] - bounds[0]) / 640.0,
+        f64::from(bounds[3] - bounds[1]) / 480.0,
+    );
+    card.title_card.as_mut().unwrap().custom_text_layout = true;
+    let (after, _) = render_for(&constants, &project, &mut layers, 15, resolution, frames()).await;
+    if let Ok(path) = std::env::var("CAPWISE_NATIVE_CAPTURE") {
+        for (name, frame) in [("before", &before), ("after", &after)] {
+            image::save_buffer(
+                std::path::Path::new(&path).join(format!("{name}.png")),
+                &pixels(frame),
+                frame.width,
+                frame.height,
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+        }
+    }
+    let (before_x, before_y) = centroid(&before);
+    let (after_x, after_y) = centroid(&after);
+    assert!(
+        (after_x - before_x - 64.0).abs() < 2.0,
+        "before=({before_x},{before_y}), after=({after_x},{after_y}), frame={}x{}",
+        before.width,
+        before.height
+    );
+    assert!(
+        (after_y - before_y + 96.0).abs() < 2.0,
+        "before=({before_x},{before_y}), after=({after_x},{after_y})"
+    );
+    let mut extra: cap_project::TextSegment = serde_json::from_value(serde_json::json!({
+        "start": 0.0, "end": 3.0, "track": 1, "content": "ADDED", "fontSize": 100.0,
+        "center": {"x": 0.5, "y": 0.8}, "size": {"x": 0.8, "y": 0.2}, "color": "#ff0000"
+    }))
+    .unwrap();
+    extra.animation_in = cap_project::TextAnimation::None;
+    extra.animation_out = cap_project::TextAnimation::None;
+    project.timeline.as_mut().unwrap().text_segments.push(extra);
+    let (inserted, _) =
+        render_for(&constants, &project, &mut layers, 15, resolution, frames()).await;
+    assert!(
+        pixels(&inserted)
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 150 && pixel[1] < 50 && pixel[2] < 50)
+            .count()
+            > 100
+    );
+}
+
+#[tokio::test]
+async fn inline_title_edit_keeps_background_and_metrics_without_hiding_exports() {
+    let directory = tempfile::tempdir().unwrap();
+    let constants = constants(directory.path()).await;
+    let mut layers = RendererLayers::new(&constants.device, &constants.queue);
+    let mut project = project();
+    let mut card =
+        cap_project::TextSegment::new_title_card(cap_project::TitleCardRole::Intro, "HELLO");
+    card.end = 3.0;
+    card.title_card.as_mut().unwrap().background = cap_project::TitleCardBackground::Solid {
+        color: "#000000".into(),
+    };
+    project.timeline.as_mut().unwrap().text_segments.push(card);
+    let resolution = XY::new(640, 480);
+    let (visible, _) =
+        render_for(&constants, &project, &mut layers, 15, resolution, frames()).await;
+    let initial = layers.title_text_frame_box().unwrap();
+    assert_eq!(initial.segment_index, 0);
+    assert!(initial.font_size > 0.0 && initial.line_height > 0.0);
+    assert!(initial.bounds[2] > initial.bounds[0] && initial.bounds[3] > initial.bounds[1]);
+    project.editing_text_segment = Some(0);
+    let (editing, _) =
+        render_for(&constants, &project, &mut layers, 15, resolution, frames()).await;
+    let editing_box = layers.title_text_frame_box().unwrap();
+    assert_eq!(initial.bounds, editing_box.bounds);
+    assert_eq!(initial.font_size, editing_box.font_size);
+    let light_pixels = |frame: &RenderedFrame| {
+        pixels(frame)
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 150 && pixel[1] > 150 && pixel[2] > 150)
+            .count()
+    };
+    assert!(light_pixels(&visible) > light_pixels(&editing) + 100);
+    let center = (240 * 640 + 320) * 4;
+    assert!(
+        pixels(&editing)[center..center + 3]
+            .iter()
+            .all(|channel| *channel < 10)
+    );
+    let saved = serde_json::to_value(&project).unwrap();
+    assert!(saved.get("editingTextSegment").is_none());
+    let mut exported: ProjectConfiguration = serde_json::from_value(saved).unwrap();
+    assert!(exported.editing_text_segment.is_none());
+    let (restored, _) =
+        render_for(&constants, &exported, &mut layers, 15, resolution, frames()).await;
+    assert_eq!(pixels(&visible), pixels(&restored));
+    let card = &mut exported.timeline.as_mut().unwrap().text_segments[0];
+    card.stroke_width = 12.0;
+    card.stroke_color = "#ff0000".into();
+    let (outlined, _) =
+        render_for(&constants, &exported, &mut layers, 15, resolution, frames()).await;
+    assert!(
+        pixels(&outlined)
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 100 && pixel[1] < 70 && pixel[2] < 70)
+            .count()
+            > 100
+    );
+}

@@ -22,10 +22,10 @@ use std::{
 #[cfg(test)]
 use cap_project::CaptionsData;
 use cap_project::{
-    BackgroundBlurConfig, BackgroundBlurMode, CameraShape, CameraXPosition, CameraYPosition,
-    CaptionDisplayMode, CaptionSettings, CaptionTextStyle, CornerStyle, CursorAnimationStyle,
-    CursorRippleConfig, KeyboardData, KeyboardSettings, ProjectConfiguration, RecordingMeta,
-    ShadowConfiguration, StereoMode, transcription_ranges_cover, transcription_source_ranges,
+    BackgroundBlurConfig, BackgroundBlurMode, CameraXPosition, CameraYPosition, CaptionDisplayMode,
+    CaptionSettings, CaptionTextStyle, CornerStyle, CursorAnimationStyle, CursorRippleConfig,
+    KeyboardData, KeyboardSettings, ProjectConfiguration, RecordingMeta, ShadowConfiguration,
+    StereoMode, transcription_ranges_cover, transcription_source_ranges,
 };
 use gpui::{
     AnyElement, Bounds, Context, EntityId, FontWeight, Hsla, InteractiveElement, IntoElement,
@@ -49,12 +49,6 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 pub type Label = fn() -> &'static str;
-
-/// `CAMERA_SHAPES` (`ConfigSidebar.tsx:381-391`).
-pub const CAMERA_SHAPES: [(CameraShape, Label); 2] = [
-    (CameraShape::Square, tr::editor::tabs::camera::shape::square),
-    (CameraShape::Source, tr::editor::tabs::camera::shape::source),
-];
 
 pub const CAMERA_BLUR_MODES: &[(BackgroundBlurMode, Label)] = &[
     (BackgroundBlurMode::Off, tr::editor::tabs::camera::blur::off),
@@ -762,6 +756,8 @@ pub enum CameraSlider {
     ShadowOpacity,
     ShadowBlur,
     SkinSmoothing,
+    CropX,
+    CropY,
 }
 
 impl CameraSlider {
@@ -778,7 +774,9 @@ impl CameraSlider {
             | Self::ShadowSize
             | Self::ShadowOpacity
             | Self::ShadowBlur
-            | Self::SkinSmoothing => false,
+            | Self::SkinSmoothing
+            | Self::CropX
+            | Self::CropY => false,
         }
     }
 
@@ -803,6 +801,8 @@ impl CameraSlider {
             Self::ShadowOpacity => shadow.map_or(UI_SHADOW_FALLBACK.opacity, |s| s.opacity),
             Self::ShadowBlur => shadow.map_or(UI_SHADOW_FALLBACK.blur, |s| s.blur),
             Self::SkinSmoothing => camera.skin_smoothing * 100.,
+            Self::CropX => camera.crop_position.map_or(50., |p| p.x as f32 * 100.),
+            Self::CropY => camera.crop_position.map_or(50., |p| p.y as f32 * 100.),
         }
     }
 }
@@ -1240,6 +1240,7 @@ pub enum SidebarMenu {
     BackgroundCornerStyle,
     CameraBlur,
     CameraShape,
+    CameraMoreShape,
     CameraCornerStyle,
     AudioStereo,
     CaptionModel,
@@ -1292,16 +1293,9 @@ impl EditorWindow {
                     ui::MenuItem::new(label(), *mode == project.camera.background_blur.mode)
                 })
                 .collect(),
-            SidebarMenu::CameraShape => CAMERA_SHAPES
-                .iter()
-                .map(|(shape, label)| {
-                    ui::MenuItem::new(
-                        label(),
-                        std::mem::discriminant(shape)
-                            == std::mem::discriminant(&project.camera.shape),
-                    )
-                })
-                .collect(),
+            SidebarMenu::CameraShape | SidebarMenu::CameraMoreShape => {
+                self.camera_ratio_items(kind)
+            }
             SidebarMenu::CameraCornerStyle => CORNER_STYLES
                 .iter()
                 .map(|(style, label)| {
@@ -1469,6 +1463,7 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let anchor = self.sidebar.menu.as_ref().map(|menu| menu.state.clone());
         self.sidebar.menu = None;
         match kind {
             SidebarMenu::TranslationLanguage => self.choose_translation_language(index, window, cx),
@@ -1498,15 +1493,8 @@ impl EditorWindow {
                     true
                 });
             }
-            SidebarMenu::CameraShape => {
-                let Some((shape, _)) = CAMERA_SHAPES.get(index) else {
-                    return;
-                };
-                let shape = *shape;
-                self.edit_project("camera-shape", window, cx, move |project| {
-                    project.camera.shape = shape;
-                    true
-                });
+            SidebarMenu::CameraShape | SidebarMenu::CameraMoreShape => {
+                self.choose_camera_ratio(kind, index, anchor, window, cx);
             }
             SidebarMenu::CameraCornerStyle => {
                 let Some((style, _)) = CORNER_STYLES.get(index) else {
@@ -1756,6 +1744,17 @@ impl EditorWindow {
             move |project| {
                 let camera = &mut project.camera;
                 match slider {
+                    CameraSlider::CropX | CameraSlider::CropY => {
+                        let mut position = camera
+                            .crop_position
+                            .unwrap_or(cap_project::XY::new(0.5, 0.5));
+                        if slider == CameraSlider::CropX {
+                            position.x = f64::from(value) / 100.;
+                        } else {
+                            position.y = f64::from(value) / 100.;
+                        }
+                        camera.crop_position = Some(position);
+                    }
                     CameraSlider::Size => camera.size = value,
                     CameraSlider::ZoomSize => camera.scale_during_zoom = value / 100.,
                     CameraSlider::Rounding => camera.rounding = value,
@@ -2020,14 +2019,6 @@ impl EditorWindow {
         let manual = camera.manual_position;
         let hidden = camera.hide;
 
-        let shape_label = CAMERA_SHAPES
-            .iter()
-            .find(|(shape, _)| {
-                std::mem::discriminant(shape) == std::mem::discriminant(&camera.shape)
-            })
-            .map_or(tr::editor::tabs::camera::shape::square(), |(_, label)| {
-                label()
-            });
         let blur_label = CAMERA_BLUR_MODES
             .iter()
             .find(|(mode, _)| *mode == camera.background_blur.mode)
@@ -2063,6 +2054,7 @@ impl EditorWindow {
             .flex_col()
             .gap(px(16.))
             .child(header)
+            .child(self.render_camera_framing_controls(cx))
             .child(self.render_camera_position(cx))
             .child(self.slider_field(
                 tr::editor::tabs::camera::size_label(),
@@ -2074,6 +2066,18 @@ impl EditorWindow {
                 tr::editor::tabs::camera::skin_smoothing(),
                 SliderKey::Camera(CameraSlider::SkinSmoothing),
                 "%",
+                cx,
+            ))
+            .child(self.slider_field(
+                tr::editor::tabs::camera::rounded_corners(),
+                SliderKey::Camera(CameraSlider::Rounding),
+                "%",
+                cx,
+            ))
+            .child(self.corner_style_select(
+                SidebarMenu::CameraCornerStyle,
+                "camera-corner-style",
+                corner_label,
                 cx,
             ))
             .children(manual.map(|_| {
@@ -2116,16 +2120,6 @@ impl EditorWindow {
                     .flex_col()
                     .gap(px(14.))
                     .child(
-                        ui::Field::inline(&theme, tr::editor::tabs::camera::shape_label()).child(
-                            div().w(px(150.)).child(this.menu_select(
-                                SidebarMenu::CameraShape,
-                                "camera-shape",
-                                shape_label,
-                                cx,
-                            )),
-                        ),
-                    )
-                    .child(
                         ui::Field::inline(&theme, tr::editor::tabs::camera::background()).child(
                             div().w(px(150.)).child(this.menu_select(
                                 SidebarMenu::CameraBlur,
@@ -2147,23 +2141,6 @@ impl EditorWindow {
                                 }))
                                 .into_any_element(),
                         ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(this.slider_field(
-                                tr::editor::tabs::camera::rounded_corners(),
-                                SliderKey::Camera(CameraSlider::Rounding),
-                                "%",
-                                cx,
-                            ))
-                            .child(this.corner_style_select(
-                                SidebarMenu::CameraCornerStyle,
-                                "camera-corner-style",
-                                corner_label,
-                                cx,
-                            )),
                     )
                     .child(
                         div()
@@ -3570,50 +3547,27 @@ impl EditorWindow {
             Some(column.into_any_element())
         };
 
+        // One toolbar: find and replace reads like a search field, the AI
+        // check sits beside it. Editing is the list itself -- click a line.
         let quick_actions = has_captions.then(|| {
             div()
                 .flex()
                 .gap(px(8.))
                 .child(
-                    ui::EditorButton::plain(&theme, "caption-edit-content")
-                        .filled(&theme)
-                        .grow()
-                        .height(px(32.))
-                        .left_icon("icons/pencil.svg")
-                        .label(tr::editor::workbench::edit_captions())
-                        .disabled(generating)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            if let Some(first) = this
-                                .project
-                                .timeline
-                                .as_ref()
-                                .and_then(|t| t.caption_segments.first())
-                            {
-                                let time = first.start;
-                                this.set_selection(
-                                    Some(crate::editor_edits::Selection::single(
-                                        crate::editor_timeline::TrackKind::Caption,
-                                        0,
-                                    )),
-                                    cx,
-                                );
-                                this.seek_to_time(time, cx);
-                                this.focus_root(window, cx);
-                            }
-                        })),
-                )
-                .child(
                     ui::EditorButton::plain(&theme, "caption-find-replace")
-                        .tinted(&theme)
+                        .outlined(&theme)
                         .grow()
+                        .start()
                         .height(px(32.))
                         .left_icon("icons/search.svg")
+                        .icon_size(px(14.))
                         .label(tr::editor::tabs::captions::find_replace())
                         .disabled(generating)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.open_transcript_search(window, cx)
                         })),
                 )
+                .child(self.render_caption_review_button(cx))
                 .into_any_element()
         });
         let regenerate = (has_captions && model_downloaded && has_audio).then(|| {
@@ -3780,8 +3734,15 @@ impl EditorWindow {
                 .flex()
                 .flex_col()
                 .gap(px(14.))
-                .children(quick_actions)
-                .child(self.render_caption_review(cx))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .children(quick_actions)
+                        .child(self.render_caption_review(cx)),
+                )
+                .child(self.render_caption_content_list(cx))
                 .child(self.more_settings("captions", cx, move |_, cx| {
                     div()
                         .flex()
@@ -3807,7 +3768,6 @@ impl EditorWindow {
                         .child(transcription)
                         .into_any_element()
                 }))
-                .child(self.render_caption_content_list(cx))
                 .into_any_element()
         } else {
             div()

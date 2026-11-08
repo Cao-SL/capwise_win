@@ -341,6 +341,7 @@ pub(crate) fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-cmd-f", ToggleFullscreen, None),
         KeyBinding::new("secondary-,", OpenSettings, None),
         KeyBinding::new("secondary-o", OpenFile, None),
+        KeyBinding::new("secondary-n", ShowRecorder, None),
     ]
 }
 
@@ -375,6 +376,8 @@ pub fn build_menus(_update_status: &updates::UpdateStatus, settings_enabled: boo
             name: tr::menu::file::title().into(),
             disabled: false,
             items: vec![
+                MenuItem::action(tr::menu::file::new_recording(), ShowRecorder),
+                MenuItem::separator(),
                 MenuItem::action(tr::menu::file::open_file(), OpenFile),
                 MenuItem::action(tr::menu::file::import_media(), ImportMedia),
                 MenuItem::separator(),
@@ -1219,6 +1222,14 @@ mod tests {
                 },
                 &OpenFile,
             ),
+            (
+                if cfg!(target_os = "macos") {
+                    "cmd-n"
+                } else {
+                    "ctrl-n"
+                },
+                &ShowRecorder,
+            ),
         ];
         let bindings = bindings();
         assert_eq!(bindings.len(), expected.len());
@@ -1263,6 +1274,8 @@ mod tests {
             .map(describe)
             .collect();
         let expected_file_items = vec![
+            "New Recording".into(),
+            "-".into(),
             "Open File…".into(),
             "Import Media…".into(),
             "-".into(),

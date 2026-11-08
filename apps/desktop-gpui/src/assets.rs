@@ -99,6 +99,8 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "gift.svg",
     "hotkeys.svg",
     "image.svg",
+    "image-off.svg",
+    "smile.svg",
     "info.svg",
     "instant.svg",
     "keyboard.svg",
@@ -193,6 +195,7 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "message-circle.svg",
     "circle-info.svg",
     "sparkles.svg",
+    "star.svg",
     "history.svg",
     // The settings Recordings page. `link` is Cap's own
     // (`packages/ui-solid/icons/link.svg`, which is Lucide's glyph); `import`
@@ -413,6 +416,7 @@ mod tests {
         include_str!("settings_stock.rs"),
         include_str!("settings_cover.rs"),
         include_str!("editor_cover.rs"),
+        include_str!("editor_assistant.rs"),
         include_str!("transcript/view.rs"),
         // The timeline's nine track glyphs and its scene-mode icons are named
         // in the strip's own module, not in the window that hosts it.

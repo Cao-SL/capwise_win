@@ -48,9 +48,9 @@ use crate::{editor_timeline::TrackKind, editor_window::EditorWindow};
 use cap_project::{CameraXPosition, CameraYPosition, OverlayTrackKind, SceneMode, XY};
 use cap_rendering::{CaptionFrameBox, FrameLayout};
 use gpui::{
-    AnyElement, Bounds, Context, CursorStyle, FontWeight, Hsla, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    AnyElement, AppContext as _, Bounds, Context, CursorStyle, FontWeight, Hsla,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement,
+    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 /// `NormRect` (`snapping.ts:6`): normalised against the output frame.
@@ -590,6 +590,13 @@ pub struct CanvasDrag {
     pub resize: Option<CanvasResize>,
 }
 
+pub(crate) struct CanvasTextEdit {
+    pub(crate) index: usize,
+    pub(crate) before: String,
+    input: gpui::Entity<crate::ui::TextInputState>,
+    _subscription: gpui::Subscription,
+}
+
 impl EditorWindow {
     /// `overlayVisible()` (`:238`): only while paused, and only once the
     /// renderer has reported a layout.
@@ -724,20 +731,15 @@ impl EditorWindow {
                 }
             }
             for (index, segment) in timeline.text_segments.iter().enumerate() {
-                if exclude == CanvasSelection::Text(index) || segment.title_card.is_some() {
+                if exclude == CanvasSelection::Text(index) {
                     continue;
                 }
                 if !(t >= segment.start && t < segment.end && segment.enabled) {
                     continue;
                 }
-                let center = segment.center;
-                let size = segment.size;
-                rects.push(NormRect {
-                    x: center.x - size.x / 2.,
-                    y: center.y - size.y / 2.,
-                    w: size.x,
-                    h: size.y,
-                });
+                if let Some(rect) = self.element_rect(CanvasSelection::Text(index)) {
+                    rects.push(rect);
+                }
             }
             for index in self.visible_shape_order(t) {
                 if exclude == CanvasSelection::Shape(index) || moving_shapes.contains(&index) {
@@ -781,6 +783,10 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(element, CanvasSelection::Text(_)) {
+            self.assistant.open = false;
+            self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+        }
         if let Some((kind, index)) = element.timeline_selection() {
             self.canvas_selection = Some(element);
             self.set_selection(
@@ -792,6 +798,12 @@ impl EditorWindow {
                 self.set_selection(None, cx);
             }
             self.canvas_selection = Some(element);
+        }
+        if event.click_count == 2
+            && let CanvasSelection::Text(index) = element
+        {
+            self.begin_canvas_text_edit(index, window, cx);
+            return;
         }
         let draggable = match element {
             CanvasSelection::Display => self.display_draggable(),
@@ -1374,7 +1386,12 @@ impl EditorWindow {
                 }
                 let segment = self.project.timeline.as_ref()?.text_segments.get(index)?;
                 if segment.title_card.is_some() {
-                    return None;
+                    let layout = self.frame_layout.as_ref()?;
+                    let bounds = cap_rendering::title_card_text_bounds(
+                        (layout.output_size[0], layout.output_size[1]),
+                        segment,
+                    )?;
+                    return Some(norm_rect(bounds, layout));
                 }
                 Some(NormRect {
                     x: segment.center.x - segment.size.x / 2.,
@@ -1427,6 +1444,9 @@ impl EditorWindow {
                 };
                 segment.center = center;
                 segment.size = size;
+                if let Some(card) = &mut segment.title_card {
+                    card.custom_text_layout = true;
+                }
             }
             CanvasSelection::Shape(index) => {
                 let Some(segment) = timeline.shape_segments.get_mut(index) else {
@@ -1488,21 +1508,26 @@ impl EditorWindow {
     /// inside `size()` (`Player.tsx:636`), not the player pane.
     pub(crate) fn render_canvas_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let time = self.preview_or_playhead();
-        if self.project.timeline.as_ref().is_some_and(|timeline| {
-            timeline.text_segments.iter().any(|segment| {
-                segment.title_card.is_some()
-                    && segment.enabled
-                    && time >= segment.start
-                    && time < segment.end
-            })
-        }) {
-            return None;
-        }
+        let active_card = self.project.timeline.as_ref().and_then(|timeline| {
+            timeline
+                .text_segments
+                .iter()
+                .enumerate()
+                .filter(|(_, segment)| {
+                    segment.title_card.is_some()
+                        && segment.enabled
+                        && time >= segment.start
+                        && time < segment.end
+                })
+                .max_by_key(|(index, segment)| (segment.track, *index))
+                .map(|(index, _)| index)
+        });
         if !self.canvas_overlay_visible()
             || (!self.player_panel_hovered
                 && self.canvas_drag.is_none()
                 && self.shape_drag.is_none()
-                && self.shape_tool.is_none())
+                && self.shape_tool.is_none()
+                && self.canvas_text_edit.is_none())
         {
             return None;
         }
@@ -1540,13 +1565,15 @@ impl EditorWindow {
             );
         }
 
-        if self.show_display()
+        if active_card.is_none()
+            && self.show_display()
             && let Some(rect) = self.display_rect()
         {
             layer =
                 layer.child(self.render_element_box(CanvasSelection::Display, rect, (cw, ch), cx));
         }
-        if self.show_camera()
+        if active_card.is_none()
+            && self.show_camera()
             && let Some(rect) = self.camera_rect()
         {
             layer =
@@ -1564,7 +1591,9 @@ impl EditorWindow {
                             .enumerate()
                             .filter(|(_, segment)| segment.track == track.track)
                         {
-                            if !(segment.enabled && time >= segment.start && time < segment.end) {
+                            if active_card.is_some()
+                                || !(segment.enabled && time >= segment.start && time < segment.end)
+                            {
                                 continue;
                             }
                             let element = CanvasSelection::Mask(index);
@@ -1585,7 +1614,8 @@ impl EditorWindow {
                                 .iter()
                                 .enumerate()
                                 .filter(|(_, segment)| {
-                                    segment.track == track.track
+                                    active_card.is_none()
+                                        && segment.track == track.track
                                         && segment.is_active_at(time)
                                         && segment.opacity > 0.
                                 })
@@ -1604,30 +1634,42 @@ impl EditorWindow {
                             .enumerate()
                             .filter(|(_, segment)| segment.track == track.track)
                         {
-                            if !(time >= segment.start && time < segment.end && segment.enabled) {
+                            if !(time >= segment.start && time < segment.end && segment.enabled)
+                                || active_card.is_some_and(|active| {
+                                    index != active && segment.title_card.is_some()
+                                })
+                            {
                                 continue;
                             }
                             let element = CanvasSelection::Text(index);
                             if let Some(rect) = self.element_rect(element) {
-                                layer = layer.child(self.render_element_box(
-                                    element,
-                                    rect,
-                                    (cw, ch),
-                                    cx,
-                                ));
+                                layer = layer.child(
+                                    if self
+                                        .canvas_text_edit
+                                        .as_ref()
+                                        .is_some_and(|edit| edit.index == index)
+                                    {
+                                        self.render_canvas_text_input(index, rect, (cw, ch), cx)
+                                    } else {
+                                        self.render_element_box(element, rect, (cw, ch), cx)
+                                    },
+                                );
                             }
                         }
                     }
                 }
             }
         }
-        if self.show_captions()
+        if active_card.is_none()
+            && self.show_captions()
             && let Some(rect) = self.caption_rect()
         {
             layer =
                 layer.child(self.render_element_box(CanvasSelection::Captions, rect, (cw, ch), cx));
         }
-        if let Some(shapes) = self.render_shapes_layer(cx) {
+        if active_card.is_none()
+            && let Some(shapes) = self.render_shapes_layer(cx)
+        {
             layer = layer.child(shapes);
         }
         for guide in &self.snap_guides {
@@ -1651,6 +1693,190 @@ impl EditorWindow {
         }
 
         Some(layer.into_any_element())
+    }
+
+    pub(crate) fn begin_canvas_text_edit(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.project_ready() || self.voiceover.is_busy() {
+            return;
+        }
+        self.stop_canvas_text_edit(cx);
+        self.stop_playback(cx);
+        self.end_field_edit(cx);
+        let Some(segment) = self
+            .project
+            .timeline
+            .as_ref()
+            .and_then(|timeline| timeline.text_segments.get(index))
+        else {
+            return;
+        };
+        let before = segment.content.clone();
+        let (start, end) = (segment.start, segment.end);
+        if self.playhead_time() < start || self.playhead_time() >= end {
+            self.seek_to_time(start + ((end - start) * 0.5).min(0.1), cx);
+        }
+        let input = cx.new(|cx| crate::ui::TextInputState::multi_line(window, cx));
+        input.update(cx, |input, cx| input.set_text(before.clone(), cx));
+        let subscription =
+            cx.subscribe_in(&input, window, move |this, input, event, window, cx| {
+                if this
+                    .canvas_text_edit
+                    .as_ref()
+                    .is_none_or(|edit| edit.index != index)
+                {
+                    return;
+                }
+                match event {
+                    crate::ui::TextInputEvent::Changed => {
+                        let mut text = input.read(cx).text().to_owned();
+                        if text.trim().is_empty()
+                            && this
+                                .project
+                                .timeline
+                                .as_ref()
+                                .and_then(|timeline| timeline.text_segments.get(index))
+                                .is_some_and(|segment| segment.title_card.is_some())
+                        {
+                            text = this.canvas_text_edit.as_ref().unwrap().before.clone();
+                        }
+                        this.edit_text_segment(
+                            "canvas-text-content",
+                            index,
+                            window,
+                            cx,
+                            move |segment| {
+                                if segment.content == text {
+                                    return false;
+                                }
+                                segment.content = text;
+                                true
+                            },
+                        );
+                    }
+                    crate::ui::TextInputEvent::Cancelled => {
+                        let before = this.canvas_text_edit.as_ref().unwrap().before.clone();
+                        this.edit_text_segment(
+                            "canvas-text-cancel",
+                            index,
+                            window,
+                            cx,
+                            move |segment| {
+                                segment.content = before;
+                                true
+                            },
+                        );
+                        this.stop_canvas_text_edit(cx);
+                        this.focus_root(window, cx);
+                    }
+                    crate::ui::TextInputEvent::Blurred | crate::ui::TextInputEvent::Confirmed => {
+                        this.stop_canvas_text_edit(cx);
+                    }
+                }
+            });
+        self.history.pause();
+        self.canvas_text_edit = Some(CanvasTextEdit {
+            index,
+            before,
+            input: input.clone(),
+            _subscription: subscription,
+        });
+        input.update(cx, |input, cx| input.focus_and_select_all(window, cx));
+        self.publish_project();
+        cx.notify();
+    }
+
+    pub(crate) fn stop_canvas_text_edit(&mut self, cx: &mut Context<Self>) {
+        if self.canvas_text_edit.take().is_some() {
+            self.history.resume(&self.project);
+            self.publish_project();
+            cx.notify();
+        }
+    }
+
+    fn render_canvas_text_input(
+        &self,
+        index: usize,
+        fallback: NormRect,
+        canvas: (f32, f32),
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let edit = self.canvas_text_edit.as_ref().unwrap();
+        let segment = &self.project.timeline.as_ref().unwrap().text_segments[index];
+        let layout = self.frame_layout.as_ref().unwrap();
+        let title = layout.title_text.filter(|text| text.segment_index == index);
+        let rect = title
+            .map(|text| norm_rect(text.bounds, layout))
+            .unwrap_or(fallback);
+        let scale = canvas.1 / layout.output_size[1].max(1) as f32;
+        let font_size = title
+            .map(|text| text.font_size * scale)
+            .unwrap_or(segment.font_size * canvas.1 / 1080.0)
+            .max(8.0);
+        let align = match title.map(|text| text.align).unwrap_or(segment.align) {
+            cap_project::TextAlign::Left => gpui::TextAlign::Left,
+            cap_project::TextAlign::Center => gpui::TextAlign::Center,
+            cap_project::TextAlign::Right => gpui::TextAlign::Right,
+        };
+        let color = u32::from_str_radix(segment.color.trim_start_matches('#'), 16)
+            .map(gpui::rgb)
+            .map(Hsla::from)
+            .unwrap_or_else(|_| gpui::white());
+        let font_family = match segment.font_family.as_str() {
+            "sans-serif" if cfg!(target_os = "macos") => "Helvetica",
+            "sans-serif" if cfg!(target_os = "windows") => "Arial",
+            "sans-serif" => "DejaVu Sans",
+            "serif" if cfg!(target_os = "linux") => "DejaVu Serif",
+            "serif" => "Times New Roman",
+            "monospace" if cfg!(target_os = "macos") => "Courier New",
+            "monospace" if cfg!(target_os = "windows") => "Consolas",
+            "monospace" => "DejaVu Sans Mono",
+            family => family,
+        };
+        div()
+            .id("canvas-text-editor")
+            .absolute()
+            .left(px(rect.x as f32 * canvas.0))
+            .top(px(rect.y as f32 * canvas.1))
+            .w(px(rect.w as f32 * canvas.0))
+            .h(px((rect.h as f32 * canvas.1).max(font_size * 1.4)))
+            .occlude()
+            .border_1()
+            .border_color(Hsla::from(self.theme.blue_9))
+            .font_family(SharedString::from(font_family.to_owned()))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                if event.keystroke.key == "enter"
+                    && event.keystroke.modifiers.platform
+                    && !crate::ui::text_input::text_input_is_composing(window, cx)
+                {
+                    this.stop_canvas_text_edit(cx);
+                    this.focus_root(window, cx);
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            }))
+            .child(
+                crate::ui::TextInput::bare(&self.theme, "canvas-text-inline-input", &edit.input)
+                    .height(px((rect.h as f32 * canvas.1).max(font_size * 1.4)))
+                    .padding_x(px(0.))
+                    .padding_y(px(0.))
+                    .text_size(px(font_size))
+                    .line_height(px(font_size
+                        * title
+                            .map(|text| text.line_height)
+                            .unwrap_or(segment.line_height)))
+                    .font_weight(FontWeight(segment.font_weight))
+                    .align(align)
+                    .text_color(color)
+                    .caret_color(color)
+                    .selection_color(gpui::hsla(0.58, 0.9, 0.6, 0.35)),
+            )
+            .into_any_element()
     }
 
     fn render_element_box(
@@ -2179,6 +2405,7 @@ mod tests {
             display,
             camera: None,
             output_size: [width, height],
+            title_text: None,
             caption: None,
         }
     }

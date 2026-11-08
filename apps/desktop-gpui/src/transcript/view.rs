@@ -69,7 +69,7 @@ fn find_text_matches(doc: &TranscriptDoc, query: &str) -> Vec<Range<usize>> {
     matches
 }
 
-pub(super) fn find_matches(doc: &TranscriptDoc, query: &str) -> Vec<Range<usize>> {
+pub(crate) fn find_matches(doc: &TranscriptDoc, query: &str) -> Vec<Range<usize>> {
     if query.chars().any(cap_project::is_unspaced_script) {
         return find_text_matches(doc, query);
     }

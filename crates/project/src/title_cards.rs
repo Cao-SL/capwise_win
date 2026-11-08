@@ -84,6 +84,8 @@ pub struct TitleCard {
     pub subtitle: String,
     #[serde(default)]
     pub background: TitleCardBackground,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub custom_text_layout: bool,
 }
 
 impl TitleCard {
@@ -96,6 +98,7 @@ impl TitleCard {
             kicker: String::new(),
             subtitle: String::new(),
             background: TitleCardBackground::default(),
+            custom_text_layout: false,
         }
     }
 

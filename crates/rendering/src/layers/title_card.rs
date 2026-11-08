@@ -4,14 +4,17 @@ use super::{ImageLayer, TextLayer, text::TextBackgroundResources};
 use crate::{
     RenderVideoConstants, RenderingError,
     text::{PreparedText, parse_color},
-    title_cards::{TitleCardLayout, balanced_title_lines, stacked_bounds, title_card_layout},
+    title_cards::{
+        TitleCardLayout, balanced_title_lines, segment_title_card_layout, stacked_bounds,
+    },
 };
 
 pub(crate) struct TitleCardLayer {
     text: TextLayer,
     image: ImageLayer,
     background: TextBackgroundResources,
-    prepared: Option<(TextSegment, (u32, u32))>,
+    prepared: Option<(TextSegment, (u32, u32), bool)>,
+    text_box: Option<crate::TitleTextFrameBox>,
     accent: bool,
     visible: bool,
 }
@@ -23,6 +26,7 @@ impl TitleCardLayer {
             image: ImageLayer::new(device),
             background: TextBackgroundResources::new(device),
             prepared: None,
+            text_box: None,
             accent: false,
             visible: false,
         }
@@ -30,6 +34,10 @@ impl TitleCardLayer {
 
     pub(crate) fn hide(&mut self) {
         self.visible = false;
+    }
+
+    pub(crate) fn text_frame_box(&self) -> Option<crate::TitleTextFrameBox> {
+        self.visible.then_some(self.text_box).flatten()
     }
 
     pub(crate) fn visible(&self) -> bool {
@@ -41,6 +49,8 @@ impl TitleCardLayer {
         constants: &RenderVideoConstants,
         output: (u32, u32),
         segment: &TextSegment,
+        index: usize,
+        editing: bool,
     ) -> Result<(), RenderingError> {
         self.visible = false;
         let card = segment
@@ -57,8 +67,7 @@ impl TitleCardLayer {
         if !segment.font_size.is_finite() {
             return Err(RenderingError::TitleCard("Invalid title size".into()));
         }
-        let has_image = matches!(card.background, TitleCardBackground::ProjectImage { .. });
-        let layout = title_card_layout(output, card.template, has_image)
+        let layout = segment_title_card_layout(output, segment)
             .ok_or_else(|| RenderingError::TitleCard("Invalid output size".into()))?;
 
         if let TitleCardBackground::ProjectImage {
@@ -85,9 +94,22 @@ impl TitleCardLayer {
         if self
             .prepared
             .as_ref()
-            .is_none_or(|(previous, size)| previous != segment || *size != output)
+            .is_none_or(|(previous, size, was_editing)| {
+                previous != segment || *size != output || *was_editing != editing
+            })
         {
-            let texts = self.prepare_texts(segment, &layout)?;
+            let mut texts = self.prepare_texts(segment, &layout)?;
+            let title = &mut texts[usize::from(!card.kicker.trim().is_empty())];
+            self.text_box = Some(crate::TitleTextFrameBox {
+                segment_index: index,
+                bounds: title.bounds,
+                font_size: title.font_size,
+                line_height: title.line_height,
+                align: title.align,
+            });
+            if editing {
+                title.opacity = 0.0;
+            }
             self.text
                 .prepare_exact(&constants.device, &constants.queue, output, &texts);
             let color = match &card.background {
@@ -111,7 +133,10 @@ impl TitleCardLayer {
                 output,
                 &rectangles,
             );
-            self.prepared = Some((segment.clone(), output));
+            self.prepared = Some((segment.clone(), output, editing));
+        }
+        if let Some(text_box) = &mut self.text_box {
+            text_box.segment_index = index;
         }
         self.visible = true;
         Ok(())
@@ -171,6 +196,15 @@ impl TitleCardLayer {
             1.16
         };
         title.letter_spacing = segment.letter_spacing.clamp(-8.0, 24.0) * layout.scale;
+        title.shadow = segment.shadow.clamp(0.0, 1.0);
+        title.glow = segment.glow.clamp(0.0, 1.0);
+        title.opacity = segment.opacity.clamp(0.0, 1.0);
+        title.stroke = (segment.stroke_width > 0.0).then(|| {
+            (
+                segment.stroke_width.clamp(0.0, 12.0) * layout.scale,
+                parse_color(&segment.stroke_color),
+            )
+        });
         blocks.push(self.fit_text(
             title,
             available - kicker_limit - subtitle_limit,

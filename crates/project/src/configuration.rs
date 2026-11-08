@@ -579,6 +579,10 @@ pub struct Camera {
     #[serde(alias = "advanced_shadow")]
     pub advanced_shadow: Option<ShadowConfiguration>,
     pub shape: CameraShape,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aspect_ratio: Option<XY<u32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crop_position: Option<XY<f64>>,
     #[serde(alias = "rounding_type")]
     pub rounding_type: CornerStyle,
     #[serde(default = "Camera::default_scale_during_zoom")]
@@ -598,6 +602,35 @@ pub enum CameraShape {
 }
 
 impl Camera {
+    pub fn framing_aspect_ratio(&self, source: [f32; 2]) -> f32 {
+        self.aspect_ratio
+            .filter(|ratio| ratio.x > 0 && ratio.y > 0)
+            .map(|ratio| ratio.x as f32 / ratio.y as f32)
+            .filter(|ratio| ratio.is_finite() && (0.25..=4.0).contains(ratio))
+            .unwrap_or(match self.shape {
+                CameraShape::Square => 1.0,
+                CameraShape::Source => source[0].max(1.0) / source[1].max(1.0),
+            })
+    }
+
+    pub fn framing_crop_bounds(&self, source: [f32; 2]) -> [f32; 4] {
+        let width = source[0].max(1.0);
+        let height = source[1].max(1.0);
+        let aspect = self.framing_aspect_ratio(source);
+        let crop_width = width.min(height * aspect);
+        let crop_height = height.min(width / aspect);
+        let position = self.crop_position.unwrap_or(XY::new(0.5, 0.5));
+        let normalized = |value: f64| {
+            if value.is_finite() {
+                value.clamp(0.0, 1.0) as f32
+            } else {
+                0.5
+            }
+        };
+        let left = (width - crop_width) * normalized(position.x);
+        let top = (height - crop_height) * normalized(position.y);
+        [left, top, left + crop_width, top + crop_height]
+    }
     pub fn skin_smoothing_is_active(&self) -> bool {
         self.skin_smoothing > 0.005
     }
@@ -632,6 +665,8 @@ impl Default for Camera {
                 blur: 10.5,
             }),
             shape: CameraShape::Square,
+            aspect_ratio: None,
+            crop_position: None,
             rounding_type: CornerStyle::default(),
             scale_during_zoom: Self::default_scale_during_zoom(),
             background_blur: BackgroundBlurConfig::default(),
@@ -3262,6 +3297,8 @@ pub struct ProjectConfiguration {
     pub annotations: Vec<Annotation>,
     #[serde(skip_serializing)]
     pub hidden_text_segments: Vec<usize>,
+    #[serde(skip)]
+    pub editing_text_segment: Option<usize>,
     #[serde(default = "ProjectConfiguration::default_screen_motion_blur")]
     pub screen_motion_blur: f32,
     #[serde(default)]
@@ -3341,6 +3378,7 @@ impl Default for ProjectConfiguration {
             clips: Default::default(),
             annotations: Default::default(),
             hidden_text_segments: Default::default(),
+            editing_text_segment: None,
             screen_motion_blur: Self::default_screen_motion_blur(),
             screen_movement_spring: Default::default(),
             color_correction: ColorCorrectionConfiguration {
@@ -4070,6 +4108,64 @@ mod tests {
                 serde_json::from_slice(&serde_json::to_vec(&audio).unwrap()).unwrap();
             assert_eq!(audio, restored);
         }
+    }
+
+    #[test]
+    fn camera_framing_preserves_legacy_and_round_trips_custom_crop() {
+        let square: Camera = serde_json::from_str(r#"{"shape":"square"}"#).unwrap();
+        let source: Camera = serde_json::from_str(r#"{"shape":"source"}"#).unwrap();
+        assert_eq!(
+            square.framing_crop_bounds([1920., 1080.]),
+            [420., 0., 1500., 1080.]
+        );
+        assert_eq!(
+            source.framing_crop_bounds([1920., 1080.]),
+            [0., 0., 1920., 1080.]
+        );
+        for dimensions in [[1920., 1080.], [1552., 1552.], [720., 1280.]] {
+            for ratio in [
+                XY::new(16, 9),
+                XY::new(4, 3),
+                XY::new(1, 1),
+                XY::new(3, 4),
+                XY::new(9, 16),
+                XY::new(4, 5),
+            ] {
+                for position in [XY::new(0., 0.), XY::new(0.5, 0.5), XY::new(1., 1.)] {
+                    let camera = Camera {
+                        aspect_ratio: Some(ratio),
+                        crop_position: Some(position),
+                        ..source.clone()
+                    };
+                    let [left, top, right, bottom] = camera.framing_crop_bounds(dimensions);
+                    assert!(
+                        left >= 0.
+                            && top >= 0.
+                            && right <= dimensions[0] + 0.001
+                            && bottom <= dimensions[1] + 0.001
+                    );
+                    assert!(
+                        ((right - left) / (bottom - top) - ratio.x as f32 / ratio.y as f32).abs()
+                            < 0.001
+                    );
+                    let restored: Camera =
+                        serde_json::from_value(serde_json::to_value(&camera).unwrap()).unwrap();
+                    assert_eq!(
+                        restored.framing_crop_bounds(dimensions),
+                        camera.framing_crop_bounds(dimensions)
+                    );
+                }
+            }
+        }
+        let invalid = Camera {
+            aspect_ratio: Some(XY::new(1, 0)),
+            crop_position: Some(XY::new(f64::NAN, -2.)),
+            ..square
+        };
+        assert_eq!(
+            invalid.framing_crop_bounds([1920., 1080.]),
+            [420., 0., 1500., 1080.]
+        );
     }
 
     #[test]

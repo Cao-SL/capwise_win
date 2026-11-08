@@ -6,10 +6,10 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, AppContext as _, Bounds, Context, CursorStyle, Entity, FontWeight, Hsla,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, RenderImage, StatefulInteractiveElement as _, Styled,
-    StyledImage as _, Window, div, img, point, prelude::FluentBuilder, px, size, svg,
+    AnyElement, AppContext as _, Bounds, Context, CursorStyle, Entity, Hsla, InteractiveElement,
+    IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderImage,
+    StatefulInteractiveElement as _, Styled, StyledImage as _, Window, div, img, point,
+    prelude::FluentBuilder, px, size,
 };
 
 use crate::{
@@ -23,6 +23,41 @@ use crate::{
     },
     ui,
 };
+
+mod library;
+mod stickers;
+pub(crate) use stickers::StickerPicker;
+
+/// One-click searches for the Online tab, label and the English query sent.
+const STOCK_PHOTO_PRESETS: &[(&str, &str)] = &[
+    ("办公桌", "desk workspace"),
+    ("科技", "technology"),
+    ("城市", "city skyline"),
+    ("自然", "nature landscape"),
+    ("抽象背景", "abstract background"),
+    ("渐变", "gradient"),
+    ("纹理", "texture"),
+    ("团队", "team meeting"),
+    ("咖啡", "coffee"),
+    ("书本", "books"),
+    ("天空", "sky"),
+    ("极简", "minimal"),
+];
+
+const STOCK_VIDEO_PRESETS: &[(&str, &str)] = &[
+    ("城市延时", "city timelapse"),
+    ("键盘打字", "typing keyboard"),
+    ("科技", "technology"),
+    ("数据", "data"),
+    ("粒子背景", "particles background"),
+    ("云", "clouds"),
+    ("海浪", "ocean waves"),
+    ("办公室", "office"),
+    ("人群", "people walking"),
+    ("星空", "night sky stars"),
+    ("光斑", "bokeh"),
+    ("抽象", "abstract"),
+];
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum AssetSource {
@@ -255,6 +290,7 @@ pub(crate) struct AssetLibraryState {
     invalid_record_metadata: bool,
     pending_restore: Option<AssetBrowserSnapshot>,
     drag: Option<AssetDrag>,
+    library: library::LibraryUi,
 }
 
 impl Default for AssetLibraryState {
@@ -292,6 +328,7 @@ impl Default for AssetLibraryState {
             invalid_record_metadata: false,
             pending_restore: None,
             drag: None,
+            library: Default::default(),
         }
     }
 }
@@ -965,12 +1002,14 @@ impl EditorWindow {
                     async move { asset_library::collect_project_records(&project, &configuration) },
                 )
                 .await;
-            this.update(cx, |this, cx| {
+            this.update_in(cx, |this, window, cx| {
                 if this.assets.records_generation != generation {
                     return;
                 }
                 this.assets.invalid_record_metadata = records.invalid_metadata;
                 this.assets.records = records.records;
+                // Which of these are already kept depends on the records.
+                this.refresh_library(window, cx);
                 cx.notify();
             })
             .ok();
@@ -1019,250 +1058,10 @@ impl EditorWindow {
 
     pub(crate) fn render_asset_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if self.assets.source == AssetSource::Local {
-            self.render_local_assets(cx)
+            self.render_library(cx)
         } else {
             self.render_online_assets(cx)
         }
-    }
-
-    fn render_local_assets(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme;
-        let mut header =
-            div()
-                .flex_shrink_0()
-                .flex()
-                .flex_col()
-                .gap(px(12.))
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(Hsla::from(theme.editor.text_2))
-                        .child(tr::editor::assets::local_hint()),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .min_w_0()
-                        .gap(px(6.))
-                        .child(
-                            div().flex_1().min_w_0().whitespace_nowrap().child(
-                                ui::Button::plain(
-                                    &theme,
-                                    "asset-image",
-                                    ui::ButtonVariant::Gray,
-                                    ui::ButtonSize::Sm,
-                                )
-                                .label(tr::editor::assets::import_image())
-                                .icon("icons/image.svg")
-                                .full_width()
-                                .disabled(self.asset_import_busy())
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.pick_asset_image(window, cx),
-                                )),
-                            ),
-                        )
-                        .child(
-                            div().flex_1().min_w_0().whitespace_nowrap().child(
-                                ui::Button::plain(
-                                    &theme,
-                                    "asset-video",
-                                    ui::ButtonVariant::Gray,
-                                    ui::ButtonSize::Sm,
-                                )
-                                .label(tr::editor::assets::import_video())
-                                .icon("icons/video.svg")
-                                .full_width()
-                                .disabled(self.asset_import_busy())
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.pick_mp4_asset(window, cx),
-                                )),
-                            ),
-                        )
-                        .child(
-                            div().flex_1().min_w_0().whitespace_nowrap().child(
-                                ui::Button::plain(
-                                    &theme,
-                                    "asset-audio",
-                                    ui::ButtonVariant::Gray,
-                                    ui::ButtonSize::Sm,
-                                )
-                                .label(tr::editor::assets::import_audio())
-                                .icon("icons/music.svg")
-                                .full_width()
-                                .disabled(self.asset_import_busy())
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.open_audio_picker(0, window, cx),
-                                )),
-                            ),
-                        ),
-                );
-        header = header.child(
-            div()
-                .text_size(px(12.))
-                .font_weight(FontWeight::MEDIUM)
-                .child(tr::editor::assets::reusable()),
-        );
-        if self.assets.invalid_record_metadata {
-            header = header.child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::assets::metadata_error()),
-            );
-        }
-        let mut list = div()
-            .id("local-assets")
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .min_w_0()
-            .overflow_y_scroll()
-            .gap(px(12.));
-        if self.assets.records.is_empty() {
-            list = list.child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::assets::local_empty()),
-            );
-        }
-        for (index, record) in self.assets.records.iter().enumerate() {
-            let drag_record = record.clone();
-            let row = div()
-                .flex()
-                .gap(px(8.))
-                .items_center()
-                .p(px(8.))
-                .rounded(px(8.))
-                .bg(Hsla::from(theme.editor.ctl))
-                .child(
-                    svg()
-                        .path(match record.kind {
-                            AssetKind::Photo => "icons/image.svg",
-                            AssetKind::Video => "icons/video.svg",
-                            AssetKind::Audio => "icons/music.svg",
-                        })
-                        .size(px(16.))
-                        .flex_shrink_0()
-                        .text_color(Hsla::from(theme.editor.text_2)),
-                )
-                .child(
-                    div()
-                        .id(("asset-drag-source", index))
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(px(12.))
-                        .when(
-                            asset_track(record.kind).is_some() && !self.asset_import_busy(),
-                            |name| {
-                                name.cursor(CursorStyle::OpenHand).on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                        this.start_asset_drag(
-                                            drag_record.clone(),
-                                            event.position,
-                                            window,
-                                            cx,
-                                        );
-                                        cx.stop_propagation();
-                                    }),
-                                )
-                            },
-                        )
-                        .child(record.name.clone())
-                        .child(
-                            div()
-                                .text_size(px(11.))
-                                .text_color(Hsla::from(theme.editor.text_2))
-                                .child(record.source.as_ref().map_or_else(
-                                    || tr::editor::assets::local_file().to_string(),
-                                    |source| {
-                                        format!(
-                                            "{} · {}",
-                                            provider_name(source.provider),
-                                            source.attribution.author
-                                        )
-                                    },
-                                )),
-                        ),
-                )
-                .child(
-                    ui::Button::plain(
-                        &theme,
-                        ("reuse-asset", index),
-                        ui::ButtonVariant::Gray,
-                        ui::ButtonSize::Sm,
-                    )
-                    .label(if record.kind == AssetKind::Video {
-                        tr::editor::assets::append_video()
-                    } else {
-                        tr::editor::assets::reuse()
-                    })
-                    .disabled(self.asset_import_busy())
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.reuse_asset(index, window, cx)),
-                    ),
-                );
-            list = list.child(row);
-            if let Some(source) = &record.source {
-                let author = source.attribution.author_url.clone();
-                let origin = source.attribution.source_url.clone();
-                list = list.child(
-                    div()
-                        .flex()
-                        .gap(px(8.))
-                        .child(
-                            ui::Button::plain(
-                                &theme,
-                                ("asset-author-link", index),
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(tr::editor::assets::author_profile())
-                            .on_click(move |_, _, cx| cx.open_url(&author)),
-                        )
-                        .child(
-                            ui::Button::plain(
-                                &theme,
-                                ("asset-source-link", index),
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(tr::editor::assets::source_page())
-                            .on_click(move |_, _, cx| cx.open_url(&origin)),
-                        ),
-                );
-            }
-        }
-        if !self.assets.records.is_empty() {
-            list = list.child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::assets::drag_hint()),
-            );
-        }
-        let status = self.asset_status(cx);
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .min_w_0()
-            .p(px(12.))
-            .gap(px(12.))
-            .child(header)
-            .children((!status.is_empty()).then(|| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_shrink_0()
-                    .gap(px(8.))
-                    .children(status)
-            }))
-            .child(list)
-            .into_any_element()
     }
 
     fn render_online_assets(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1280,62 +1079,51 @@ impl EditorWindow {
             .gap(px(10.))
             .px(px(12.))
             .pb(px(12.));
+        // Pictures come from Unsplash, footage from Pixabay: people pick what
+        // they want, not which service has it.
+        let kinds = [
+            (MediaKind::Photo, tr::editor::assets::stock_photos()),
+            (MediaKind::Video, tr::editor::assets::stock_videos()),
+        ];
         body = body.child(
             div()
                 .flex()
-                .min_w_0()
-                .gap(px(4.))
-                .children(
-                    [
-                        (Provider::Unsplash, "Unsplash"),
-                        (Provider::Pixabay, "Pixabay"),
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, (provider, name))| {
-                        div().flex_1().min_w_0().whitespace_nowrap().child(
-                            ui::Button::plain(
-                                &theme,
-                                ("stock-provider", index),
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(name)
-                            .full_width()
-                            .when(self.assets.provider == provider, |button| {
-                                button.icon("icons/check.svg")
-                            })
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    this.assets.cancel_search();
-                                    this.assets.provider = provider;
-                                    if provider == Provider::Unsplash {
-                                        this.assets.kind = MediaKind::Photo;
-                                    }
-                                    this.clear_asset_results();
-                                    cx.notify();
-                                },
-                            )),
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div().flex_1().min_w_0().child(
+                        ui::SegmentedControl::editor(
+                            &theme,
+                            "stock-kind",
+                            kinds
+                                .iter()
+                                .map(|(kind, label)| {
+                                    ui::SegmentOption::new(*label, self.assets.kind == *kind)
+                                })
+                                .collect(),
                         )
-                    }),
+                        .stretch()
+                        .item_height(px(28.))
+                        .on_select(cx.listener(move |this, index: &usize, window, cx| {
+                            let Some((kind, _)) = kinds.get(*index) else {
+                                return;
+                            };
+                            this.set_stock_kind(*kind, window, cx);
+                        })),
+                    ),
                 )
                 .child(
-                    div().flex_1().min_w_0().whitespace_nowrap().child(
-                        ui::Button::plain(
-                            &theme,
-                            "stock-settings",
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(tr::editor::assets::settings())
-                        .full_width()
+                    ui::EditorButton::plain(&theme, "stock-settings")
+                        .left_icon("icons/settings.svg")
+                        .icon_size(px(14.))
+                        .height(px(32.))
+                        .tooltip(&theme, tr::editor::assets::settings())
                         .on_click(|_, _, cx| {
                             crate::app_windows::open_settings(
                                 crate::settings_window::Page::Assets,
                                 cx,
                             )
                         }),
-                    ),
                 ),
         );
         if configured == Some(false) {
@@ -1361,40 +1149,6 @@ impl EditorWindow {
                 .children(self.asset_status(cx))
                 .into_any_element();
         }
-        body = body.child(
-            div().flex().min_w_0().gap(px(6.)).children(
-                [
-                    (MediaKind::Photo, tr::editor::assets::image()),
-                    (MediaKind::Video, tr::editor::assets::video()),
-                ]
-                .into_iter()
-                .enumerate()
-                .map(|(index, (kind, label))| {
-                    div().flex_1().min_w_0().whitespace_nowrap().child(
-                        ui::Button::plain(
-                            &theme,
-                            ("stock-kind", index),
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(label)
-                        .full_width()
-                        .disabled(
-                            kind == MediaKind::Video && self.assets.provider == Provider::Unsplash,
-                        )
-                        .when(self.assets.kind == kind, |button| {
-                            button.icon("icons/check.svg")
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.assets.cancel_search();
-                            this.assets.kind = kind;
-                            this.clear_asset_results();
-                            cx.notify();
-                        })),
-                    )
-                }),
-            ),
-        );
         if let Some(input) = &self.assets.input {
             body = body.child(
                 div()
@@ -1426,6 +1180,43 @@ impl EditorWindow {
                     ),
             );
         }
+        // Words people reach for when cutting a talk or a tutorial: one
+        // click searches in English, which both services answer best.
+        let presets: &[(&'static str, &'static str)] = if self.assets.kind == MediaKind::Video {
+            STOCK_VIDEO_PRESETS
+        } else {
+            STOCK_PHOTO_PRESETS
+        };
+        body = body.child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .children(presets.iter().enumerate().map(|(index, (label, query))| {
+                    let query = *query;
+                    // Chinese words for a Chinese interface; elsewhere the
+                    // query itself reads fine.
+                    let label = if crate::i18n::current() == crate::i18n::Locale::ZhCn {
+                        *label
+                    } else {
+                        query
+                    };
+                    ui::EditorButton::plain(&theme, ("stock-preset", index))
+                        .outlined(&theme)
+                        .label(label)
+                        .text_size(px(12.))
+                        .height(px(26.))
+                        .radius(px(13.))
+                        .padding_x(px(10.))
+                        .disabled(self.assets.searching || waiting)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            if let Some(input) = &this.assets.input {
+                                input.update(cx, |input, cx| input.set_text(query, cx));
+                            }
+                            this.search_assets(1, true, window, cx);
+                        }))
+                })),
+        );
         let mut results = div()
             .id("stock-results")
             .flex_1()
@@ -1799,6 +1590,37 @@ impl EditorWindow {
             );
         }
         elements
+    }
+
+    /// Pictures from Unsplash, footage from Pixabay; Pixabay also covers
+    /// pictures when only it is set up.
+    fn set_stock_kind(&mut self, kind: MediaKind, window: &mut Window, cx: &mut Context<Self>) {
+        if self.assets.kind == kind {
+            return;
+        }
+        self.assets.cancel_search();
+        self.assets.kind = kind;
+        self.assets.provider = match kind {
+            MediaKind::Video => Provider::Pixabay,
+            MediaKind::Photo
+                if cached_credentials(Provider::Unsplash) == Some(false)
+                    && cached_credentials(Provider::Pixabay) == Some(true) =>
+            {
+                Provider::Pixabay
+            }
+            MediaKind::Photo => Provider::Unsplash,
+        };
+        self.clear_asset_results();
+        // Keep the words; show the other kind for them.
+        let has_query = self
+            .assets
+            .input
+            .as_ref()
+            .is_some_and(|input| !input.read(cx).text().trim().is_empty());
+        if has_query {
+            self.search_assets(1, true, window, cx);
+        }
+        cx.notify();
     }
 
     fn clear_asset_results(&mut self) {

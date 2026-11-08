@@ -254,18 +254,28 @@ pub enum SidebarTab {
     Audio,
     Cursor,
     Captions,
+    Assistant,
 }
 
 impl SidebarTab {
-    pub const ALL: [SidebarTab; 4] = [Self::Captions, Self::Background, Self::Camera, Self::Audio];
+    pub const ALL: [SidebarTab; 5] = [
+        Self::Captions,
+        Self::Background,
+        Self::Camera,
+        Self::Audio,
+        Self::Assistant,
+    ];
 
     pub fn icon(self) -> &'static str {
         match self {
-            Self::Background => "icons/image.svg",
+            // Background, padding, corners and the cursor: the look of the
+            // frame, not an image.
+            Self::Background => "icons/app-window.svg",
             Self::Camera => "icons/camera.svg",
             Self::Audio => "icons/audio-on.svg",
             Self::Cursor => "icons/cursor.svg",
             Self::Captions => "icons/captions.svg",
+            Self::Assistant => "icons/sparkles.svg",
         }
     }
 
@@ -276,6 +286,7 @@ impl SidebarTab {
             Self::Audio => tr::editor::sidebar::tab::audio(),
             Self::Cursor => tr::editor::sidebar::tab::cursor(),
             Self::Captions => tr::editor::sidebar::tab::captions(),
+            Self::Assistant => tr::editor::assistant::title(),
         }
     }
 
@@ -289,6 +300,7 @@ impl SidebarTab {
             Self::Audio => "Audio",
             Self::Cursor => "Cursor",
             Self::Captions => "Captions",
+            Self::Assistant => "Assistant",
         }
     }
 }
@@ -862,6 +874,7 @@ pub struct SidebarState {
     /// Which edge the text panel's Animation tiles and Duration row point at:
     /// `false` is In, `true` is Out.
     pub text_anim_edge: bool,
+    pub(crate) text_panel_tab: crate::editor_panels::TextPanelTab,
     pub(crate) title_cards: crate::editor_title_cards::TitleCardUi,
     /// `editingEnd` on the 3D panel -- which of the two poses the camera
     /// sliders point at (`ConfigSidebar.tsx:4908`).
@@ -949,6 +962,7 @@ impl SidebarState {
             caption_more_styles: false,
             text_style_group: 0,
             text_anim_edge: false,
+            text_panel_tab: Default::default(),
             title_cards: Default::default(),
             editing_end_pose: false,
             more_open: Default::default(),
@@ -1089,6 +1103,13 @@ impl EditorWindow {
         }
         self.dismiss_sidebar_panels(cx);
         self.sidebar.tab = tab;
+        if tab == SidebarTab::Assistant {
+            self.open_assistant(window, cx);
+            return;
+        }
+        self.assistant.open = false;
+        self.assistant.model_menu = false;
+        self.assistant.skill_menu = false;
         self.focus_root(window, cx);
         self.sidebar.scroll.set_offset(gpui::point(px(0.), px(0.)));
         cx.notify();
@@ -2768,7 +2789,8 @@ impl EditorWindow {
                 ui::TabRailItem::new(
                     tab.icon(),
                     tab.title(),
-                    selection.is_none() && !picking_audio && tab == selected_tab,
+                    (tab == SidebarTab::Assistant && self.assistant.open)
+                        || (selection.is_none() && !picking_audio && tab == selected_tab),
                     disabled,
                 )
                 .context(context)
@@ -2803,14 +2825,16 @@ impl EditorWindow {
                     .shadow(theme.editor.card_shadow())
                     .child(rail)
                     .children(
-                        (selected_tab == SidebarTab::Captions && selection.is_none()
-                            || selection
-                                .as_ref()
-                                .is_some_and(|s| s.track == TrackKind::Caption))
+                        (selected_tab != SidebarTab::Assistant
+                            && (selected_tab == SidebarTab::Captions && selection.is_none()
+                                || selection
+                                    .as_ref()
+                                    .is_some_and(|s| s.track == TrackKind::Caption)))
                         .then(|| self.render_caption_navigation(cx)),
                     )
                     .children(
-                        (self.audio_picker.is_none()
+                        (selected_tab != SidebarTab::Assistant
+                            && self.audio_picker.is_none()
                             && (selected_tab == SidebarTab::Audio && selection.is_none()
                                 || selection
                                     .as_ref()
@@ -2829,7 +2853,10 @@ impl EditorWindow {
                             .p(px(12.))
                             .child(tr::editor::sidebar::importing_image())
                     }))
-                    .child(if let Some((index, group)) = self.sidebar.style_target {
+                    .child(if selected_tab == SidebarTab::Assistant {
+                        self.render_assistant(cx)
+                            .unwrap_or_else(|| div().into_any_element())
+                    } else if let Some((index, group)) = self.sidebar.style_target {
                         self.render_style_group(index, group, cx)
                     } else if self.audio_picker.is_some() {
                         self.render_audio_library(cx)
@@ -2881,6 +2908,11 @@ impl EditorWindow {
             SidebarTab::Audio => self.render_audio_tab(cx),
             SidebarTab::Cursor => self.render_cursor_tab(cx),
             SidebarTab::Captions => self.render_captions_tab(cx),
+            SidebarTab::Assistant => {
+                return self
+                    .render_assistant(cx)
+                    .unwrap_or_else(|| div().into_any_element());
+            }
         };
 
         // Block, not a flex column: its one child lays out the same, without
@@ -4154,24 +4186,23 @@ impl EditorWindow {
         let toggle = div()
             .id(SharedString::from(format!("more-settings-{key}")))
             .group(group.clone())
+            // A quiet text disclosure, not a grey slab: the settings it hides
+            // are secondary, so the row should read that way.
             .flex()
             .flex_row()
             .items_center()
-            .justify_between()
-            .h(px(32.))
-            .px(px(10.))
-            .rounded(px(8.))
-            .bg(Hsla::from(theme.editor.ctl))
+            .gap(px(4.))
+            .self_start()
+            .h(px(26.))
             .cursor_pointer()
             .text_size(px(12.))
             .font_weight(FontWeight::MEDIUM)
             .text_color(rest)
-            .hover(move |this| {
-                this.bg(Hsla::from(theme.editor.ctl_hover))
-                    .text_color(hover)
-            })
+            .hover(move |this| this.text_color(hover))
             .child(if key == "captions" {
                 tr::editor::workbench::more_actions()
+            } else if key == "text-typography" {
+                tr::editor::panel::text_segment::more_typography()
             } else if key == "caption-segment" {
                 tr::editor::panel::timing::title()
             } else {
@@ -4209,9 +4240,9 @@ pub(crate) fn section_title(
     label: impl Into<SharedString>,
 ) -> AnyElement {
     div()
-        .text_size(px(12.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(Hsla::from(theme.editor.text_2))
+        .text_size(px(13.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(Hsla::from(theme.editor.text_1))
         .child(label.into())
         .into_any_element()
 }
@@ -4435,11 +4466,20 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if name.eq_ignore_ascii_case("clips") {
+        if name.eq_ignore_ascii_case("clips")
+            || name.eq_ignore_ascii_case("library")
+            || name.eq_ignore_ascii_case("online")
+        {
             if !self.clips.open {
                 self.toggle_clips(window, cx);
             }
-            self.assets.source = crate::editor_assets::AssetSource::Project;
+            self.assets.source = if name.eq_ignore_ascii_case("library") {
+                crate::editor_assets::AssetSource::Local
+            } else if name.eq_ignore_ascii_case("online") {
+                crate::editor_assets::AssetSource::Online
+            } else {
+                crate::editor_assets::AssetSource::Project
+            };
             static AUTO_IMPORTED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if let Ok(source) = std::env::var("CAP_GPUI_AUTO_IMPORT_MP4")
@@ -4449,6 +4489,29 @@ impl EditorWindow {
             }
             cx.notify();
             tracing::info!(tab = name, "auto sidebar tab");
+            window.refresh();
+            return;
+        }
+        // `assistant` / `assistant-models` open the assistant directly (the
+        // rail's indices shift when a tab is hidden), the latter with its
+        // model menu showing. `CAP_GPUI_AUTO_ASSISTANT_SEND=<request>` then
+        // sends a request the way the composer does.
+        if name.eq_ignore_ascii_case("assistant") || name.eq_ignore_ascii_case("assistant-models")
+        {
+            self.sidebar.tab = SidebarTab::Assistant;
+            if !self.assistant.open {
+                self.open_assistant(window, cx);
+            }
+            if name.eq_ignore_ascii_case("assistant-models") && !self.assistant.model_menu {
+                self.toggle_assistant_models(window, cx);
+            }
+            if let Ok(request) = std::env::var("CAP_GPUI_AUTO_ASSISTANT_SEND")
+                && !request.is_empty()
+            {
+                let task = crate::assistant_skills::QuickTask::for_label(&request);
+                self.send_assistant_request(request, task, window, cx);
+            }
+            cx.notify();
             window.refresh();
             return;
         }

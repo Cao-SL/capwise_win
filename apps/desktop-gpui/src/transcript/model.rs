@@ -38,8 +38,8 @@ impl Paragraph {
     pub fn word_at_byte(&self, byte: usize) -> usize {
         let local = self
             .spans
-            .partition_point(|span| span.end < byte)
-            .min(self.spans.len().saturating_sub(1));
+            .partition_point(|span| span.start <= byte)
+            .saturating_sub(1);
         self.words.start + local
     }
 
@@ -166,20 +166,32 @@ fn word_covers(span: &Range<f64>, start: f64) -> bool {
 /// Sets `hidden` on the caption words behind `spans`. Captions that still hide
 /// English fillers through their settings move to per-word flags first, so a
 /// single filler can come back without bringing the others.
-pub fn set_captions_hidden(captions: &mut CaptionsData, spans: &[Range<f64>], hidden: bool) -> bool {
+pub fn set_captions_hidden(
+    captions: &mut CaptionsData,
+    spans: &[Range<f64>],
+    hidden: bool,
+) -> bool {
     if captions.settings.hides_fillers() {
-        for word in captions.segments.iter_mut().flat_map(|segment| &mut segment.words) {
+        for word in captions
+            .segments
+            .iter_mut()
+            .flat_map(|segment| &mut segment.words)
+        {
             word.hidden |= is_hesitation_filler(&word.text);
         }
         captions.settings.show_filler_words = true;
     }
     let mut changed = false;
-    for word in captions.segments.iter_mut().flat_map(|segment| &mut segment.words) {
+    for word in captions
+        .segments
+        .iter_mut()
+        .flat_map(|segment| &mut segment.words)
+    {
         let start = f64::from(word.start);
         let punctuation = cap_project::disfluency::normalize_word(&word.text).is_empty();
-        let covered = spans.iter().any(|span| {
-            word_covers(span, start) || (punctuation && start == span.end)
-        });
+        let covered = spans
+            .iter()
+            .any(|span| word_covers(span, start) || (punctuation && start == span.end));
         if word.hidden != hidden && covered {
             word.hidden = hidden;
             changed = true;

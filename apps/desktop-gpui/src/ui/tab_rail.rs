@@ -92,9 +92,9 @@ impl TabRail {
             id: id.into(),
             items,
             height: px(46.),
-            box_size: px(30.),
-            box_width: px(40.),
-            icon_size: px(16.),
+            box_size: px(38.),
+            box_width: px(58.),
+            icon_size: px(15.),
             bg: panel_bg,
             border: Hsla::from(theme.editor.line),
             indicator: {
@@ -172,9 +172,20 @@ impl RenderOnce for TabRail {
                 let context = item.context && !selected;
                 let label = item.label.clone();
 
+                // Icon over a short name: five glyphs alone left people
+                // guessing which one held the cursor or the background.
+                let tint = if selected {
+                    selected_icon
+                } else if context {
+                    Hsla::from(theme.editor.text_1)
+                } else {
+                    idle_icon
+                };
                 div()
                     .id(SharedString::from(format!("{prefix}-{index}")))
                     .flex()
+                    .flex_col()
+                    .gap(px(2.))
                     .flex_none()
                     .items_center()
                     .justify_center()
@@ -189,17 +200,19 @@ impl RenderOnce for TabRail {
                     })
                     .tooltip_show_delay(crate::ui::TOOLTIP_SHOW_DELAY)
                     .tooltip(move |_, cx| crate::ui::Tooltip::new(&theme, label.clone()).view(cx))
+                    .child(svg().path(item.icon).size(icon_size).text_color(tint))
                     .child(
-                        svg()
-                            .path(item.icon)
-                            .size(icon_size)
-                            .text_color(if selected {
-                                selected_icon
-                            } else if context {
-                                Hsla::from(theme.editor.text_1)
+                        div()
+                            .text_size(px(10.))
+                            .line_height(px(12.))
+                            .font_weight(if selected {
+                                gpui::FontWeight::SEMIBOLD
                             } else {
-                                idle_icon
-                            }),
+                                gpui::FontWeight::MEDIUM
+                            })
+                            .text_color(tint)
+                            .whitespace_nowrap()
+                            .child(item.label.clone()),
                     )
                     .when_some(handler.filter(|_| !disabled), |this, handler| {
                         this.on_click(move |_, window, cx| handler(&index, window, cx))
