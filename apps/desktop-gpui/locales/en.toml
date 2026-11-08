@@ -1364,9 +1364,7 @@ stopped_saved = "Recording stopped because storage is low. Your recording was sa
 stopping = "Low storage. Stopping and saving your recording…"
 
 [dialog.teleprompter]
-cue_markers = { text = "Cue markers", context = "Toggle in a 192px popover." }
 hidden = "This window is hidden from Capwise recordings"
-mirror = { text = "Mirror text", context = "Toggle in a 192px popover." }
 paused = "Scrolling paused with recording"
 placeholder = "Paste or type your script…"
 words_per_minute = { text = "{wpm} wpm", context = "Teleprompter scroll speed in words per minute; {wpm} is a number such as 150." }
@@ -3518,14 +3516,20 @@ saved = "Saved"
 save_failed = "Could not save. Instructions must contain 1–12,000 characters."
 
 [dialog.teleprompter.assist]
+done = "Done"
+edit = "Edit"
+estimate = "About {time} · {words} words"
+keys_hint = "Then: Space to start · ↑↓ speed · click a line to read from it · double-click to edit"
+remaining = "{time} left"
+slower = "Slow"
+faster = "Fast"
+font_size = "Text size {size}"
+mode_scroll = "Steady scrolling"
+mode_scroll_note = "Scrolls at the speed you set. Trackpad moves the text; it carries on from there."
 save_failed = "Script not saved: the settings file could not be read or written. Keep this window open and retry."
 retry_save = "Retry save"
 draft_busy = "Generating. Editing is available when finished."
 write = "Write with AI"
-current = "Reading point"
-start = "Start"
-near_camera = "Near camera"
-narrow = "Narrow reading column"
 privacy = "Only the topic below is sent to your selected model. Your current script stays on this device. Edit the draft before using it."
 topic = "Topic, audience and duration, e.g. a one-minute recording tutorial"
 draft_hint = "Your generated draft appears here and can be edited"
@@ -3826,10 +3830,6 @@ save_failed = "Could not save the background. The generated image is retained; r
 [dialog.teleprompter.follow]
 title = "Voice follow"
 privacy = "Only microphone audio is sent to Doubao while voice follow is on; your script stays on this Mac. Charges follow your Doubao plan."
-start = "Start voice follow"
-resume = "Continue from here"
-stop = "Turn off"
-close = "Close"
 connecting = "Connecting to Doubao…"
 listening = "Following your voice"
 manual = "Paused for manual control. Audio is no longer sent."

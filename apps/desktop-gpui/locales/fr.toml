@@ -1362,9 +1362,7 @@ stopped_saved = "L'enregistrement s'est arrêté, car l'espace de stockage est f
 stopping = "Espace de stockage faible. Arrêt et sauvegarde de votre enregistrement…"
 
 [dialog.teleprompter]
-cue_markers = "Repères"
 hidden = "Cette fenêtre est masquée dans les enregistrements Capwise"
-mirror = "Texte en miroir"
 paused = "Défilement en pause avec l'enregistrement"
 placeholder = "Collez ou saisissez votre script…"
 words_per_minute = "{wpm} mots/min"
@@ -3269,10 +3267,6 @@ copy_name = "{name} · Copie {number}"
 
 [dialog.teleprompter.assist]
 write = "Écrire avec l'IA"
-current = "Point de lecture"
-start = "Revenir au début"
-near_camera = "Près de la caméra"
-narrow = "Colonne de lecture étroite"
 privacy = "Seul le sujet ci-dessous est envoyé au modèle sélectionné. Votre script actuel reste sur cet appareil. Modifiez le brouillon avant de l'utiliser."
 topic = "Sujet, public et durée, par exemple un tutoriel d'enregistrement d'une minute"
 draft_hint = "Le brouillon généré apparaîtra ici et pourra être modifié"
@@ -3818,10 +3812,6 @@ save_failed = "Impossible d’enregistrer le fond. L’image est conservée ; r�
 [dialog.teleprompter.follow]
 title = "Suivi vocal"
 privacy = "Seul le son du microphone est envoyé à Doubao lorsque le suivi est actif ; le script reste sur ce Mac. Votre tarif Doubao s’applique."
-start = "Activer le suivi vocal"
-resume = "Continuer ici"
-stop = "Désactiver"
-close = "Fermer"
 connecting = "Connexion à Doubao…"
 listening = "Suivi de votre voix"
 manual = "Pause pour le contrôle manuel. Le son n’est plus envoyé."

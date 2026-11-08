@@ -1362,9 +1362,7 @@ stopped_saved = "La grabación se detuvo porque queda poco espacio. Tu grabació
 stopping = "Queda poco espacio. Deteniendo y guardando tu grabación…"
 
 [dialog.teleprompter]
-cue_markers = "Marcadores"
 hidden = "Esta ventana no aparece en las grabaciones de Capwise"
-mirror = "Texto en espejo"
 paused = "Desplazamiento en pausa junto con la grabación"
 placeholder = "Pega o escribe tu guion…"
 words_per_minute = "{wpm} ppm"
@@ -3269,10 +3267,6 @@ copy_name = "{name} · Copia {number}"
 
 [dialog.teleprompter.assist]
 write = "Escribir con IA"
-current = "Punto de lectura"
-start = "Volver al inicio"
-near_camera = "Cerca de la cámara"
-narrow = "Columna de lectura estrecha"
 privacy = "Solo se envía el tema de abajo al modelo seleccionado. Tu guion actual permanece en este dispositivo. Edita el borrador antes de usarlo."
 topic = "Tema, público y duración, por ejemplo, un tutorial de grabación de un minuto"
 draft_hint = "El borrador generado aparecerá aquí y podrás editarlo"
@@ -3818,10 +3812,6 @@ save_failed = "No se pudo guardar el fondo. La imagen se conserva; reintenta apl
 [dialog.teleprompter.follow]
 title = "Seguimiento de voz"
 privacy = "Solo se envía el audio del micrófono a Doubao mientras el seguimiento está activo; el guion permanece en este Mac. Se aplica tu tarifa de Doubao."
-start = "Iniciar seguimiento"
-resume = "Continuar desde aquí"
-stop = "Desactivar"
-close = "Cerrar"
 connecting = "Conectando con Doubao…"
 listening = "Siguiendo tu voz"
 manual = "Pausado para control manual. Ya no se envía audio."

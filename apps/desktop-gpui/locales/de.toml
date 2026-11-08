@@ -1362,9 +1362,7 @@ stopped_saved = "Die Aufnahme wurde beendet, weil der Speicherplatz knapp ist. I
 stopping = "Wenig Speicherplatz. Ihre Aufnahme wird beendet und gespeichert…"
 
 [dialog.teleprompter]
-cue_markers = "Cue-Marker"
 hidden = "Dieses Fenster ist in Capwise-Aufnahmen ausgeblendet"
-mirror = "Text spiegeln"
 paused = "Scrollen zusammen mit der Aufnahme pausiert"
 placeholder = "Skript einfügen oder eingeben…"
 words_per_minute = "{wpm} Wörter/Min."
@@ -3269,10 +3267,6 @@ copy_name = "{name} · Kopie {number}"
 
 [dialog.teleprompter.assist]
 write = "Mit KI schreiben"
-current = "Leseposition"
-start = "Zum Anfang"
-near_camera = "Nahe der Kamera"
-narrow = "Schmale Lesespalte"
 privacy = "Nur das unten eingegebene Thema wird an dein gewähltes Modell gesendet. Dein aktuelles Skript bleibt auf diesem Gerät. Bearbeite den Entwurf vor der Verwendung."
 topic = "Thema, Zielgruppe und Dauer, z. B. ein einminütiges Aufnahme-Tutorial"
 draft_hint = "Der erzeugte Entwurf erscheint hier und lässt sich bearbeiten"
@@ -3818,10 +3812,6 @@ save_failed = "Hintergrund nicht gespeichert. Das erzeugte Bild bleibt erhalten;
 [dialog.teleprompter.follow]
 title = "Sprachgeführtes Lesen"
 privacy = "Bei aktivierter Sprachführung wird nur Mikrofonton an Doubao gesendet; das Skript bleibt auf diesem Mac. Es gilt Ihr Doubao-Tarif."
-start = "Sprachführung starten"
-resume = "Hier fortsetzen"
-stop = "Ausschalten"
-close = "Schließen"
 connecting = "Verbindung mit Doubao…"
 listening = "Folgt Ihrer Stimme"
 manual = "Für manuelle Steuerung pausiert. Es wird kein Ton mehr gesendet."

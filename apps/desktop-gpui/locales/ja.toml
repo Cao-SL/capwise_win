@@ -1362,9 +1362,7 @@ stopped_saved = "ストレージが不足しているため録画を停止しま
 stopping = "ストレージが不足しています。録画を停止して保存しています…"
 
 [dialog.teleprompter]
-cue_markers = "キューマーカー"
 hidden = "このウィンドウはCapwiseの録画に映りません"
-mirror = "テキストを反転"
 paused = "録画に合わせてスクロールを一時停止中"
 placeholder = "台本を貼り付けるか入力してください…"
 words_per_minute = "{wpm}語/分"
@@ -3269,10 +3267,6 @@ copy_name = "{name} · コピー {number}"
 
 [dialog.teleprompter.assist]
 write = "AIで原稿を作成"
-current = "読み上げ位置"
-start = "先頭に戻る"
-near_camera = "カメラの近く"
-narrow = "読み上げ欄を狭くする"
 privacy = "選択したモデルには下のテーマだけを送信します。現在の原稿はこのデバイスに残ります。生成した下書きは、使用する前に編集してください。"
 topic = "テーマ、対象者、長さ（例：1分間の録画チュートリアル）"
 draft_hint = "生成した下書きがここに表示され、編集できます"
@@ -3818,10 +3812,6 @@ save_failed = "背景を保存できませんでした。生成画像は保持�
 [dialog.teleprompter.follow]
 title = "音声追従"
 privacy = "音声追従中はマイク音声だけをDoubaoへ送信します。原稿はこのMacに残ります。Doubaoの契約に応じた料金がかかります。"
-start = "音声追従を開始"
-resume = "ここから続ける"
-stop = "オフにする"
-close = "閉じる"
 connecting = "Doubaoに接続中…"
 listening = "音声に追従中"
 manual = "手動操作のため一時停止しました。音声の送信は停止しています。"

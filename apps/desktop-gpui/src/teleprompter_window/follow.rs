@@ -73,7 +73,6 @@ impl FollowPhase {
 
 #[derive(Default)]
 pub(super) struct FollowState {
-    panel_open: bool,
     phase: FollowPhase,
     generation: u64,
     cancel: Option<oneshot::Sender<()>>,
@@ -215,7 +214,7 @@ fn upload_allowed(ready_at: Option<Instant>, captured_at: Instant, epoch_current
     epoch_current && ready_at.is_some_and(|ready| captured_at >= ready)
 }
 
-fn reading_scroll_position(
+pub(super) fn reading_scroll_position(
     offset: f32,
     text_top: f32,
     row: Range<f32>,
@@ -342,17 +341,20 @@ impl TeleprompterWindow {
         }
     }
 
-    fn reading_offset(&self, cx: &Context<Self>) -> Option<usize> {
+    pub(super) fn follow_active(&self) -> bool {
+        self.follow.phase.active()
+    }
+
+    pub(super) fn reading_offset(&self, cx: &Context<Self>) -> Option<usize> {
         let body = self.follow.body_bounds.get()?;
         let text = self.follow.text_bounds.get()?;
         let y = body.origin.y + body.size.height / 2. - text.origin.y;
         self.script_input.read(cx).byte_offset_for_visual_y(y)
     }
 
-    fn start_follow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn start_follow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.stop_follow();
         self.stop_playback();
-        self.follow.panel_open = true;
         let endpoint = ai_store::endpoint(Kind::Asr, "doubao");
         if !official_speech_endpoint(
             endpoint
@@ -490,114 +492,55 @@ impl TeleprompterWindow {
         cx.notify();
     }
 
-    pub(super) fn render_follow_controls(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> Option<gpui::AnyElement> {
-        if !self.follow.panel_open || self.ai_open {
+    /// Voice follow's state over the reading bar, with the one fix a failure
+    /// needs (settings, or choosing a microphone). Nothing while off.
+    pub(super) fn render_follow_status(&self, _cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let phase = self.follow.phase;
+        if phase == FollowPhase::Off {
             return None;
         }
-        let phase = self.follow.phase;
+        let fix = match phase {
+            FollowPhase::Failed(Failure::MissingKey | Failure::Endpoint | Failure::Permission) => {
+                Some(self.button("prompter-follow-settings", copy::settings()).on_click(
+                    |_, _, cx| {
+                        crate::app_windows::open_settings(
+                            crate::settings_window::Page::Transcription,
+                            cx,
+                        )
+                    },
+                ))
+            }
+            FollowPhase::Failed(Failure::Microphone) => Some(
+                self.button("prompter-follow-microphone", copy::choose_microphone())
+                    .on_click(|_, _, cx| crate::app_windows::show_main_window(cx)),
+            ),
+            _ => None,
+        };
         Some(
             div()
                 .flex()
-                .flex_col()
-                .flex_shrink_0()
-                .px(px(12.))
-                .pb(px(6.))
-                .gap(px(4.))
+                .flex_row()
+                .items_center()
+                .gap(px(8.))
+                .max_w(px(420.))
+                .px(px(10.))
+                .py(px(4.))
+                .rounded(px(12.))
+                .bg(Hsla::from(self.theme.gray_2))
                 .child(
                     div()
+                        .min_w_0()
                         .text_size(px(11.))
-                        .text_color(Hsla::from(self.theme.gray_10))
+                        .text_color(Hsla::from(if matches!(phase, FollowPhase::Failed(_)) {
+                            self.theme.red_10
+                        } else {
+                            self.theme.gray_10
+                        }))
                         .child(phase.label()),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap(px(6.))
-                        .when(!phase.active(), |row| {
-                            row.child(
-                                self.button(
-                                    "prompter-follow-start",
-                                    if phase == FollowPhase::Off {
-                                        copy::start()
-                                    } else {
-                                        copy::resume()
-                                    },
-                                )
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.start_follow(window, cx)
-                                    }),
-                                ),
-                            )
-                        })
-                        .when(phase != FollowPhase::Off, |row| {
-                            row.child(self.button("prompter-follow-stop", copy::stop()).on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    this.stop_follow();
-                                    cx.notify();
-                                }),
-                            ))
-                        })
-                        .when(
-                            matches!(
-                                phase,
-                                FollowPhase::Failed(
-                                    Failure::MissingKey | Failure::Endpoint | Failure::Permission
-                                )
-                            ),
-                            |row| {
-                                row.child(
-                                    self.button("prompter-follow-settings", copy::settings())
-                                        .on_click(|_, _, cx| {
-                                            crate::app_windows::open_settings(
-                                                crate::settings_window::Page::Transcription,
-                                                cx,
-                                            )
-                                        }),
-                                )
-                            },
-                        )
-                        .when(phase == FollowPhase::Failed(Failure::Microphone), |row| {
-                            row.child(
-                                self.button(
-                                    "prompter-follow-microphone",
-                                    copy::choose_microphone(),
-                                )
-                                .on_click(|_, _, cx| crate::app_windows::show_main_window(cx)),
-                            )
-                        })
-                        .child(
-                            self.button("prompter-follow-close", copy::close())
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.stop_follow();
-                                    this.follow.panel_open = false;
-                                    cx.notify();
-                                })),
-                        ),
-                )
+                .children(fix)
                 .into_any_element(),
         )
-    }
-
-    pub(super) fn follow_button(&self, cx: &mut Context<Self>) -> ui::Button {
-        self.button("prompter-follow", copy::title())
-            .on_click(cx.listener(|this, _, window, cx| {
-                if this.follow.panel_open {
-                    this.stop_follow();
-                }
-                this.follow.panel_open = !this.follow.panel_open;
-                if this.follow.panel_open {
-                    window.resize(gpui::size(
-                        window.bounds().size.width,
-                        window.bounds().size.height.max(px(360.)),
-                    ));
-                }
-                cx.notify();
-            }))
     }
 }
 

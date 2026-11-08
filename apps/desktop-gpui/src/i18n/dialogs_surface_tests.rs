@@ -292,12 +292,10 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
             tr::dialog::storage::stopping(),
             "Low storage. Stopping and saving your recording…",
         ),
-        (tr::dialog::teleprompter::cue_markers(), "Cue markers"),
         (
             tr::dialog::teleprompter::hidden(),
             "This window is hidden from Capwise recordings",
         ),
-        (tr::dialog::teleprompter::mirror(), "Mirror text"),
         (
             tr::dialog::teleprompter::paused(),
             "Scrolling paused with recording",
