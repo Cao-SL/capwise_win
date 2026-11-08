@@ -291,6 +291,8 @@ pub(crate) struct AssetLibraryState {
     pending_restore: Option<AssetBrowserSnapshot>,
     drag: Option<AssetDrag>,
     library: library::LibraryUi,
+    /// The animation a sticker on its way in should land with.
+    pending_motion: Option<(cap_project::ImageMotion, cap_project::ImageEmphasis, cap_project::ImageMotion)>,
 }
 
 impl Default for AssetLibraryState {
@@ -329,6 +331,7 @@ impl Default for AssetLibraryState {
             pending_restore: None,
             drag: None,
             library: Default::default(),
+            pending_motion: None,
         }
     }
 }
@@ -886,6 +889,13 @@ impl EditorWindow {
             );
         }
         Some(layer.into_any_element())
+    }
+
+    /// The motion a sticker import asked for, once.
+    pub(crate) fn take_pending_motion(
+        &mut self,
+    ) -> Option<(cap_project::ImageMotion, cap_project::ImageEmphasis, cap_project::ImageMotion)> {
+        self.assets.pending_motion.take()
     }
 
     pub(crate) fn asset_import_busy(&self) -> bool {

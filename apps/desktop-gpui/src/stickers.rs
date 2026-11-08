@@ -275,6 +275,39 @@ pub(crate) fn search(kind: StickerKind, query: &str) -> Vec<&'static Sticker> {
     scored.into_iter().map(|(_, sticker)| sticker).collect()
 }
 
+/// The animation a sticker starts with, picked by what it is: arrows slide
+/// in their own direction and keep pointing, ticks and crosses stamp down,
+/// warnings wiggle, hearts and flames pulse, everything else pops.
+pub(crate) fn default_motion(
+    sticker: &Sticker,
+) -> (cap_project::ImageMotion, cap_project::ImageEmphasis, cap_project::ImageMotion) {
+    use cap_project::{ImageEmphasis as E, ImageMotion as M};
+    let id = sticker.id.as_str();
+    let has = |word: &str| id.split('-').any(|part| part == word);
+    let arrow = id.starts_with("arrow") || id.starts_with("move-") || id.starts_with("corner-")
+        || id.starts_with("backhand-index-pointing");
+    let (enter, emphasis) = if arrow && has("right") {
+        (M::SlideRight, E::NudgeRight)
+    } else if arrow && has("left") {
+        (M::SlideLeft, E::NudgeLeft)
+    } else if arrow && has("up") {
+        (M::SlideUp, E::NudgeUp)
+    } else if arrow && has("down") {
+        (M::SlideDown, E::NudgeDown)
+    } else if has("check") || has("x") || id == "cross-mark" || id == "hundred-points" {
+        (M::Stamp, E::None)
+    } else if has("alert") || id == "warning" || id.contains("exclamation") {
+        (M::Pop, E::Wiggle)
+    } else if has("heart") || has("fire") || has("flame") || has("sparkles") || has("star") {
+        (M::Pop, E::Pulse)
+    } else if has("pointer") || has("mouse") {
+        (M::Pop, E::Pulse)
+    } else {
+        (M::Pop, E::None)
+    };
+    (enter, emphasis, M::Fade)
+}
+
 /// The sticker as a standalone SVG. Icons take the colour and line weight.
 pub(crate) fn svg(sticker: &Sticker, color: &str, stroke: f32) -> String {
     match sticker.kind {
@@ -358,6 +391,27 @@ mod tests {
         assert!(search(StickerKind::Emoji, "火箭").iter().any(|s| s.id == "rocket"));
         assert!(search(StickerKind::Icon, "箭头").iter().any(|s| s.id.contains("arrow")));
         assert!(search(StickerKind::Icon, "arrow right").iter().any(|s| s.id == "arrow-right"));
+    }
+
+    #[test]
+    fn stickers_start_with_a_motion_that_fits() {
+        use cap_project::{ImageEmphasis as E, ImageMotion as M};
+        let find = |kind, id: &str| {
+            search(kind, "")
+                .into_iter()
+                .chain(search(kind, id))
+                .find(|sticker| sticker.id == id)
+                .unwrap()
+        };
+        assert_eq!(
+            default_motion(find(StickerKind::Icon, "arrow-right")),
+            (M::SlideRight, E::NudgeRight, M::Fade)
+        );
+        assert_eq!(default_motion(find(StickerKind::Icon, "arrow-down")).1, E::NudgeDown);
+        assert_eq!(default_motion(find(StickerKind::Emoji, "check-mark-button")).0, M::Stamp);
+        assert_eq!(default_motion(find(StickerKind::Emoji, "warning")).1, E::Wiggle);
+        assert_eq!(default_motion(find(StickerKind::Emoji, "red-heart")).1, E::Pulse);
+        assert_eq!(default_motion(find(StickerKind::Emoji, "rocket")).0, M::Pop);
     }
 
     #[test]

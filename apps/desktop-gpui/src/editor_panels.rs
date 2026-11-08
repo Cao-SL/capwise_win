@@ -9646,6 +9646,7 @@ impl EditorWindow {
             }))
             .child(image_slider(self, ImageProperty::Opacity, cx))
             .child(image_slider(self, ImageProperty::Rounding, cx))
+            .child(self.render_image_motion(index, cx))
             .child(self.more_settings("image", cx, move |this, cx| {
                 let mut column = div().flex().flex_col().gap(px(14.)).child(image_slider(
                     this,
@@ -9688,6 +9689,195 @@ impl EditorWindow {
                     )
                     .into_any_element()
             }))
+            .into_any_element()
+    }
+
+    /// Entrance, a loop while shown, and exit -- one row of chips each, the
+    /// way text offers its animations. Pointing loops pick a direction.
+    fn render_image_motion(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
+        use cap_project::{ImageEmphasis, ImageMotion};
+        use tr::editor::panel::image::motion as copy;
+        let Some(segment) = self
+            .timeline()
+            .and_then(|timeline| timeline.image_segments.get(index))
+        else {
+            return div().into_any_element();
+        };
+        let theme = self.theme;
+        let (enter, emphasis, exit) = (segment.animation_in, segment.emphasis, segment.animation_out);
+        let chip = move |id: SharedString, label: &'static str, selected: bool| {
+            ui::EditorButton::plain(&theme, id)
+                .outlined(&theme)
+                .label(label)
+                .text_size(px(12.))
+                .height(px(26.))
+                .radius(px(13.))
+                .padding_x(px(10.))
+                .pressed(selected)
+        };
+        let motions: [(ImageMotion, &'static str); 10] = [
+            (ImageMotion::None, copy::none()),
+            (ImageMotion::Fade, copy::fade()),
+            (ImageMotion::Pop, copy::pop()),
+            (ImageMotion::Zoom, copy::zoom()),
+            (ImageMotion::Stamp, copy::stamp()),
+            (ImageMotion::Spin, copy::spin()),
+            (ImageMotion::SlideUp, copy::up()),
+            (ImageMotion::SlideDown, copy::down()),
+            (ImageMotion::SlideLeft, copy::left()),
+            (ImageMotion::SlideRight, copy::right()),
+        ];
+        let row = |label: &'static str, chips: Vec<gpui::AnyElement>| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(Hsla::from(theme.editor.text_2))
+                        .child(label),
+                )
+                .child(div().flex().flex_wrap().gap(px(6.)).children(chips))
+        };
+        let motion_chips = |exit_row: bool, current: ImageMotion, cx: &mut Context<Self>| {
+            motions
+                .iter()
+                .filter(|(motion, _)| !(exit_row && *motion == ImageMotion::Stamp))
+                .map(|(motion, label)| {
+                    let motion = *motion;
+                    chip(
+                        SharedString::from(format!(
+                            "image-{index}-{}-{motion:?}",
+                            if exit_row { "out" } else { "in" }
+                        )),
+                        label,
+                        current == motion,
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.edit_image_segment("image-motion", index, window, cx, move |segment| {
+                            if exit_row {
+                                segment.animation_out = motion;
+                            } else {
+                                segment.animation_in = motion;
+                            }
+                            true
+                        });
+                    }))
+                    .into_any_element()
+                })
+                .collect::<Vec<_>>()
+        };
+        let pointing = matches!(
+            emphasis,
+            ImageEmphasis::NudgeRight
+                | ImageEmphasis::NudgeLeft
+                | ImageEmphasis::NudgeUp
+                | ImageEmphasis::NudgeDown
+        );
+        let emphases: [(ImageEmphasis, &'static str); 6] = [
+            (ImageEmphasis::None, copy::none()),
+            (ImageEmphasis::Pulse, copy::pulse()),
+            (ImageEmphasis::Breathe, copy::breathe()),
+            (ImageEmphasis::Wiggle, copy::wiggle()),
+            (ImageEmphasis::Float, copy::float()),
+            (ImageEmphasis::NudgeRight, copy::point()),
+        ];
+        let mut emphasis_chips: Vec<gpui::AnyElement> = emphases
+            .iter()
+            .map(|(value, label)| {
+                let value = *value;
+                let selected = if value == ImageEmphasis::NudgeRight {
+                    pointing
+                } else {
+                    emphasis == value
+                };
+                chip(
+                    SharedString::from(format!("image-{index}-emphasis-{value:?}")),
+                    label,
+                    selected,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.edit_image_segment("image-motion", index, window, cx, move |segment| {
+                        // Re-choosing "point" keeps the direction already set.
+                        let keep = value == ImageEmphasis::NudgeRight
+                            && matches!(
+                                segment.emphasis,
+                                ImageEmphasis::NudgeLeft
+                                    | ImageEmphasis::NudgeUp
+                                    | ImageEmphasis::NudgeDown
+                            );
+                        if !keep {
+                            segment.emphasis = value;
+                        }
+                        true
+                    });
+                }))
+                .into_any_element()
+            })
+            .collect();
+        if pointing {
+            for (value, glyph) in [
+                (ImageEmphasis::NudgeRight, "→"),
+                (ImageEmphasis::NudgeLeft, "←"),
+                (ImageEmphasis::NudgeUp, "↑"),
+                (ImageEmphasis::NudgeDown, "↓"),
+            ] {
+                emphasis_chips.push(
+                    chip(
+                        SharedString::from(format!("image-{index}-point-{value:?}")),
+                        glyph,
+                        emphasis == value,
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.edit_image_segment("image-motion", index, window, cx, move |segment| {
+                            segment.emphasis = value;
+                            true
+                        });
+                    }))
+                    .into_any_element(),
+                );
+            }
+        }
+        ui::Field::section(&theme, copy::title())
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child(row(copy::enter(), motion_chips(false, enter, cx)))
+                    .child(row(copy::emphasis(), emphasis_chips))
+                    .child(row(copy::exit(), motion_chips(true, exit, cx)))
+                    .child(
+                        div().flex().child(
+                            ui::EditorButton::plain(&theme, SharedString::from(format!("image-{index}-motion-all")))
+                                .left_icon("icons/copy.svg")
+                                .icon_size(px(13.))
+                                .text_size(px(12.))
+                                .height(px(28.))
+                                .label(copy::apply_all())
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.edit_project("image-motion-all", window, cx, move |project| {
+                                        let Some(timeline) = project.timeline.as_mut() else {
+                                            return false;
+                                        };
+                                        let mut changed = false;
+                                        for segment in &mut timeline.image_segments {
+                                            if (segment.animation_in, segment.emphasis, segment.animation_out)
+                                                != (enter, emphasis, exit)
+                                            {
+                                                segment.animation_in = enter;
+                                                segment.emphasis = emphasis;
+                                                segment.animation_out = exit;
+                                                changed = true;
+                                            }
+                                        }
+                                        changed
+                                    });
+                                })),
+                        ),
+                    ),
+            )
             .into_any_element()
     }
 

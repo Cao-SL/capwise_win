@@ -1845,6 +1845,48 @@ pub struct ImageSegment {
     pub flip_x: bool,
     pub flip_y: bool,
     pub lock_aspect: bool,
+    /// How the picture arrives, holds attention while shown, and leaves.
+    /// Stickers get a set that fits them; imported pictures start with none.
+    pub animation_in: ImageMotion,
+    pub animation_in_duration: f64,
+    pub emphasis: ImageEmphasis,
+    pub animation_out: ImageMotion,
+    pub animation_out_duration: f64,
+}
+
+/// An entrance or exit for a picture layer. Exits play the same motion in
+/// reverse toward the layer's resting state.
+#[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum ImageMotion {
+    #[default]
+    None,
+    Fade,
+    Pop,
+    Zoom,
+    /// Drops from large with an overshoot -- a stamp landing.
+    Stamp,
+    Spin,
+    SlideUp,
+    SlideDown,
+    SlideLeft,
+    SlideRight,
+}
+
+/// A loop that keeps a picture noticed while it is on screen.
+#[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum ImageEmphasis {
+    #[default]
+    None,
+    Pulse,
+    Breathe,
+    Wiggle,
+    Float,
+    NudgeRight,
+    NudgeLeft,
+    NudgeUp,
+    NudgeDown,
 }
 
 impl Default for ImageSegment {
@@ -1864,6 +1906,11 @@ impl Default for ImageSegment {
             flip_x: false,
             flip_y: false,
             lock_aspect: true,
+            animation_in: ImageMotion::None,
+            animation_in_duration: 0.35,
+            emphasis: ImageEmphasis::None,
+            animation_out: ImageMotion::None,
+            animation_out_duration: 0.3,
         }
     }
 }

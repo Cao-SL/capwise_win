@@ -177,6 +177,7 @@ impl EditorWindow {
         };
         let (color, weight) = (picker.color, picker.weight);
         self.assets.cancel_import();
+        self.assets.pending_motion = Some(stickers::default_motion(sticker));
         let generation = self.assets.download_generation;
         self.assets.importing = true;
         cx.notify();

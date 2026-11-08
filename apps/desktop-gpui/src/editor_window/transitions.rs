@@ -257,35 +257,31 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) {
         self.transition_drag_base = None;
-        let transition_drag = self
-            .project
-            .timeline
-            .as_ref()
-            .filter(|timeline| {
-                !shift && !multi && crate::editor_clips::can_add_transition(timeline, index)
-            })
-            .map(|timeline| {
-                let current = timeline.effective_transition(index);
-                DragKind::TransitionDuration {
-                    index,
-                    initial: current.map_or(0., |transition| transition.duration),
-                    grow: -1.,
-                    kind: current.map_or_else(Default::default, |transition| transition.kind),
-                    from_body: true,
-                }
-            });
+        // Dragging a clip moves it in the order, as on 剪映's main track.
+        // Transitions are added with the + between clips and sized by their
+        // edges, so the body is free for this.
+        let reorder = !shift
+            && !multi
+            && self
+                .project
+                .timeline
+                .as_ref()
+                .is_some_and(|timeline| timeline.segments.len() > 1);
+        self.clip_reorder_target = None;
         self.drag = Some(Drag {
             track: TrackKind::Clip,
             index,
-            kind: transition_drag.unwrap_or(DragKind::Move {
-                start,
-                end,
-                bounds: DragBounds { min: 0., max: 0. },
-            }),
+            kind: if reorder {
+                DragKind::ClipReorder
+            } else {
+                DragKind::Move {
+                    start,
+                    end,
+                    bounds: DragBounds { min: 0., max: 0. },
+                }
+            },
             down_x,
-            // Measured from the press, so the overlap grows from the first
-            // pixel past the threshold rather than jumping by it.
-            origin_x: transition_drag.map(|_| down_x),
+            origin_x: None,
             moved: false,
             // 4px, the clip body's own promotion (`TL/ClipTrack.tsx:875`).
             threshold: 4.,
@@ -579,6 +575,47 @@ impl EditorWindow {
                             ),
                     );
                 }
+            }
+        }
+        // A clip being dragged: its box dims in place and an upright bar
+        // marks where it will drop.
+        if let (Some(drag), Some(target)) = (self.drag, self.clip_reorder_target)
+            && matches!(drag.kind, DragKind::ClipReorder)
+            && drag.moved
+        {
+            if let Some(source) = model.clips.get(drag.index) {
+                let left = ((source.start - position) / secs_per_pixel) as f32;
+                let width = ((source.end - source.start) / secs_per_pixel) as f32;
+                layer = layer.child(
+                    div()
+                        .absolute()
+                        .left(px(left))
+                        .w(px(width.max(2.)))
+                        .top(px(2.))
+                        .bottom(px(2.))
+                        .rounded(px(8.))
+                        .bg(Theme::with_alpha(theme.editor.card, 0.6))
+                        .border_2()
+                        .border_color(Theme::with_alpha(theme.editor.accent, 0.5)),
+                );
+            }
+            let at = model
+                .clips
+                .get(target)
+                .map(|clip| clip.start)
+                .or_else(|| model.clips.last().map(|clip| clip.end));
+            if let Some(at) = at {
+                let x = ((at - position) / secs_per_pixel) as f32;
+                layer = layer.child(
+                    div()
+                        .absolute()
+                        .left(px(x - 2.))
+                        .w(px(4.))
+                        .top_0()
+                        .bottom_0()
+                        .rounded_full()
+                        .bg(accent),
+                );
             }
         }
         layer.into_any_element()
