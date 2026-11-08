@@ -68,6 +68,10 @@ A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
 需要 API Key 的服务先填写密钥，再获取并选择模型；提供商没有开放模型列表时，可以手动填写模型 ID。火山方舟也支持以 `ep-…` 开头的推理接入点。
 
+快捷按钮会直接发送任务，显示简短名称，背后使用完整的任务提示词。助手会把允许隐藏的口头禅范围一并交给模型；无效方案会自动修正一次，仍失败时保留原项目。
+
+输入框旁的「技能」可搜索本机常见技能目录中的 `SKILL.md`，或导入指定文件。只发送当前选中的技能正文给所选 API / ACP 模型；技能脚本和引用文件不会自动执行或读取。修改仍通过灵录的预览、应用和撤销流程。
+
 ACP 使用本机已有的登录状态。不同适配器的安装、登录和模型支持不同；检测到命令不代表已经登录成功。灵录中的 ACP 编辑助手仅提出可审阅的修改方案，不授予它终端或文件读写权限。
 
 ## 数据与费用
@@ -146,6 +150,7 @@ Version 0.2.0 is Developer ID signed and Apple notarized. Gatekeeper checks, an 
 - An editing assistant that proposes changes for review before applying them, with undo support.
 - In-assistant cover generation, editable titles and cover duration (1 second for a new cover).
 - Searchable model selection and local ACP connections.
+- Quick actions with task-specific instructions, plus a local SKILL.md picker and import. Only the selected skill body is sent; scripts and referenced files are not run automatically.
 
 ### Privacy, costs, and limits
 

@@ -3877,6 +3877,14 @@ description = "Standardordner für Videos, Untertitel und Cover. Beim Export kan
 default_location = "Letzten Systemspeicherort verwenden"
 
 [editor.assistant]
+skills = "Skills"
+skill_search = "Lokale Skills suchen…"
+skill_notice = "Der ausgewählte Skill wird an das Modell gesendet. Capwise zeigt Änderungen zur Prüfung an; Skripte werden nicht ausgeführt."
+skill_none = "Kein Skill"
+skill_import = "SKILL.md importieren"
+skill_loading = "Skills werden geladen…"
+skill_empty = "Keine passenden Skills. Importiere eine SKILL.md-Datei."
+skill_invalid = "Wähle eine gültige SKILL.md-Datei (maximal 64 KB)."
 welcome = "What would you like to create?"
 copy_reply = "Copy response"
 review_hint = "Preview before applying"

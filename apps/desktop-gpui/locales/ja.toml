@@ -3877,6 +3877,14 @@ description = "動画・字幕・カバーの既定の保存先です。書き�
 default_location = "システムの前回の保存先を使用"
 
 [editor.assistant]
+skills = "スキル"
+skill_search = "ローカルスキルを検索…"
+skill_notice = "選択したスキルをモデルに送信し、その手順で変更をプレビューします。スクリプトは実行しません。"
+skill_none = "スキルなし"
+skill_import = "SKILL.md を読み込む"
+skill_loading = "スキルを読み込み中…"
+skill_empty = "一致するスキルがありません。SKILL.md を読み込めます。"
+skill_invalid = "有効な SKILL.md（64 KB 以下）を選択してください。"
 welcome = "What would you like to create?"
 copy_reply = "Copy response"
 review_hint = "Preview before applying"

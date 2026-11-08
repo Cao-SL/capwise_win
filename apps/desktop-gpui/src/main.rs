@@ -9,6 +9,7 @@ mod app_windows;
 mod asr_cloud;
 mod asset_library;
 mod assets;
+mod assistant_skills;
 #[cfg(feature = "cap-cloud")]
 mod auth;
 #[cfg(not(feature = "cap-cloud"))]
