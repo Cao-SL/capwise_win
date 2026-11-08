@@ -1712,6 +1712,7 @@ pub struct EditorWindow {
     text_style_clipboard: Option<crate::editor_panels::TextStyle>,
     frame_controls: frame::FrameControls,
     add_track: Option<AddTrackMenu>,
+    pub(crate) sticker_picker: Option<crate::editor_assets::StickerPicker>,
     add_track_opens: usize,
     pub(crate) voiceover: crate::editor_voiceover::VoiceoverUi,
     pub(crate) assistant: crate::editor_assistant::AssistantUi,
@@ -2491,6 +2492,7 @@ impl EditorWindow {
             text_style_clipboard: None,
             frame_controls: frame::FrameControls::default(),
             add_track: None,
+            sticker_picker: None,
             add_track_opens: 0,
             voiceover: Default::default(),
             assistant: Default::default(),
@@ -4442,6 +4444,11 @@ impl EditorWindow {
         }
 
         if event.is_held {
+            return;
+        }
+        if self.sticker_picker.is_some() && event.keystroke.key == "escape" {
+            self.sticker_picker = None;
+            cx.notify();
             return;
         }
         // `useEditorShortcuts`' scope gate (`Player.tsx:236-245`) and the
@@ -9611,6 +9618,17 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // `stickers` opens the sticker picker under the toolbar; `sticker:<id>`
+        // also places that sticker.
+        if let Some(rest) = spec.strip_prefix("sticker") {
+            self.open_sticker_picker(px(260.), px(118.), window, cx);
+            if rest == "s-icons" {
+                self.auto_sticker_icons(cx);
+            } else if let Some(id) = rest.strip_prefix(':') {
+                self.auto_insert_sticker(id, window, cx);
+            }
+            return;
+        }
         self.open_add_track(window, cx);
         // `open` leaves the tray showing where the toolbar's "more" opens it.
         if spec == "open" {
@@ -12407,6 +12425,32 @@ impl EditorWindow {
                         this.add_overlay_segment(TrackKind::Text, window, cx);
                     })),
             )
+            // Emoji and icons: as common in a tutorial as text, so they sit
+            // beside it.
+            .child(
+                ui::EditorButton::plain(&theme, "insert-sticker")
+                    .text(&theme)
+                    .left_icon("icons/smile.svg")
+                    .when(!narrow, |button| button.label(tr::editor::stickers::title()))
+                    .tooltip(&theme, tr::editor::stickers::tooltip())
+                    .disabled(!self.project_ready())
+                    .pressed(self.sticker_picker.is_some())
+                    .on_open(cx.listener(|this, bounds: &Bounds<Pixels>, window, cx| {
+                        if this.sticker_picker.is_some() {
+                            this.sticker_picker = None;
+                            cx.notify();
+                            return;
+                        }
+                        this.add_track = None;
+                        this.toolbar_menu = None;
+                        let left = bounds
+                            .origin
+                            .x
+                            .min(window.viewport_size().width - px(384.))
+                            .max(px(12.));
+                        this.open_sticker_picker(left, bounds.bottom() + px(6.), window, cx);
+                    })),
+            )
             // Crop, frame and image live in this tray now; the frame popover
             // hangs from it.
             .child(
@@ -14694,6 +14738,7 @@ impl Render for EditorWindow {
             .children(self.render_text_menu(cx))
             .children(self.render_frame_controls(window, cx))
             .children(self.render_add_track_popover(cx))
+            .children(self.render_sticker_picker(cx))
             .children(self.render_shape_tool_popover(cx))
             .children(self.render_clip_speed_popover(cx))
             .children(self.render_track_menu(cx))

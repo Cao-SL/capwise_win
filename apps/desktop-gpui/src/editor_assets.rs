@@ -25,6 +25,8 @@ use crate::{
 };
 
 mod library;
+mod stickers;
+pub(crate) use stickers::StickerPicker;
 
 /// One-click searches for the Online tab, label and the English query sent.
 const STOCK_PHOTO_PRESETS: &[(&str, &str)] = &[

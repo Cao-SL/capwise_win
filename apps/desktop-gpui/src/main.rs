@@ -39,6 +39,7 @@ mod doodle;
 mod draw_bench;
 mod editor_assets;
 mod global_library;
+mod stickers;
 mod editor_assistant;
 mod editor_audio;
 mod editor_bench;

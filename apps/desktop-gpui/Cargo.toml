@@ -72,6 +72,8 @@ cap-project = { path = "../../crates/project" }
 # a `RenderImage` (`src/editor_sidebar/cursor.rs`).
 cap-cursor-info = { path = "../../crates/cursor-info" }
 resvg = "0.45"
+# The sticker pack ships gzipped (assets/stickers).
+flate2 = "1.1"
 rodio = { version = "0.19.0", default-features = false, features = [
     "mp3",
     "vorbis",
