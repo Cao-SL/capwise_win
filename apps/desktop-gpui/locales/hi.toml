@@ -3877,6 +3877,14 @@ description = "वीडियो, उपशीर्षक और कवर क
 default_location = "सिस्टम का पिछला सेव स्थान उपयोग करें"
 
 [editor.assistant]
+skills = "कौशल"
+skill_search = "स्थानीय कौशल खोजें…"
+skill_notice = "चुना हुआ कौशल मॉडल को भेजा जाता है। Capwise बदलावों का पूर्वावलोकन दिखाता है; कौशल की स्क्रिप्ट नहीं चलाता।"
+skill_none = "कोई कौशल नहीं"
+skill_import = "SKILL.md आयात करें"
+skill_loading = "कौशल लोड हो रहे हैं…"
+skill_empty = "कोई कौशल नहीं मिला। SKILL.md आयात करें।"
+skill_invalid = "मान्य SKILL.md फ़ाइल चुनें (अधिकतम 64 KB)।"
 welcome = "What would you like to create?"
 copy_reply = "Copy response"
 review_hint = "Preview before applying"

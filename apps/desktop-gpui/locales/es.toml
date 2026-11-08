@@ -3877,6 +3877,14 @@ description = "Carpeta predeterminada para vídeos, subtítulos y portadas. Pued
 default_location = "Usar la última ubicación del sistema"
 
 [editor.assistant]
+skills = "Habilidades"
+skill_search = "Buscar habilidades locales…"
+skill_notice = "La habilidad seleccionada se envía al modelo. Capwise muestra una vista previa de los cambios sin ejecutar scripts."
+skill_none = "Sin habilidad"
+skill_import = "Importar SKILL.md"
+skill_loading = "Cargando habilidades…"
+skill_empty = "No hay coincidencias. Importa un archivo SKILL.md."
+skill_invalid = "Selecciona un archivo SKILL.md válido (máximo 64 KB)."
 welcome = "What would you like to create?"
 copy_reply = "Copy response"
 review_hint = "Preview before applying"
