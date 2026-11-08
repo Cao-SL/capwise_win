@@ -1,9 +1,9 @@
 use anyhow::Result;
 use cap_project::{
-    AspectRatio, Camera, CameraShape, CameraXPosition, CameraYPosition, ClipOffsets,
-    ClipTransitionType, CornerStyle, Crop, CursorEvents, CursorType, FrameConfiguration,
-    FrameStyle, OverlayTrackKind, ProjectConfiguration, ProjectStyleCache, RecordingMeta,
-    SceneMode, StudioRecordingMeta, TimelineFrameMapping, TimelineSource, XY,
+    AspectRatio, Camera, CameraXPosition, CameraYPosition, ClipOffsets, ClipTransitionType,
+    CornerStyle, Crop, CursorEvents, CursorType, FrameConfiguration, FrameStyle, OverlayTrackKind,
+    ProjectConfiguration, ProjectStyleCache, RecordingMeta, SceneMode, StudioRecordingMeta,
+    TimelineFrameMapping, TimelineSource, XY,
 };
 use composite_frame::{ColorGradeUniformParams, CompositeVideoFrameUniforms};
 use core::f64;
@@ -5078,25 +5078,18 @@ impl ProjectUniforms {
                 let prev_zoomed_size =
                     Self::camera_zoom_factor(&prev_zoom, &prev_scene, base_size, scale_during_zoom);
 
-                let aspect = frame_size[0] / frame_size[1];
-                let camera_size_for = |scale: f32| match project.camera.shape {
-                    CameraShape::Source => {
-                        if aspect >= 1.0 {
-                            [
-                                (min_axis * scale + camera_padding) * aspect,
-                                min_axis * scale + camera_padding,
-                            ]
-                        } else {
-                            [
-                                min_axis * scale + camera_padding,
-                                (min_axis * scale + camera_padding) / aspect,
-                            ]
-                        }
-                    }
-                    CameraShape::Square => [
-                        min_axis * scale + camera_padding,
-                        min_axis * scale + camera_padding,
-                    ],
+                let aspect = project.camera.framing_aspect_ratio(frame_size);
+                let camera_size_for = |scale: f32| {
+                    let side = min_axis * scale + camera_padding;
+                    let size = if aspect >= 1.0 {
+                        [side * aspect, side]
+                    } else {
+                        [side, side / aspect]
+                    };
+                    let fit = ((output_size[0] - camera_padding * 2.0).max(1.0) / size[0])
+                        .min((output_size[1] - camera_padding * 2.0).max(1.0) / size[1])
+                        .min(1.0);
+                    [size[0] * fit, size[1] * fit]
                 };
 
                 let size = camera_size_for(zoomed_size);
@@ -5164,18 +5157,7 @@ impl ProjectUniforms {
                     )
                 };
 
-                let crop_bounds = match project.camera.shape {
-                    CameraShape::Source => [0.0, 0.0, frame_size[0], frame_size[1]],
-                    CameraShape::Square => {
-                        if frame_size[0] > frame_size[1] {
-                            let offset = (frame_size[0] - frame_size[1]) / 2.0;
-                            [offset, 0.0, frame_size[0] - offset, frame_size[1]]
-                        } else {
-                            let offset = (frame_size[1] - frame_size[0]) / 2.0;
-                            [0.0, offset, frame_size[0], frame_size[1] - offset]
-                        }
-                    }
-                };
+                let crop_bounds = project.camera.framing_crop_bounds(frame_size);
 
                 // Morph the camera from its PiP overlay toward its split-screen
                 // half by the split factor. The crop is re-derived from the
@@ -6348,6 +6330,82 @@ pub struct FrameRenderStageTimings {
 mod style_image_tests {
     use super::*;
     use cap_project::{BackgroundSource, ImageSegment, StyleOverrides, StyleSegment};
+
+    #[tokio::test]
+    async fn camera_framing_uniforms_fit_output_and_preserve_crop_direction() {
+        let recording_meta: RecordingMeta = serde_json::from_value(serde_json::json!({
+            "pretty_name": "framing-test", "display": { "path": "display.mp4", "fps": 30 },
+            "camera": { "path": "camera.mp4", "fps": 30 }, "audio": null, "cursor": null
+        }))
+        .unwrap();
+        let meta = recording_meta.studio_meta().unwrap().clone();
+        let size = XY::new(320, 180);
+        let constants = RenderVideoConstants::new_with_options(
+            RenderOptions {
+                screen_size: size,
+                camera_size: Some(XY::new(160, 90)),
+                preserve_screen_alpha: false,
+            },
+            recording_meta,
+            meta,
+        )
+        .await
+        .unwrap();
+        let cursor = CursorEvents::default();
+        let frames = DecodedSegmentFrames {
+            screen_size: size,
+            screen_frame: None,
+            camera_frame: Some(DecodedFrame::new(vec![255; 160 * 90 * 4], 160, 90)),
+            segment_time: 2.0,
+            recording_time: 2.0,
+            segment_has_camera: true,
+        };
+        for ratio in [
+            XY::new(16, 9),
+            XY::new(4, 3),
+            XY::new(1, 1),
+            XY::new(3, 4),
+            XY::new(9, 16),
+            XY::new(4, 5),
+        ] {
+            let mut previous_left = None;
+            for x in [0.0, 0.5, 1.0] {
+                let mut project = ProjectConfiguration::default();
+                project.camera.size = 80.;
+                project.camera.aspect_ratio = Some(ratio);
+                project.camera.crop_position = Some(XY::new(x, 0.5));
+                let zoom = ZoomTransformTimeline::from_project(&project, &cursor, 5.0, size);
+                let uniforms = ProjectUniforms::new(
+                    &constants,
+                    &Arc::new(project),
+                    60,
+                    30,
+                    size,
+                    &cursor,
+                    &frames,
+                    5.0,
+                    &zoom,
+                );
+                let camera = uniforms.camera.unwrap();
+                let [left, top, right, bottom] = camera.target_bounds;
+                assert!(
+                    left >= 0.
+                        && top >= 0.
+                        && right <= uniforms.output_size.0 as f32
+                        && bottom <= uniforms.output_size.1 as f32
+                );
+                assert!(
+                    ((right - left) / (bottom - top) - ratio.x as f32 / ratio.y as f32).abs()
+                        < 0.04
+                );
+                if let Some(previous) = previous_left {
+                    assert!(camera.crop_bounds[0] >= previous);
+                }
+                previous_left = Some(camera.crop_bounds[0]);
+                assert_eq!(camera.frame_size, [160., 90.]);
+            }
+        }
+    }
 
     #[tokio::test]
     async fn camera_only_ignores_cutout_and_preserves_background_blur() {

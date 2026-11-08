@@ -2470,7 +2470,7 @@ rounded_corners = "Rounded Corners"
 shadow = "Shadow"
 shadow_blur = "Blur"
 shadow_opacity = "Opacity"
-shape_label = "Shape"
+shape_label = "Camera aspect ratio"
 skin_smoothing = "Skin Smoothing"
 size_during_zoom = "Size During Zoom"
 size_label = "Size"
@@ -2482,8 +2482,26 @@ off = "Off"
 remove = "Remove Background"
 
 [editor.tabs.camera.shape]
-source = { text = "Source", context = "Camera shape that keeps the camera's own aspect ratio." }
-square = "Square"
+source = "Original ratio"
+square = "Square 1:1"
+
+[editor.tabs.camera.framing]
+wide = "Landscape 16:9"
+standard = "Standard 4:3"
+portrait = "Portrait 3:4"
+vertical = "Portrait 9:16"
+more = "More ratios…"
+back = "‹ Common ratios"
+custom = "Custom ratio"
+adjust = "Adjust framing"
+horizontal = "Horizontal framing"
+vertical_position = "Vertical framing"
+crop_hint = "Preview changes on the canvas. Position only changes the cropped axis."
+width = "Width"
+height = "Height"
+invalid = "Enter whole numbers from 1 to 100. Ratio must be between 1:4 and 4:1."
+done = "Done"
+apply = "Apply"
 
 [editor.tabs.captions]
 outline_color = "Outline color"

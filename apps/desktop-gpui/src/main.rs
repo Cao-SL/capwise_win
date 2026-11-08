@@ -41,6 +41,7 @@ mod editor_assets;
 mod editor_assistant;
 mod editor_audio;
 mod editor_bench;
+mod editor_camera_framing;
 mod editor_canvas;
 mod editor_clips;
 mod editor_color;

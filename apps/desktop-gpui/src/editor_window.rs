@@ -1743,6 +1743,7 @@ pub struct EditorWindow {
     /// exactly as the Solid dialogs replace the dropdown.
     presets_menu: Option<PresetsMenu>,
     preset_dialog: Option<PresetDialog>,
+    pub(crate) camera_framing: crate::editor_camera_framing::CameraFramingUi,
     pub(crate) caption_style_editor: bool,
     caption_style_scroll: gpui::ScrollHandle,
     style_presets: style_preset_ui::StylePresetsState,
@@ -2485,6 +2486,7 @@ impl EditorWindow {
             timeline_resize: None,
             presets_menu: None,
             preset_dialog: None,
+            camera_framing: Default::default(),
             caption_style_editor: false,
             caption_style_scroll: gpui::ScrollHandle::new(),
             style_presets: style_preset_ui::StylePresetsState::load(),
@@ -4177,6 +4179,7 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) {
         if self.voiceover.is_open()
+            || self.camera_framing.is_open()
             || self.caption_style_editor
             || self.sidebar.caption_translation.review_is_open()
             || self.preset_dialog.is_some()
@@ -4255,6 +4258,18 @@ impl EditorWindow {
         if self.sidebar.caption_translation.review_is_open() {
             if event.keystroke.key == "escape" && !event.is_held {
                 self.close_translation_review(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.camera_framing.is_open() {
+            if event.keystroke.key == "tab" {
+                self.camera_ratio_dialog_tab(window, cx);
+                window.prevent_default();
+                cx.stop_propagation();
+            }
+            if event.keystroke.key == "escape" {
+                self.close_camera_ratio_dialog(window, cx);
                 cx.stop_propagation();
             }
             return;
@@ -8462,6 +8477,7 @@ impl EditorWindow {
             || self.sidebar.color_picker.is_some()
             || self.presets_menu.is_some()
             || self.preset_dialog.is_some()
+            || self.camera_framing.is_open()
             || self.caption_style_editor
             || self.sidebar.caption_translation.review_is_open()
             || self.clips.has_open_menu()
@@ -14020,6 +14036,7 @@ fn dismiss_indexed_sidebar_menu(menu: &mut Option<crate::editor_tabs::OpenMenu>)
         SidebarMenu::BackgroundCornerStyle
         | SidebarMenu::CameraBlur
         | SidebarMenu::CameraShape
+        | SidebarMenu::CameraMoreShape
         | SidebarMenu::CameraCornerStyle
         | SidebarMenu::AudioStereo
         | SidebarMenu::CaptionModel
@@ -14603,6 +14620,7 @@ impl Render for EditorWindow {
                         .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 }),
             )
+            .children(self.render_camera_ratio_dialog(cx))
             .children(self.render_caption_style_editor(window, cx))
             .children(self.render_translation_review(window, cx))
             .children(self.with_style_controls(|this| this.render_sidebar_menu(cx)))

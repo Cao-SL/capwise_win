@@ -540,9 +540,58 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::camera::shadow(), "Shadow"),
         (tr::editor::tabs::camera::shadow_blur(), "Blur"),
         (tr::editor::tabs::camera::shadow_opacity(), "Opacity"),
-        (tr::editor::tabs::camera::shape::source(), "Source"),
-        (tr::editor::tabs::camera::shape::square(), "Square"),
-        (tr::editor::tabs::camera::shape_label(), "Shape"),
+        (tr::editor::tabs::camera::framing::wide(), "Landscape 16:9"),
+        (
+            tr::editor::tabs::camera::framing::standard(),
+            "Standard 4:3",
+        ),
+        (
+            tr::editor::tabs::camera::framing::portrait(),
+            "Portrait 3:4",
+        ),
+        (
+            tr::editor::tabs::camera::framing::vertical(),
+            "Portrait 9:16",
+        ),
+        (tr::editor::tabs::camera::framing::more(), "More ratios…"),
+        (tr::editor::tabs::camera::framing::back(), "‹ Common ratios"),
+        (tr::editor::tabs::camera::framing::custom(), "Custom ratio"),
+        (
+            tr::editor::tabs::camera::framing::adjust(),
+            "Adjust framing",
+        ),
+        (
+            tr::editor::tabs::camera::framing::horizontal(),
+            "Horizontal framing",
+        ),
+        (
+            tr::editor::tabs::camera::framing::vertical_position(),
+            "Vertical framing",
+        ),
+        (
+            tr::editor::tabs::camera::framing::crop_hint(),
+            "Preview changes on the canvas. Position only changes the cropped axis.",
+        ),
+        (tr::editor::tabs::camera::framing::width(), "Width"),
+        (tr::editor::tabs::camera::framing::height(), "Height"),
+        (
+            tr::editor::tabs::camera::framing::invalid(),
+            "Enter whole numbers from 1 to 100. Ratio must be between 1:4 and 4:1.",
+        ),
+        (tr::editor::tabs::camera::framing::done(), "Done"),
+        (tr::editor::tabs::camera::framing::apply(), "Apply"),
+        (tr::editor::tabs::captions::outline_color(), "Outline color"),
+        (tr::editor::tabs::captions::shadow_color(), "Shadow color"),
+        (
+            tr::editor::window::title::invalid_length(),
+            "Use a title of 1–100 characters without line breaks.",
+        ),
+        (tr::editor::tabs::camera::shape::source(), "Original ratio"),
+        (tr::editor::tabs::camera::shape::square(), "Square 1:1"),
+        (
+            tr::editor::tabs::camera::shape_label(),
+            "Camera aspect ratio",
+        ),
         (tr::editor::tabs::camera::skin_smoothing(), "Skin Smoothing"),
         (
             tr::editor::tabs::camera::size_during_zoom(),
