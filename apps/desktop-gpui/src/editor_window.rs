@@ -9432,6 +9432,7 @@ impl EditorWindow {
             cap_project::XY::new(0.3 * ratio, 0.3)
         };
         let mut index = 0;
+        let (animation_in, emphasis, animation_out) = self.take_pending_motion().unwrap_or_default();
         if self.edit(
             |timeline| {
                 index = edits::insert_image_segment(
@@ -9443,6 +9444,9 @@ impl EditorWindow {
                         path: imported.path,
                         name: imported.name,
                         size,
+                        animation_in,
+                        emphasis,
+                        animation_out,
                         ..Default::default()
                     },
                 );
