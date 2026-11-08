@@ -9,7 +9,7 @@ members = [".", "kernels", "i18n-build", "glass"]
 
 [package]
 name = "cap-desktop-gpui"
-version = "0.2.1"
+version = "0.3.0"
 description = "Capwise (灵录) — Beautiful offline screen recordings."
 edition = "2024"
 license = "AGPL-3.0"
