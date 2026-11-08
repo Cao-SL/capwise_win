@@ -81,7 +81,7 @@ func render(scale: CGFloat, to path: String) {
         ]))
     }
     centered(line, top: 288)
-    centered(NSAttributedString(string: "Drag Capwise to Applications · Requires macOS 13 or later", attributes: [
+    centered(NSAttributedString(string: "Drag Capwise to Applications · Requires macOS 13.3 or later", attributes: [
         .font: NSFont.systemFont(ofSize: 11.5, weight: .regular),
         .foregroundColor: color(0xA3AAB6),
     ]), top: 318)
