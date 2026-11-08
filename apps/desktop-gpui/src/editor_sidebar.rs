@@ -4466,11 +4466,15 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if name.eq_ignore_ascii_case("clips") {
+        if name.eq_ignore_ascii_case("clips") || name.eq_ignore_ascii_case("library") {
             if !self.clips.open {
                 self.toggle_clips(window, cx);
             }
-            self.assets.source = crate::editor_assets::AssetSource::Project;
+            self.assets.source = if name.eq_ignore_ascii_case("library") {
+                crate::editor_assets::AssetSource::Local
+            } else {
+                crate::editor_assets::AssetSource::Project
+            };
             static AUTO_IMPORTED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if let Ok(source) = std::env::var("CAP_GPUI_AUTO_IMPORT_MP4")

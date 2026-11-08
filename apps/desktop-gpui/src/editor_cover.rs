@@ -605,6 +605,21 @@ impl EditorWindow {
                         );
                         if changed {
                             let record = prepared.retain();
+                            // Every generated cover is worth keeping: put a
+                            // copy in the shared library for later videos.
+                            let keep = this.project_path.join(&path);
+                            let name = this
+                                .project
+                                .title_card(cap_project::TitleCardRole::Intro)
+                                .map(|segment| segment.content.clone())
+                                .unwrap_or_default();
+                            cx.background_executor()
+                                .spawn(async move {
+                                    if let Err(error) = crate::global_library::add(&keep, &name) {
+                                        tracing::warn!(%error, "could not keep the cover in the library");
+                                    }
+                                })
+                                .detach();
                             this.remember_project_asset(record, cx);
                             this.sidebar.title_cards.cover.save_pending = Some(path);
                             this.finish_cover_save(window, cx);

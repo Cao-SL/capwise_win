@@ -6930,6 +6930,32 @@ impl EditorWindow {
         self.import_audio_from_file(request, window, cx);
     }
 
+    /// Adds an audio file that is already on disk (the shared library) at the
+    /// playhead, through the same checks as the file picker.
+    pub(crate) fn import_audio_path(
+        &mut self,
+        source: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(request) = self.begin_audio_import(self.playhead, window, cx) else {
+            return;
+        };
+        let project_path = self.project_path.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let imported = cx
+                .background_executor()
+                .spawn(async move { import_audio_file(&project_path, &source) })
+                .await
+                .map(Some);
+            this.update_in(cx, |this, window, cx| {
+                this.finish_audio_import(request, imported, window, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn accepts_audio_import(&self, request: &AudioImportRequest) -> bool {
         self.audio_import_pending == Some(request.generation)
             && self.project_ready()

@@ -626,6 +626,17 @@ impl EditorWindow {
                 self.toggle_transcript(window, cx);
             }
             self.dismiss_sidebar_panels(cx);
+            // The sidebar shows the assistant over everything else; step out
+            // of it so Assets actually appears. A cover being generated keeps
+            // going and is waiting in the assistant afterwards.
+            if self.assistant.open {
+                self.assistant.open = false;
+                self.assistant.model_menu = false;
+                self.assistant.skill_menu = false;
+                if self.sidebar.tab == crate::editor_sidebar::SidebarTab::Assistant {
+                    self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+                }
+            }
             self.clips.open = true;
             self.prepare_asset_library(window, cx);
         }
@@ -1976,7 +1987,7 @@ impl EditorWindow {
         .detach();
     }
 
-    fn import_mp4(&mut self, source: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn import_mp4(&mut self, source: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.import_mp4_owned(source, None, window, cx);
     }
 
@@ -2609,7 +2620,7 @@ fn decode_clip_thumbnail(
     decode_thumbnail_frame(&display_path, time.max(0.0))
 }
 
-fn decode_thumbnail_frame(input: &Path, time: f64) -> Result<Arc<RenderImage>, String> {
+pub(crate) fn decode_thumbnail_frame(input: &Path, time: f64) -> Result<Arc<RenderImage>, String> {
     decode_thumbnail_frame_with_budget(
         input,
         time,

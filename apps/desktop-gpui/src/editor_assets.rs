@@ -6,10 +6,10 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, AppContext as _, Bounds, Context, CursorStyle, Entity, FontWeight, Hsla,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, RenderImage, StatefulInteractiveElement as _, Styled,
-    StyledImage as _, Window, div, img, point, prelude::FluentBuilder, px, size, svg,
+    AnyElement, AppContext as _, Bounds, Context, CursorStyle, Entity, Hsla, InteractiveElement,
+    IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderImage,
+    StatefulInteractiveElement as _, Styled, StyledImage as _, Window, div, img, point,
+    prelude::FluentBuilder, px, size,
 };
 
 use crate::{
@@ -23,6 +23,8 @@ use crate::{
     },
     ui,
 };
+
+mod library;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum AssetSource {
@@ -255,6 +257,7 @@ pub(crate) struct AssetLibraryState {
     invalid_record_metadata: bool,
     pending_restore: Option<AssetBrowserSnapshot>,
     drag: Option<AssetDrag>,
+    library: library::LibraryUi,
 }
 
 impl Default for AssetLibraryState {
@@ -292,6 +295,7 @@ impl Default for AssetLibraryState {
             invalid_record_metadata: false,
             pending_restore: None,
             drag: None,
+            library: Default::default(),
         }
     }
 }
@@ -965,12 +969,14 @@ impl EditorWindow {
                     async move { asset_library::collect_project_records(&project, &configuration) },
                 )
                 .await;
-            this.update(cx, |this, cx| {
+            this.update_in(cx, |this, window, cx| {
                 if this.assets.records_generation != generation {
                     return;
                 }
                 this.assets.invalid_record_metadata = records.invalid_metadata;
                 this.assets.records = records.records;
+                // Which of these are already kept depends on the records.
+                this.refresh_library(window, cx);
                 cx.notify();
             })
             .ok();
@@ -1019,250 +1025,10 @@ impl EditorWindow {
 
     pub(crate) fn render_asset_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if self.assets.source == AssetSource::Local {
-            self.render_local_assets(cx)
+            self.render_library(cx)
         } else {
             self.render_online_assets(cx)
         }
-    }
-
-    fn render_local_assets(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme;
-        let mut header =
-            div()
-                .flex_shrink_0()
-                .flex()
-                .flex_col()
-                .gap(px(12.))
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(Hsla::from(theme.editor.text_2))
-                        .child(tr::editor::assets::local_hint()),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .min_w_0()
-                        .gap(px(6.))
-                        .child(
-                            div().flex_1().min_w_0().whitespace_nowrap().child(
-                                ui::Button::plain(
-                                    &theme,
-                                    "asset-image",
-                                    ui::ButtonVariant::Gray,
-                                    ui::ButtonSize::Sm,
-                                )
-                                .label(tr::editor::assets::import_image())
-                                .icon("icons/image.svg")
-                                .full_width()
-                                .disabled(self.asset_import_busy())
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.pick_asset_image(window, cx),
-                                )),
-                            ),
-                        )
-                        .child(
-                            div().flex_1().min_w_0().whitespace_nowrap().child(
-                                ui::Button::plain(
-                                    &theme,
-                                    "asset-video",
-                                    ui::ButtonVariant::Gray,
-                                    ui::ButtonSize::Sm,
-                                )
-                                .label(tr::editor::assets::import_video())
-                                .icon("icons/video.svg")
-                                .full_width()
-                                .disabled(self.asset_import_busy())
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.pick_mp4_asset(window, cx),
-                                )),
-                            ),
-                        )
-                        .child(
-                            div().flex_1().min_w_0().whitespace_nowrap().child(
-                                ui::Button::plain(
-                                    &theme,
-                                    "asset-audio",
-                                    ui::ButtonVariant::Gray,
-                                    ui::ButtonSize::Sm,
-                                )
-                                .label(tr::editor::assets::import_audio())
-                                .icon("icons/music.svg")
-                                .full_width()
-                                .disabled(self.asset_import_busy())
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.open_audio_picker(0, window, cx),
-                                )),
-                            ),
-                        ),
-                );
-        header = header.child(
-            div()
-                .text_size(px(12.))
-                .font_weight(FontWeight::MEDIUM)
-                .child(tr::editor::assets::reusable()),
-        );
-        if self.assets.invalid_record_metadata {
-            header = header.child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::assets::metadata_error()),
-            );
-        }
-        let mut list = div()
-            .id("local-assets")
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .min_w_0()
-            .overflow_y_scroll()
-            .gap(px(12.));
-        if self.assets.records.is_empty() {
-            list = list.child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::assets::local_empty()),
-            );
-        }
-        for (index, record) in self.assets.records.iter().enumerate() {
-            let drag_record = record.clone();
-            let row = div()
-                .flex()
-                .gap(px(8.))
-                .items_center()
-                .p(px(8.))
-                .rounded(px(8.))
-                .bg(Hsla::from(theme.editor.ctl))
-                .child(
-                    svg()
-                        .path(match record.kind {
-                            AssetKind::Photo => "icons/image.svg",
-                            AssetKind::Video => "icons/video.svg",
-                            AssetKind::Audio => "icons/music.svg",
-                        })
-                        .size(px(16.))
-                        .flex_shrink_0()
-                        .text_color(Hsla::from(theme.editor.text_2)),
-                )
-                .child(
-                    div()
-                        .id(("asset-drag-source", index))
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(px(12.))
-                        .when(
-                            asset_track(record.kind).is_some() && !self.asset_import_busy(),
-                            |name| {
-                                name.cursor(CursorStyle::OpenHand).on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                        this.start_asset_drag(
-                                            drag_record.clone(),
-                                            event.position,
-                                            window,
-                                            cx,
-                                        );
-                                        cx.stop_propagation();
-                                    }),
-                                )
-                            },
-                        )
-                        .child(record.name.clone())
-                        .child(
-                            div()
-                                .text_size(px(11.))
-                                .text_color(Hsla::from(theme.editor.text_2))
-                                .child(record.source.as_ref().map_or_else(
-                                    || tr::editor::assets::local_file().to_string(),
-                                    |source| {
-                                        format!(
-                                            "{} · {}",
-                                            provider_name(source.provider),
-                                            source.attribution.author
-                                        )
-                                    },
-                                )),
-                        ),
-                )
-                .child(
-                    ui::Button::plain(
-                        &theme,
-                        ("reuse-asset", index),
-                        ui::ButtonVariant::Gray,
-                        ui::ButtonSize::Sm,
-                    )
-                    .label(if record.kind == AssetKind::Video {
-                        tr::editor::assets::append_video()
-                    } else {
-                        tr::editor::assets::reuse()
-                    })
-                    .disabled(self.asset_import_busy())
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.reuse_asset(index, window, cx)),
-                    ),
-                );
-            list = list.child(row);
-            if let Some(source) = &record.source {
-                let author = source.attribution.author_url.clone();
-                let origin = source.attribution.source_url.clone();
-                list = list.child(
-                    div()
-                        .flex()
-                        .gap(px(8.))
-                        .child(
-                            ui::Button::plain(
-                                &theme,
-                                ("asset-author-link", index),
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(tr::editor::assets::author_profile())
-                            .on_click(move |_, _, cx| cx.open_url(&author)),
-                        )
-                        .child(
-                            ui::Button::plain(
-                                &theme,
-                                ("asset-source-link", index),
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(tr::editor::assets::source_page())
-                            .on_click(move |_, _, cx| cx.open_url(&origin)),
-                        ),
-                );
-            }
-        }
-        if !self.assets.records.is_empty() {
-            list = list.child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::assets::drag_hint()),
-            );
-        }
-        let status = self.asset_status(cx);
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .min_w_0()
-            .p(px(12.))
-            .gap(px(12.))
-            .child(header)
-            .children((!status.is_empty()).then(|| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_shrink_0()
-                    .gap(px(8.))
-                    .children(status)
-            }))
-            .child(list)
-            .into_any_element()
     }
 
     fn render_online_assets(&self, cx: &mut Context<Self>) -> AnyElement {
