@@ -761,6 +761,15 @@ impl TextInputState {
         cx.notify();
     }
 
+    /// Put the caret at `offset` (snapped to a character boundary).
+    pub fn place_cursor(&mut self, offset: usize, cx: &mut Context<Self>) {
+        let offset = self.clamp_to_boundary(offset.min(self.content.len()));
+        self.selected_range = offset..offset;
+        self.selection_reversed = false;
+        self.goal_x = None;
+        cx.notify();
+    }
+
     pub fn has_selection(&self) -> bool {
         !self.selected_range.is_empty()
     }

@@ -1768,13 +1768,31 @@ fn place_teleprompter_frame(native: &platform::NativeWindow, bounds: Bounds<Pixe
     let _ = (native, x, y, width, height);
 }
 
-pub(crate) fn position_teleprompter_near_camera(window: &gpui::Window, cx: &mut App) {
+/// A teleprompter that was moved to within `distance` of the camera position
+/// (top centre of its display) snaps onto it. Returns whether it moved.
+pub(crate) fn snap_teleprompter_to_camera(
+    window: &gpui::Window,
+    distance: f32,
+    cx: &mut App,
+) -> bool {
+    let current = window.bounds();
+    let (target, _) = teleprompter_placement(None, current.size, cx);
+    let dx = f32::from(target.origin.x - current.origin.x);
+    let dy = f32::from(target.origin.y - current.origin.y);
+    let away = (dx * dx + dy * dy).sqrt();
+    if away < 1. || away > distance {
+        return false;
+    }
     let Some(native) = platform::native_window(window) else {
-        return;
+        return false;
     };
-    let (bounds, _) = teleprompter_placement(None, window.bounds().size, cx);
+    let bounds = Bounds {
+        origin: target.origin,
+        size: current.size,
+    };
     cx.spawn(async move |_| place_teleprompter_frame(&native, bounds))
         .detach();
+    true
 }
 
 /// Open (or re-show) the teleprompter -- `openTeleprompter()` in

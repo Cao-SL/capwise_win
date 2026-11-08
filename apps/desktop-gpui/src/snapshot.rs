@@ -61,6 +61,16 @@ pub fn arm_from_env(cx: &mut App) {
                 cx.background_executor().timer(Duration::from_millis(1200)).await;
             }
         }
+        // `CAP_GPUI_SNAPSHOT_PROMPTER=edit|menu`: put the teleprompter in that
+        // state first (reading is its default once there is a script).
+        if let Ok(state) = std::env::var("CAP_GPUI_SNAPSHOT_PROMPTER") {
+            cx.update(|cx| {
+                if let Some(handle) = cx.global::<crate::app_windows::AppWindows>().teleprompter {
+                    let _ = handle.update(cx, |view, window, cx| view.harness_state(&state, window, cx));
+                }
+            });
+            cx.background_executor().timer(Duration::from_millis(500)).await;
+        }
         let mut number = None;
         for _ in 0..20 {
             number = cx.update(|cx| {
@@ -69,6 +79,10 @@ pub fn arm_from_env(cx: &mut App) {
                     crate::permission_guide::window_handle(cx)
                 } else if target == "main" {
                     Some(cx.global::<crate::app_windows::AppWindows>().main.into())
+                } else if target == "teleprompter" {
+                    cx.global::<crate::app_windows::AppWindows>()
+                        .teleprompter
+                        .map(Into::into)
                 } else if target == "editor" {
                     cx.global::<crate::app_windows::AppWindows>()
                         .editors
