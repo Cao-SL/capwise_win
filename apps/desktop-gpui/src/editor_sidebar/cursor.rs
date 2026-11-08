@@ -5,10 +5,10 @@ use super::*;
 use crate::editor_tabs::CursorSlider;
 
 const CARD_GAP: f32 = 8.;
-const TILE_HEIGHT: f32 = 60.;
+const TILE_HEIGHT: f32 = 52.;
 const TILE_RADIUS: f32 = 10.;
-const ARROW_BOX: f32 = 34.;
-const CIRCLE_DISC: f32 = 28.;
+const ARROW_BOX: f32 = 28.;
+const CIRCLE_DISC: f32 = 24.;
 const CARD_GROUP: &str = "cursor-style-card";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +36,20 @@ impl CursorCard {
             Self::Family(CursorFamily::MacOSTahoe) => "tahoe",
             Self::Family(CursorFamily::Windows) => "windows",
             Self::Circle => "circle",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Default => tr::editor::sidebar::cursor::description_default(),
+            Self::Family(CursorFamily::MacOS) => tr::editor::sidebar::cursor::description_macos(),
+            Self::Family(CursorFamily::MacOSTahoe) => {
+                tr::editor::sidebar::cursor::description_tahoe()
+            }
+            Self::Family(CursorFamily::Windows) => {
+                tr::editor::sidebar::cursor::description_windows()
+            }
+            Self::Circle => tr::editor::sidebar::cursor::description_circle(),
         }
     }
 
@@ -191,33 +205,21 @@ impl EditorWindow {
 
     fn render_cursor_tile(&self, card: CursorCard, selected: bool, recorded: bool) -> AnyElement {
         let theme = self.theme;
+        let accent = Hsla::from(theme.editor.accent);
         let art = match card {
-            CursorCard::Default => div()
-                .flex()
-                .items_center()
-                .gap(px(12.))
-                .child(
-                    self.cursor_art(
-                        self.recorded_cursor_family
-                            .unwrap_or(host_cursor_family())
-                            .arrow(),
-                        ARROW_BOX,
-                    ),
-                )
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .child(tr::editor::sidebar::cursor::default()),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(Hsla::from(theme.gray_11))
-                        .child(tr::editor::sidebar::cursor::recorded()),
-                )
-                .into_any_element(),
+            CursorCard::Default => self.cursor_art(
+                self.recorded_cursor_family
+                    .unwrap_or(host_cursor_family())
+                    .arrow(),
+                ARROW_BOX,
+            ),
             CursorCard::Family(family) => self.cursor_art(family.arrow(), ARROW_BOX),
             CursorCard::Circle => circle_art(),
+        };
+        let tip = if recorded {
+            tr::editor::sidebar::cursor::recorded_tooltip()
+        } else {
+            card.description()
         };
 
         div()
@@ -230,9 +232,7 @@ impl EditorWindow {
             .justify_center()
             .map(|this| {
                 if selected {
-                    this.border_2()
-                        .border_color(Hsla::from(theme.blue_8))
-                        .bg(with_alpha(theme.blue_3, 0.4))
+                    this.border_2().border_color(accent).bg(accent.opacity(0.1))
                 } else {
                     this.border_1()
                         .border_color(Hsla::from(theme.gray_3))
@@ -242,12 +242,8 @@ impl EditorWindow {
                         })
                 }
             })
-            .when(recorded, |this| {
-                this.tooltip(move |_window, cx| {
-                    ui::Tooltip::new(&theme, tr::editor::sidebar::cursor::recorded_tooltip())
-                        .view(cx)
-                })
-            })
+            .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+            .tooltip(move |_window, cx| ui::Tooltip::new(&theme, tip).view(cx))
             .child(art)
             .into_any_element()
     }
@@ -274,29 +270,27 @@ impl EditorWindow {
             .gap(px(6.))
             .cursor_pointer()
             .child(self.render_cursor_tile(card, selected, is_recorded))
-            .when(card != CursorCard::Default, |this| {
-                this.child(
-                    div()
-                        .max_w_full()
-                        .whitespace_nowrap()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .text_size(px(11.))
-                        .line_height(px(11.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(Hsla::from(if selected {
-                            theme.gray_12
-                        } else {
-                            theme.gray_11
-                        }))
-                        .when(!selected, |this| {
-                            this.group_hover(CARD_GROUP, |this| {
-                                this.text_color(Hsla::from(theme.gray_12))
-                            })
+            .child(
+                div()
+                    .max_w_full()
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_size(px(11.))
+                    .line_height(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(Hsla::from(if selected {
+                        theme.editor.accent
+                    } else {
+                        theme.gray_11
+                    }))
+                    .when(!selected, |this| {
+                        this.group_hover(CARD_GROUP, |this| {
+                            this.text_color(Hsla::from(theme.gray_12))
                         })
-                        .child(card.label()),
-                )
-            })
+                    })
+                    .child(card.label()),
+            )
             .on_click(cx.listener(move |this, _, window, cx| {
                 let cursor_type = cursor_type.clone();
                 this.edit_project("cursor-type", window, cx, move |project| {
@@ -313,43 +307,14 @@ impl EditorWindow {
     pub(crate) fn render_cursor_style_picker(&self, cx: &mut Context<Self>) -> AnyElement {
         let selected = self.selected_cursor_card();
         let recorded = self.recorded_cursor_family;
-
-        let description = match selected {
-            CursorCard::Default => tr::editor::sidebar::cursor::description_default(),
-            CursorCard::Family(CursorFamily::MacOS) => {
-                tr::editor::sidebar::cursor::description_macos()
-            }
-            CursorCard::Family(CursorFamily::MacOSTahoe) => {
-                tr::editor::sidebar::cursor::description_tahoe()
-            }
-            CursorCard::Family(CursorFamily::Windows) => {
-                tr::editor::sidebar::cursor::description_windows()
-            }
-            CursorCard::Circle => tr::editor::sidebar::cursor::description_circle(),
-        };
         div()
             .flex()
-            .flex_col()
+            .flex_row()
             .gap(px(CARD_GAP))
-            .child(self.render_cursor_card(
-                CursorCard::Default,
-                selected == CursorCard::Default,
-                recorded,
-                cx,
-            ))
-            .child(
-                div().flex().flex_row().gap(px(CARD_GAP)).children(
-                    cursor_cards()
-                        .into_iter()
-                        .filter(|card| *card != CursorCard::Default)
-                        .map(|card| self.render_cursor_card(card, selected == card, recorded, cx)),
-                ),
-            )
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(Hsla::from(self.theme.gray_11))
-                    .child(description),
+            .children(
+                cursor_cards()
+                    .into_iter()
+                    .map(|card| self.render_cursor_card(card, selected == card, recorded, cx)),
             )
             .into_any_element()
     }

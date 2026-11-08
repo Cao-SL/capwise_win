@@ -6508,7 +6508,7 @@ impl EditorWindow {
             self.slider_field(
                 tr::editor::panel::mask::outside_darkness(),
                 SliderKey::Panel(PanelSlider::MaskDarkness, index),
-                "",
+                "x100%",
                 cx,
             )
             .into_any_element()
@@ -6721,7 +6721,7 @@ impl EditorWindow {
                         .child(this.slider_field(
                             tr::editor::panel::scene::screen_zoom(),
                             SliderKey::Panel(PanelSlider::SceneScreenZoom, index),
-                            "",
+                            "%",
                             cx,
                         ))
                         .child(
@@ -6731,7 +6731,7 @@ impl EditorWindow {
                         .child(this.slider_field(
                             tr::editor::panel::scene::camera_zoom(),
                             SliderKey::Panel(PanelSlider::SceneCameraZoom, index),
-                            "",
+                            "%",
                             cx,
                         ))
                         .child(
@@ -7451,10 +7451,10 @@ impl EditorWindow {
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(Hsla::from(theme.editor.text_2))
-                        .child(tr::editor::panel::camera3d::auto_scene()),
+                        .child(crate::editor_sidebar::section_title(
+                            &theme,
+                            tr::editor::panel::camera3d::auto_scene(),
+                        )),
                 )
                 .child(div().flex_1())
                 .child(self.render_camera3d_count_pills("panel", count, maximum, cx))
@@ -7605,10 +7605,10 @@ impl EditorWindow {
                     .child(
                         div()
                             .flex_none()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.editor.text_2))
-                            .child(tr::editor::panel::camera3d::camera()),
+                            .child(crate::editor_sidebar::section_title(
+                                &theme,
+                                tr::editor::panel::camera3d::camera(),
+                            )),
                     )
                     .child(div().flex_1())
                     .child(
@@ -9692,8 +9692,8 @@ impl EditorWindow {
             .into_any_element()
     }
 
-    /// Entrance, a loop while shown, and exit -- one row of chips each, the
-    /// way text offers its animations. Pointing loops pick a direction.
+    /// Entrance, a loop while shown, and exit -- one row of chips each. The
+    /// slides and the pointing loop are one chip that reveals its arrows.
     fn render_image_motion(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
         use cap_project::{ImageEmphasis, ImageMotion};
         use tr::editor::panel::image::motion as copy;
@@ -9704,10 +9704,14 @@ impl EditorWindow {
             return div().into_any_element();
         };
         let theme = self.theme;
-        let (enter, emphasis, exit) = (segment.animation_in, segment.emphasis, segment.animation_out);
+        let (enter, emphasis, exit) = (
+            segment.animation_in,
+            segment.emphasis,
+            segment.animation_out,
+        );
         let chip = move |id: SharedString, label: &'static str, selected: bool| {
             ui::EditorButton::plain(&theme, id)
-                .outlined(&theme)
+                .choice(&theme)
                 .label(label)
                 .text_size(px(12.))
                 .height(px(26.))
@@ -9715,58 +9719,134 @@ impl EditorWindow {
                 .padding_x(px(10.))
                 .pressed(selected)
         };
-        let motions: [(ImageMotion, &'static str); 10] = [
-            (ImageMotion::None, copy::none()),
-            (ImageMotion::Fade, copy::fade()),
-            (ImageMotion::Pop, copy::pop()),
-            (ImageMotion::Zoom, copy::zoom()),
-            (ImageMotion::Stamp, copy::stamp()),
-            (ImageMotion::Spin, copy::spin()),
-            (ImageMotion::SlideUp, copy::up()),
-            (ImageMotion::SlideDown, copy::down()),
-            (ImageMotion::SlideLeft, copy::left()),
-            (ImageMotion::SlideRight, copy::right()),
-        ];
-        let row = |label: &'static str, chips: Vec<gpui::AnyElement>| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(Hsla::from(theme.editor.text_2))
-                        .child(label),
-                )
+        let arrow =
+            move |id: SharedString, glyph: &'static str, tip: &'static str, selected: bool| {
+                ui::EditorButton::plain(&theme, id)
+                    .choice(&theme)
+                    .label(glyph)
+                    .text_size(px(12.))
+                    .width(px(32.))
+                    .height(px(24.))
+                    .radius(px(12.))
+                    .padding_x(px(0.))
+                    .pressed(selected)
+                    .tooltip(&theme, tip)
+            };
+        let is_slide = |motion: ImageMotion| {
+            matches!(
+                motion,
+                ImageMotion::SlideUp
+                    | ImageMotion::SlideDown
+                    | ImageMotion::SlideLeft
+                    | ImageMotion::SlideRight
+            )
+        };
+        let row = |label: &'static str,
+                   chips: Vec<gpui::AnyElement>,
+                   arrows: Option<Vec<gpui::AnyElement>>| {
+            ui::Field::stacked(&theme, label)
                 .child(div().flex().flex_wrap().gap(px(6.)).children(chips))
+                .children(arrows.map(|arrows| {
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap(px(6.))
+                        .children(arrows)
+                        .into_any_element()
+                }))
         };
         let motion_chips = |exit_row: bool, current: ImageMotion, cx: &mut Context<Self>| {
-            motions
-                .iter()
-                .filter(|(motion, _)| !(exit_row && *motion == ImageMotion::Stamp))
+            let side = if exit_row { "out" } else { "in" };
+            let mut choices = vec![
+                (ImageMotion::None, copy::none()),
+                (ImageMotion::Fade, copy::fade()),
+                (ImageMotion::Pop, copy::pop()),
+                (ImageMotion::Zoom, copy::zoom()),
+            ];
+            if !exit_row {
+                choices.push((ImageMotion::Stamp, copy::stamp()));
+            }
+            choices.push((ImageMotion::Spin, copy::spin()));
+            choices.push((
+                ImageMotion::SlideUp,
+                if exit_row {
+                    copy::slide_out()
+                } else {
+                    copy::slide_in()
+                },
+            ));
+            let chips = choices
+                .into_iter()
                 .map(|(motion, label)| {
-                    let motion = *motion;
+                    let selected = if motion == ImageMotion::SlideUp {
+                        is_slide(current)
+                    } else {
+                        current == motion
+                    };
                     chip(
-                        SharedString::from(format!(
-                            "image-{index}-{}-{motion:?}",
-                            if exit_row { "out" } else { "in" }
-                        )),
+                        SharedString::from(format!("image-{index}-{side}-{motion:?}")),
                         label,
+                        selected,
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.edit_image_segment(
+                            "image-motion",
+                            index,
+                            window,
+                            cx,
+                            move |segment| {
+                                let slot = if exit_row {
+                                    &mut segment.animation_out
+                                } else {
+                                    &mut segment.animation_in
+                                };
+                                if motion == ImageMotion::SlideUp && is_slide(*slot) {
+                                    return false;
+                                }
+                                *slot = motion;
+                                true
+                            },
+                        );
+                    }))
+                    .into_any_element()
+                })
+                .collect::<Vec<_>>();
+            let arrows = is_slide(current).then(|| {
+                [
+                    (ImageMotion::SlideUp, "↑", copy::up()),
+                    (ImageMotion::SlideDown, "↓", copy::down()),
+                    (ImageMotion::SlideLeft, "←", copy::left()),
+                    (ImageMotion::SlideRight, "→", copy::right()),
+                ]
+                .into_iter()
+                .map(|(motion, glyph, tip)| {
+                    arrow(
+                        SharedString::from(format!("image-{index}-{side}-dir-{motion:?}")),
+                        glyph,
+                        tip,
                         current == motion,
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.edit_image_segment("image-motion", index, window, cx, move |segment| {
-                            if exit_row {
-                                segment.animation_out = motion;
-                            } else {
-                                segment.animation_in = motion;
-                            }
-                            true
-                        });
+                        this.edit_image_segment(
+                            "image-motion",
+                            index,
+                            window,
+                            cx,
+                            move |segment| {
+                                if exit_row {
+                                    segment.animation_out = motion;
+                                } else {
+                                    segment.animation_in = motion;
+                                }
+                                true
+                            },
+                        );
                     }))
                     .into_any_element()
                 })
                 .collect::<Vec<_>>()
+            });
+            (chips, arrows)
         };
         let pointing = matches!(
             emphasis,
@@ -9783,7 +9863,7 @@ impl EditorWindow {
             (ImageEmphasis::Float, copy::float()),
             (ImageEmphasis::NudgeRight, copy::point()),
         ];
-        let mut emphasis_chips: Vec<gpui::AnyElement> = emphases
+        let emphasis_chips: Vec<gpui::AnyElement> = emphases
             .iter()
             .map(|(value, label)| {
                 let value = *value;
@@ -9816,65 +9896,82 @@ impl EditorWindow {
                 .into_any_element()
             })
             .collect();
-        if pointing {
-            for (value, glyph) in [
-                (ImageEmphasis::NudgeRight, "→"),
-                (ImageEmphasis::NudgeLeft, "←"),
-                (ImageEmphasis::NudgeUp, "↑"),
-                (ImageEmphasis::NudgeDown, "↓"),
-            ] {
-                emphasis_chips.push(
-                    chip(
-                        SharedString::from(format!("image-{index}-point-{value:?}")),
-                        glyph,
-                        emphasis == value,
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.edit_image_segment("image-motion", index, window, cx, move |segment| {
-                            segment.emphasis = value;
-                            true
-                        });
-                    }))
-                    .into_any_element(),
-                );
-            }
-        }
+        let emphasis_arrows = pointing.then(|| {
+            [
+                (ImageEmphasis::NudgeUp, "↑", copy::up()),
+                (ImageEmphasis::NudgeDown, "↓", copy::down()),
+                (ImageEmphasis::NudgeLeft, "←", copy::left()),
+                (ImageEmphasis::NudgeRight, "→", copy::right()),
+            ]
+            .into_iter()
+            .map(|(value, glyph, tip)| {
+                arrow(
+                    SharedString::from(format!("image-{index}-point-{value:?}")),
+                    glyph,
+                    tip,
+                    emphasis == value,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.edit_image_segment("image-motion", index, window, cx, move |segment| {
+                        segment.emphasis = value;
+                        true
+                    });
+                }))
+                .into_any_element()
+            })
+            .collect::<Vec<_>>()
+        });
+        let (enter_chips, enter_arrows) = motion_chips(false, enter, cx);
+        let (exit_chips, exit_arrows) = motion_chips(true, exit, cx);
         ui::Field::section(&theme, copy::title())
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(12.))
-                    .child(row(copy::enter(), motion_chips(false, enter, cx)))
-                    .child(row(copy::emphasis(), emphasis_chips))
-                    .child(row(copy::exit(), motion_chips(true, exit, cx)))
+                    .child(row(copy::enter(), enter_chips, enter_arrows))
+                    .child(row(copy::emphasis(), emphasis_chips, emphasis_arrows))
+                    .child(row(copy::exit(), exit_chips, exit_arrows))
                     .child(
                         div().flex().child(
-                            ui::EditorButton::plain(&theme, SharedString::from(format!("image-{index}-motion-all")))
-                                .left_icon("icons/copy.svg")
-                                .icon_size(px(13.))
-                                .text_size(px(12.))
-                                .height(px(28.))
-                                .label(copy::apply_all())
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.edit_project("image-motion-all", window, cx, move |project| {
-                                        let Some(timeline) = project.timeline.as_mut() else {
-                                            return false;
-                                        };
-                                        let mut changed = false;
-                                        for segment in &mut timeline.image_segments {
-                                            if (segment.animation_in, segment.emphasis, segment.animation_out)
-                                                != (enter, emphasis, exit)
-                                            {
-                                                segment.animation_in = enter;
-                                                segment.emphasis = emphasis;
-                                                segment.animation_out = exit;
-                                                changed = true;
+                            ui::EditorButton::plain(
+                                &theme,
+                                SharedString::from(format!("image-{index}-motion-all")),
+                            )
+                            .left_icon("icons/copy.svg")
+                            .icon_size(px(13.))
+                            .text_size(px(12.))
+                            .height(px(28.))
+                            .label(copy::apply_all())
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    this.edit_project(
+                                        "image-motion-all",
+                                        window,
+                                        cx,
+                                        move |project| {
+                                            let Some(timeline) = project.timeline.as_mut() else {
+                                                return false;
+                                            };
+                                            let mut changed = false;
+                                            for segment in &mut timeline.image_segments {
+                                                if (
+                                                    segment.animation_in,
+                                                    segment.emphasis,
+                                                    segment.animation_out,
+                                                ) != (enter, emphasis, exit)
+                                                {
+                                                    segment.animation_in = enter;
+                                                    segment.emphasis = emphasis;
+                                                    segment.animation_out = exit;
+                                                    changed = true;
+                                                }
                                             }
-                                        }
-                                        changed
-                                    });
-                                })),
+                                            changed
+                                        },
+                                    );
+                                },
+                            )),
                         ),
                     ),
             )
@@ -10011,8 +10108,7 @@ impl EditorWindow {
                         (2, tr::editor::panel::style::crop_width()),
                         (3, tr::editor::panel::style::crop_height()),
                     ] {
-                        crop = crop.child(this.labelled_small(
-                            label,
+                        crop = crop.child(ui::Field::inline(&theme, label).child(
                             this.render_number_field(FieldKey::StyleCrop(index, axis), "px", 80.),
                         ));
                     }

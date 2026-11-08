@@ -507,7 +507,35 @@ fn matches_recording_filters(item: &RecordingItem, tab: RecordingsTab, query: &s
     {
         return false;
     }
-    query.is_empty() || item.pretty_name.to_lowercase().contains(query)
+    query.is_empty() || project_name_matches(&item.pretty_name, query)
+}
+
+fn compact_path(path: &str) -> String {
+    let home = std::env::var("HOME").ok().filter(|home| !home.is_empty());
+    let path = match home.as_deref().and_then(|home| path.strip_prefix(home)) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
+        _ => path.to_string(),
+    };
+    middle_truncate(&path, 52)
+}
+
+fn middle_truncate(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_string();
+    }
+    let tail = max_chars * 3 / 5;
+    let head = max_chars.saturating_sub(tail + 1);
+    let start: String = text.chars().take(head).collect();
+    let end: String = text.chars().skip(count - tail).collect();
+    format!("{start}…{end}")
+}
+
+fn project_name_matches(pretty_name: &str, query: &str) -> bool {
+    pretty_name.to_lowercase().contains(query)
+        || library::display_project_name(pretty_name)
+            .to_lowercase()
+            .contains(query)
 }
 
 struct ScreenshotRow {
@@ -552,9 +580,10 @@ impl Screenshots {
     fn visible_rows(&self) -> VisibleRows {
         let query = self.trimmed_search().to_lowercase();
         visible_rows(
-            self.items.iter().flatten().map(|row| {
-                query.is_empty() || row.item.pretty_name.to_lowercase().contains(&query)
-            }),
+            self.items
+                .iter()
+                .flatten()
+                .map(|row| query.is_empty() || project_name_matches(&row.item.pretty_name, &query)),
             !query.is_empty(),
             self.visible_count,
         )
@@ -2927,8 +2956,6 @@ impl SettingsWindow {
             })
     }
 
-    /// One `<RecordingItem>`: `flex flex-row justify-between p-3 items-center
-    /// w-full`, bordered from every row but the last.
     fn render_recording_row(
         &self,
         row: &RecordingRow,
@@ -2937,40 +2964,36 @@ impl SettingsWindow {
     ) -> impl IntoElement {
         let theme = self.theme;
         let item = &row.item;
-        // `studioCompleteCheck()`: the only rows whose body is a button.
         let active = crate::session::RecordingSession::active_project_dir_in(cx);
         let opens_editor = item.opens_editor(active.as_deref());
+        let failed = item.status.error().is_some();
         let path = item.path.clone();
 
         let thumbnail = match row.thumbnail.clone() {
-            // `object-cover rounded-sm size-12`
             Some(image) => {
                 use gpui::StyledImage as _;
                 img(image)
-                    .size(px(48.))
+                    .w(px(64.))
+                    .h(px(40.))
                     .flex_shrink_0()
                     .object_fit(gpui::ObjectFit::Cover)
                     .rounded(px(4.))
                     .into_any_element()
             }
-            // `<img onError>`'s fallback: `mr-4 rounded-sm bg-gray-10 size-11`.
-            // `bg-gray-10` is not one of the steps the settings material
-            // remaps, so it keeps its Radix value.
             None => div()
-                .size(px(44.))
-                .mr(px(16.))
+                .w(px(64.))
+                .h(px(40.))
                 .flex_shrink_0()
                 .rounded(px(4.))
-                .bg(theme.gray_10)
+                .bg(theme.settings_fill())
                 .into_any_element(),
         };
 
         let left = div()
-            // `flex gap-5 items-center`
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(20.))
+            .gap(px(12.))
             .flex_1()
             .min_w_0()
             .child(thumbnail)
@@ -2978,26 +3001,30 @@ impl SettingsWindow {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(8.))
+                    .gap(px(4.))
                     .min_w_0()
                     .child(
                         div()
                             .w_full()
                             .truncate()
-                            .text_size(px(14.))
-                            .child(item.pretty_name.clone()),
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(library::display_project_name(&item.pretty_name)),
                     )
                     .child(self.render_recording_badges(item)),
             );
 
         div()
             .id(gpui::ElementId::Path(item.path.as_path().into()))
+            .group("recording-row")
             .flex()
             .flex_row()
             .justify_between()
             .items_center()
+            .gap(px(8.))
             .w_full()
-            .p(px(12.))
+            .px(px(12.))
+            .py(px(8.))
             .when(!last, |this| {
                 this.border_b_1().border_color(theme.settings_border())
             })
@@ -3010,21 +3037,20 @@ impl SettingsWindow {
                 }
             })
             .child(left)
-            .child(self.render_recording_actions(item, cx))
+            .child(
+                div()
+                    .invisible()
+                    .group_hover("recording-row", |style| style.visible())
+                    .child(self.render_recording_actions(item, cx)),
+            )
             .when(opens_editor, |this| {
-                this.on_click(cx.listener(move |_this, _, _window, cx| {
-                    let path = path.clone();
+                this.on_click(cx.listener(move |this, _, window, cx| {
                     tracing::info!(path = %path.display(), "opening a recording in the editor");
-                    // Deferred: opening a window paints it synchronously, and
-                    // doing that inside a click handler would double-lease the
-                    // app.
-                    cx.defer(move |cx| crate::app_windows::open_editor(path, cx));
+                    this.open_editor_confirmed(path.clone(), failed, window, cx);
                 }))
             })
     }
 
-    /// The badge row: `flex space-x-1`, each pill `px-2 py-0.5 gap-1.5
-    /// font-medium text-[11px] text-gray-12 rounded-full w-fit`.
     fn render_recording_badges(&self, item: &RecordingItem) -> impl IntoElement {
         let theme = self.theme;
 
@@ -3043,7 +3069,6 @@ impl SettingsWindow {
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(theme.settings_text())
         };
-        // `size-2.5` on every badge glyph.
         let glyph = |icon: &'static str| {
             svg()
                 .path(icon)
@@ -3056,16 +3081,16 @@ impl SettingsWindow {
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(4.))
-            .child(
-                // `bg-blue-100` for instant, `bg-gray-4` for studio.
-                pill(match item.mode {
-                    RecordingMode::Instant => Hsla::from(theme.blue_100),
-                    RecordingMode::Studio => theme.settings_fill(),
-                })
-                .child(glyph(item.mode.icon()))
-                .child(item.mode.label()),
-            )
+            .gap(px(6.))
+            .when_some(library::recording_details(item), |this, details| {
+                this.child(
+                    div()
+                        .flex_none()
+                        .text_size(px(12.))
+                        .text_color(theme.settings_muted())
+                        .child(details),
+                )
+            })
             .when_some(item.upload.clone(), |this, upload| {
                 let label = upload.label();
                 let message = upload
@@ -3098,8 +3123,6 @@ impl SettingsWindow {
             })
             .when_some(item.status.error().map(str::to_string), |this, error| {
                 this.child(
-                    // The badge is wrapped in a `<CapTooltip>` whose content is
-                    // the error string.
                     pill(Hsla::from(theme.red_9))
                         .id("recording-failed")
                         .child(glyph("icons/warning-bold.svg"))
@@ -3113,10 +3136,6 @@ impl SettingsWindow {
             })
     }
 
-    /// The row's right-hand button group: `flex gap-2 items-center`.
-    ///
-    /// Studio rows get Open link (when shared) and Edit; instant rows get
-    /// Reupload and Open link; both get Open recording bundle and Delete.
     fn render_recording_actions(
         &self,
         item: &RecordingItem,
@@ -3125,34 +3144,19 @@ impl SettingsWindow {
         let mode = item.mode;
         let path = item.path.clone();
         let sharing = item.sharing.clone();
-        let failed = item.status.error().is_some();
-        let active = crate::session::RecordingSession::active_project_dir_in(cx);
-        let in_progress = !item.opens_editor(active.as_deref());
 
-        let mut actions = div().flex().flex_row().items_center().gap(px(8.));
+        let mut actions = div().flex().flex_row().items_center().gap(px(2.));
 
-        if mode == RecordingMode::Studio {
-            if let Some(link) = sharing.clone() {
-                actions = actions.child(self.row_button(
-                    "recording-link",
-                    "icons/link.svg",
-                    tr::settings::recordings::open_link(),
-                    false,
-                    cx,
-                    move |_this, _window, cx| cx.open_url(&link),
-                ));
-            }
-            let editor_path = path.clone();
+        if mode == RecordingMode::Studio
+            && let Some(link) = sharing.clone()
+        {
             actions = actions.child(self.row_button(
-                "recording-edit",
-                "icons/edit.svg",
-                tr::settings::recordings::edit(),
-                // `disabled={status === "InProgress"}`
-                in_progress,
+                "recording-link",
+                "icons/link.svg",
+                tr::settings::recordings::open_link(),
+                false,
                 cx,
-                move |this, window, cx| {
-                    this.open_editor_confirmed(editor_path.clone(), failed, window, cx)
-                },
+                move |_this, _window, cx| cx.open_url(&link),
             ));
         }
 
@@ -4215,120 +4219,56 @@ impl SettingsWindow {
 
     /// `StorageSection` -- `recordingsPath`.
     fn render_storage(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
         let path = self.settings.recordings_path.clone();
-        let is_custom = path.is_some();
-        // `Default (Application Support)`
-        let display =
-            path.unwrap_or_else(|| tr::settings::general::storage::default_location().to_string());
-
-        let mut actions = div().flex().flex_row().justify_end().gap(px(8.));
-        if is_custom {
-            actions = actions.child(self.button(
-                "recordings-reset",
-                (ui::ButtonVariant::Gray, None),
-                tr::common::reset_to_default(),
-                false,
-                cx,
-                |this, _window, cx| {
-                    if store::set_recordings_path(None) {
-                        this.settings = GeneralSettings::load();
-                        cx.notify();
-                    }
-                },
-            ));
-        }
-        actions = actions.child(self.button(
-            "recordings-pick",
-            (ui::ButtonVariant::Dark, None),
-            tr::settings::general::storage::choose_folder(),
-            false,
-            cx,
-            |_, window, cx| {
-                // `commands.pickRecordingsFolder()` opens an NSOpenPanel in
-                // directory mode; gpui wraps the same panel.
-                let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
-                    files: false,
-                    directories: true,
-                    multiple: false,
-                    prompt: None,
-                });
-                cx.spawn_in(window, async move |this, cx| {
-                    let Ok(Ok(Some(paths))) = paths.await else {
-                        return;
-                    };
-                    let Some(path) = paths.into_iter().next() else {
-                        return;
-                    };
-                    this.update(cx, |this, cx| {
-                        let path = path.to_string_lossy().to_string();
-                        if store::set_recordings_path(Some(&path)) {
-                            this.settings = GeneralSettings::load();
-                            cx.notify();
-                        }
-                    })
-                    .ok();
-                })
-                .detach();
-            },
-        ));
+        let default_dir = store::app_data_dir().join("recordings");
+        let resettable = path
+            .as_deref()
+            .is_some_and(|path| Path::new(path) != default_dir);
+        let display = path.as_deref().map_or_else(
+            || tr::settings::general::storage::default_location().to_string(),
+            compact_path,
+        );
 
         self.section(
             tr::settings::general::storage::title(),
             Some(tr::settings::general::storage::description()),
             None,
             vec![
-                self.card(true)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(12.))
-                            .child(
-                                // `flex items-center gap-2 px-3 py-2 rounded-lg
-                                //  bg-gray-3 border border-gray-4 min-w-0`
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .px(px(12.))
-                                    .py(px(8.))
-                                    .min_w_0()
-                                    .rounded(px(8.))
-                                    .bg(theme.settings_fill())
-                                    .border_1()
-                                    .border_color(theme.settings_border())
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .truncate()
-                                            .text_size(px(12.))
-                                            .child(display),
-                                    ),
-                            )
-                            .child(actions),
-                    )
-                    .into_any_element(),
+                self.folder_row(
+                    "recordings-folder",
+                    display,
+                    resettable,
+                    cx,
+                    |this, _window, cx| {
+                        if store::set_recordings_path(None) {
+                            this.settings = GeneralSettings::load();
+                            cx.notify();
+                        }
+                    },
+                    |this, path, cx| {
+                        if store::set_recordings_path(Some(&path)) {
+                            this.settings = GeneralSettings::load();
+                            cx.notify();
+                        }
+                    },
+                )
+                .into_any_element(),
             ],
         )
     }
 
     fn render_export_storage(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
         let path = self.settings.export_path.clone();
-        let is_custom = path.is_some();
-        let display =
-            path.unwrap_or_else(|| tr::settings::export_folder::default_location().to_string());
+        let display = path.as_deref().map_or_else(
+            || tr::settings::export_folder::default_location().to_string(),
+            compact_path,
+        );
 
-        let mut actions = div().flex().flex_row().justify_end().gap(px(8.));
-        if is_custom {
-            actions = actions.child(self.button(
-                "export-folder-reset",
-                (ui::ButtonVariant::Gray, None),
-                tr::common::reset_to_default(),
-                false,
+        let mut children = vec![
+            self.folder_row(
+                "export-folder",
+                display,
+                path.is_some(),
                 cx,
                 |this, _window, cx| {
                     this.export_folder_save_failed = !store::set_export_path(None);
@@ -4337,87 +4277,127 @@ impl SettingsWindow {
                     }
                     cx.notify();
                 },
-            ));
+                |this, path, cx| {
+                    this.export_folder_save_failed = !store::set_export_path(Some(&path));
+                    if !this.export_folder_save_failed {
+                        this.settings = GeneralSettings::load();
+                    }
+                    cx.notify();
+                },
+            )
+            .into_any_element(),
+        ];
+        if self.export_folder_save_failed {
+            children.push(
+                div()
+                    .px(px(4.))
+                    .text_size(px(12.))
+                    .text_color(self.theme.settings_muted())
+                    .child(tr::settings::export_folder::save_failed())
+                    .into_any_element(),
+            );
         }
-        actions = actions.child(self.button(
-            "export-folder-pick",
-            (ui::ButtonVariant::Dark, None),
-            tr::settings::general::storage::choose_folder(),
-            false,
-            cx,
-            |_, window, cx| {
-                let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
-                    files: false,
-                    directories: true,
-                    multiple: false,
-                    prompt: None,
-                });
-                cx.spawn_in(window, async move |this, cx| {
-                    let Ok(Ok(Some(paths))) = paths.await else {
-                        return;
-                    };
-                    let Some(path) = paths.into_iter().next() else {
-                        return;
-                    };
-                    this.update(cx, |this, cx| {
-                        let path = path.to_string_lossy().to_string();
-                        this.export_folder_save_failed = !store::set_export_path(Some(&path));
-                        if !this.export_folder_save_failed {
-                            this.settings = GeneralSettings::load();
-                        }
-                        cx.notify();
-                    })
-                    .ok();
-                })
-                .detach();
-            },
-        ));
 
         self.section(
             tr::settings::export_folder::title(),
             Some(tr::settings::export_folder::description()),
             None,
-            vec![
-                self.card(true)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(12.))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .px(px(12.))
-                                    .py(px(8.))
-                                    .min_w_0()
-                                    .rounded(px(8.))
-                                    .bg(theme.settings_fill())
-                                    .border_1()
-                                    .border_color(theme.settings_border())
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .truncate()
-                                            .text_size(px(12.))
-                                            .child(display),
-                                    ),
-                            )
-                            .child(actions)
-                            .when(self.export_folder_save_failed, |column| {
-                                column.child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .child(tr::settings::export_folder::save_failed()),
-                                )
-                            }),
-                    )
-                    .into_any_element(),
-            ],
+            children,
         )
+    }
+
+    fn folder_row(
+        &self,
+        id: &'static str,
+        display: String,
+        resettable: bool,
+        cx: &mut Context<Self>,
+        on_reset: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+        on_pick: impl Fn(&mut Self, String, &mut Context<Self>) + Clone + 'static,
+    ) -> gpui::Div {
+        let theme = self.theme;
+        self.card(false)
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(10.))
+            .pl(px(14.))
+            .pr(px(10.))
+            .py(px(10.))
+            .child(
+                svg()
+                    .path("icons/folder.svg")
+                    .size(px(16.))
+                    .flex_shrink_0()
+                    .text_color(theme.settings_muted()),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(13.))
+                    .text_color(theme.settings_text())
+                    .child(display),
+            )
+            .when(resettable, |row| {
+                row.child(self.quiet_link(
+                    SharedString::from(format!("{id}-reset")),
+                    tr::common::reset_to_default(),
+                    cx,
+                    on_reset,
+                ))
+            })
+            .child(self.button(
+                SharedString::from(format!("{id}-pick")),
+                (ui::ButtonVariant::Gray, None),
+                tr::settings::general::storage::choose_folder(),
+                false,
+                cx,
+                move |_, window, cx| {
+                    let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+                        files: false,
+                        directories: true,
+                        multiple: false,
+                        prompt: None,
+                    });
+                    let on_pick = on_pick.clone();
+                    cx.spawn_in(window, async move |this, cx| {
+                        let Ok(Ok(Some(paths))) = paths.await else {
+                            return;
+                        };
+                        let Some(path) = paths.into_iter().next() else {
+                            return;
+                        };
+                        this.update(cx, |this, cx| {
+                            on_pick(this, path.to_string_lossy().to_string(), cx)
+                        })
+                        .ok();
+                    })
+                    .detach();
+                },
+            ))
+    }
+
+    pub(crate) fn quiet_link(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        label: &'static str,
+        cx: &mut Context<Self>,
+        on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> impl IntoElement {
+        let theme = self.theme;
+        div()
+            .id(id.into())
+            .flex_shrink_0()
+            .px(px(4.))
+            .text_size(px(12.))
+            .text_color(theme.settings_muted())
+            .cursor_pointer()
+            .hover(|style| style.text_color(theme.settings_text()))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
+            .child(label)
     }
 
     /// `DefaultProjectNameCard` -- `defaultProjectNameTemplate`.
@@ -5628,12 +5608,34 @@ mod tests {
             pretty_name: name.to_string(),
             sharing: None,
             sort_time_millis: 0.,
+            duration_secs: None,
             thumbnail: None,
         }
     }
 
     /// `filteredRecordings()`: the tab first, then a case-insensitive substring
     /// of the *trimmed* query against `prettyName`.
+    #[test]
+    fn long_paths_keep_both_ends() {
+        assert_eq!(middle_truncate("/short", 10), "/short");
+        let long = "~/Movies/Clients/2026/Very long project folder/Final exports";
+        let short = middle_truncate(long, 24);
+        assert_eq!(short.chars().count(), 24);
+        assert!(short.starts_with("~/Movies"));
+        assert!(short.ends_with("Final exports"));
+        assert!(short.contains('…'));
+    }
+
+    #[test]
+    fn search_matches_the_friendly_project_name() {
+        assert!(project_name_matches("Cap 2026-11-07 at 22.08.21", "nov 7"));
+        assert!(project_name_matches(
+            "Cap 2026-11-07 at 22.08.21",
+            "2026-11-07"
+        ));
+        assert!(!project_name_matches("Team standup", "nov"));
+    }
+
     #[test]
     fn tabs_and_search_filter_the_list() {
         let items = [
@@ -5797,11 +5799,11 @@ mod tests {
     fn the_empty_message_names_the_tab_and_the_search() {
         assert_eq!(
             recordings_empty_message(RecordingsTab::All, ""),
-            "No recordings"
+            "No projects yet"
         );
         assert_eq!(
             recordings_empty_message(RecordingsTab::Studio, ""),
-            "No studio recordings"
+            "No recordings yet"
         );
         assert_eq!(
             recordings_empty_message(RecordingsTab::Instant, ""),

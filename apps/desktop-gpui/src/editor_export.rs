@@ -570,9 +570,27 @@ fn format_duration(seconds: f64) -> String {
     }
 }
 
+fn clock_colons_to_dots(name: &str) -> String {
+    let chars: Vec<char> = name.chars().collect();
+    chars
+        .iter()
+        .enumerate()
+        .map(|(index, &character)| {
+            let between_digits = index > 0
+                && chars[index - 1].is_ascii_digit()
+                && chars.get(index + 1).is_some_and(char::is_ascii_digit);
+            if character == ':' && between_digits {
+                '.'
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
 fn export_file_name(pretty_name: &str, extension: &str) -> String {
     let mut name = sanitize_filename::sanitize_with_options(
-        pretty_name,
+        clock_colons_to_dots(pretty_name),
         sanitize_filename::Options {
             windows: true,
             ..Default::default()
@@ -582,7 +600,7 @@ fn export_file_name(pretty_name: &str, extension: &str) -> String {
         let _ = name.pop();
     }
     if name.trim().is_empty() {
-        name = "Cap Recording".into();
+        name = "Capwise Recording".into();
     }
     format!("{name}.{extension}")
 }
@@ -1144,7 +1162,7 @@ impl EditorWindow {
             .summary()
             .map(|summary| summary.pretty_name.clone())
             .filter(|name| !name.trim().is_empty())
-            .unwrap_or_else(|| "Cap Recording".into());
+            .unwrap_or_else(|| "Capwise Recording".into());
         let Some(ui) = self.export.as_mut() else {
             return;
         };
@@ -3929,14 +3947,15 @@ mod tests {
             for (title, expected) in [
                 ("Sprint 1/2", "Sprint 12"),
                 (r#"a/b\c:d*e?f"g<h>i|j"#, "abcdefghij"),
-                ("\0\n", "Cap Recording"),
-                ("/\\:*?\"<>|", "Cap Recording"),
-                ("...", "Cap Recording"),
-                ("   ", "Cap Recording"),
-                ("CON", "Cap Recording"),
+                ("\0\n", "Capwise Recording"),
+                ("/\\:*?\"<>|", "Capwise Recording"),
+                ("...", "Capwise Recording"),
+                ("   ", "Capwise Recording"),
+                ("CON", "Capwise Recording"),
                 ("Clip final. ", "Clip final"),
                 ("My Clip 2026", "My Clip 2026"),
                 ("你好 🎬", "你好 🎬"),
+                ("录制 11月7日 22:08", "录制 11月7日 22.08"),
             ] {
                 let filename = export_file_name(title, extension);
                 assert_eq!(filename, format!("{expected}.{extension}"), "{title:?}");

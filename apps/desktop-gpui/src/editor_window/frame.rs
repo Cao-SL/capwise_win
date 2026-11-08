@@ -2,9 +2,9 @@ use cap_project::{
     BackgroundConfiguration, FrameConfiguration, FrameStyle, FrameTheme, ProjectConfiguration,
 };
 use gpui::{
-    AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, StatefulInteractiveElement as _, Styled, Window, div, point,
-    prelude::FluentBuilder, px, svg,
+    AppContext as _, Bounds, Context, Entity, FontWeight, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Pixels, StatefulInteractiveElement as _, Styled, Window, div,
+    point, prelude::FluentBuilder, px, svg,
 };
 
 use super::EditorWindow;
@@ -278,6 +278,10 @@ impl EditorWindow {
             .top_0()
             .left_0()
             .size_full()
+    }
+
+    pub(super) fn more_tools_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.frame_controls.trigger_bounds.get()
     }
 
     pub(super) fn frame_tool_content(&self) -> (&'static str, &'static str) {

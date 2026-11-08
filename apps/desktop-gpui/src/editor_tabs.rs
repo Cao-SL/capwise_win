@@ -1936,23 +1936,6 @@ impl EditorWindow {
             .into_any_element()
     }
 
-    /// The same pair at `text-xs`, which is what the segment panels and the
-    /// text tab use.
-    pub(crate) fn labelled_small(&self, label: &'static str, control: AnyElement) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(4.))
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(self.theme.editor.text_2))
-                    .child(label),
-            )
-            .child(control)
-            .into_any_element()
-    }
-
     pub(crate) fn menu_select(
         &self,
         kind: SidebarMenu,
@@ -2207,100 +2190,107 @@ impl EditorWindow {
             .into_any_element()
     }
 
-    /// The six-dot position grid (`:2996-3053`): a `h-30` card with a dot
-    /// pinned into each corner and the two centres.
+    /// The six camera spots as a small canvas-shaped pad: each third of a
+    /// row is one target, with its dot pinned toward the matching edge.
     fn render_camera_position(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let camera = &self.project.camera;
         // A camera dragged on the canvas has a manual position and none of the
         // six dots match (`:2982-2987`).
         let selected = camera.manual_position.is_none();
-        let (x, y) = (&camera.position.x, &camera.position.y);
-
-        let dots = [(0usize, 0usize), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)];
-        let x_index = match x {
+        let x_index = match camera.position.x {
             CameraXPosition::Left => 0usize,
             CameraXPosition::Center => 1,
             CameraXPosition::Right => 2,
         };
-        let y_index = match y {
+        let y_index = match camera.position.y {
             CameraYPosition::Top => 0usize,
             CameraYPosition::Bottom => 1,
         };
+        let accent = Hsla::from(theme.editor.accent);
+        let idle = Hsla::from(theme.editor.text_3);
+        let hover = Hsla::from(theme.editor.ctl_hover);
 
-        let mut grid = div()
-            .relative()
-            .mt(px(12.))
-            .w_full()
-            // `h-30`
-            .h(px(120.))
+        let mut pad = div()
+            .w(px(120.))
+            .h(px(68.))
+            .flex_none()
+            .p(px(3.))
+            .flex()
+            .flex_col()
             .rounded(px(8.))
             .border_1()
             .border_color(Hsla::from(theme.editor.line))
-            .bg(Hsla::from(theme.gray_2));
-
-        for (item_x, item_y) in dots {
-            let checked = selected && x_index == item_x && y_index == item_y;
-            let mut dot = div()
-                .id(SharedString::from(format!(
-                    "camera-position-{item_x}-{item_y}"
-                )))
-                .absolute()
-                // `size-6 rounded-md`, `bg-blue-9` selected, `bg-gray-5` not.
-                .size(px(24.))
-                .flex_none()
-                .rounded(px(6.))
-                .flex()
-                .justify_center()
-                .items_center()
-                .bg(if checked {
-                    Hsla::from(theme.blue_9)
-                } else {
-                    Hsla::from(theme.gray_5)
-                })
-                // `size-2 bg-solid-white rounded-full`
-                .child(div().size(px(8.)).rounded_full().bg(gpui::white()));
-
-            dot = match item_x {
-                0 => dot.left(px(8.)),
-                2 => dot.right(px(8.)),
-                _ => dot.left(gpui::relative(0.5)).ml(px(-12.)),
-            };
-            dot = if item_y == 0 {
-                dot.top(px(8.))
-            } else {
-                dot.bottom(px(8.))
-            };
-
-            grid = grid.child(dot.on_click(cx.listener(move |this, _, window, cx| {
-                this.edit_project("camera-position", window, cx, move |project| {
-                    project.camera.position = cap_project::CameraPosition {
-                        x: match item_x {
-                            0 => CameraXPosition::Left,
-                            2 => CameraXPosition::Right,
-                            _ => CameraXPosition::Center,
-                        },
-                        y: if item_y == 0 {
-                            CameraYPosition::Top
+            .bg(Hsla::from(theme.editor.ctl));
+        for item_y in 0..2usize {
+            let mut row = div().flex_1().flex().flex_row();
+            for item_x in 0..3usize {
+                let checked = selected && x_index == item_x && y_index == item_y;
+                let cell = div()
+                    .id(SharedString::from(format!(
+                        "camera-position-{item_x}-{item_y}"
+                    )))
+                    .flex_1()
+                    .flex()
+                    .p(px(5.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .hover(move |this| this.bg(hover))
+                    .map(|cell| match item_x {
+                        0 => cell.justify_start(),
+                        2 => cell.justify_end(),
+                        _ => cell.justify_center(),
+                    })
+                    .map(|cell| {
+                        if item_y == 0 {
+                            cell.items_start()
                         } else {
-                            CameraYPosition::Bottom
-                        },
-                    };
-                    // The batch clears the manual override too (`:3011-3016`).
-                    project.camera.manual_position = None;
-                    true
-                });
-            })));
+                            cell.items_end()
+                        }
+                    })
+                    .child(
+                        div()
+                            .size(px(10.))
+                            .rounded(px(3.))
+                            .when(checked, |dot| dot.bg(accent))
+                            .when(!checked, |dot| dot.border_1().border_color(idle)),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.edit_project("camera-position", window, cx, move |project| {
+                            project.camera.position = cap_project::CameraPosition {
+                                x: match item_x {
+                                    0 => CameraXPosition::Left,
+                                    2 => CameraXPosition::Right,
+                                    _ => CameraXPosition::Center,
+                                },
+                                y: if item_y == 0 {
+                                    CameraYPosition::Top
+                                } else {
+                                    CameraYPosition::Bottom
+                                },
+                            };
+                            // The batch clears the manual override too (`:3011-3016`).
+                            project.camera.manual_position = None;
+                            true
+                        });
+                    }));
+                row = row.child(cell);
+            }
+            pad = pad.child(row);
         }
 
         div()
             .flex()
-            .flex_col()
-            .child(ui::Subfield::plain(
-                &theme,
-                tr::editor::tabs::camera::position(),
-            ))
-            .child(grid)
+            .flex_row()
+            .items_center()
+            .justify_between()
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .text_color(Hsla::from(theme.editor.text_1))
+                    .child(tr::editor::tabs::camera::position()),
+            )
+            .child(pad)
             .into_any_element()
     }
 
@@ -2332,19 +2322,19 @@ impl EditorWindow {
                     .child(self.slider_field(
                         tr::editor::tabs::camera::size_label(),
                         SliderKey::Camera(CameraSlider::ShadowSize),
-                        "",
+                        "int",
                         cx,
                     ))
                     .child(self.slider_field(
                         tr::editor::tabs::camera::shadow_opacity(),
                         SliderKey::Camera(CameraSlider::ShadowOpacity),
-                        "",
+                        "%",
                         cx,
                     ))
                     .child(self.slider_field(
                         tr::editor::tabs::camera::shadow_blur(),
                         SliderKey::Camera(CameraSlider::ShadowBlur),
-                        "",
+                        "int",
                         cx,
                     ))
                     .into_any_element(),
@@ -2397,13 +2387,10 @@ impl EditorWindow {
                 ),
             ))
             .children(has_microphone.then(|| self.render_studio_sound_row(cx)))
-            .children(has_microphone.then(|| {
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::tabs::audio::studio_sound_description())
-            }))
-            .children(has_microphone.then(|| self.render_studio_sound_options(cx)))
+            .children(
+                (has_microphone && self.project.audio.improve)
+                    .then(|| self.render_studio_sound_options(cx)),
+            )
             .children((!has_microphone).then(|| {
                 div()
                     .text_size(px(12.))
@@ -2453,6 +2440,7 @@ impl EditorWindow {
                             )))
                             .into_any_element()
                     }))
+                    .children(has_microphone.then(|| this.render_studio_sound_default(cx)))
                     .children(this.render_sync_offsets(cx))
                     .into_any_element()
             }))
@@ -2462,58 +2450,47 @@ impl EditorWindow {
     fn render_studio_sound_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let enabled = self.project.audio.improve;
-        let accent = Hsla::from(theme.editor.accent);
 
         div()
             .id("studio-sound-row")
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(10.))
             .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
             .tooltip(move |_, cx| {
                 ui::Tooltip::new(&theme, tr::editor::tabs::audio::studio_sound_description())
                     .view(cx)
             })
             .child(
-                div()
-                    .flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .justify_center()
-                    .size(px(30.))
-                    .rounded(px(9.))
-                    .bg(if enabled {
-                        Theme::with_alpha(theme.editor.accent, 0.12)
-                    } else {
-                        Hsla::from(theme.editor.ctl)
-                    })
-                    .child(svg().path("icons/microphone.svg").size(px(16.)).text_color(
-                        if enabled {
-                            accent
+                ui::Field::inline(&theme, tr::editor::workbench::voice_enhance()).value(
+                    ui::Toggle::plain(&theme, "audio-improve", enabled)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.edit_project("audio-improve", window, cx, move |project| {
+                                project.audio.improve = !enabled;
+                                true
+                            });
+                        }))
+                        .into_any_element(),
+                ),
+            )
+            .into_any_element()
+    }
+
+    fn render_studio_sound_default(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme;
+        let enabled_by_default = self.sidebar.audio_enhancement_default;
+        ui::Field::inline(&theme, tr::editor::tabs::audio::use_for_new())
+            .value(
+                ui::Toggle::plain(&theme, "audio-improve-default", enabled_by_default)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let next = !enabled_by_default;
+                        if store::set_studio_sound_defaults(next, this.project.audio.isolation) {
+                            this.sidebar.audio_enhancement_default = next;
+                            this.sidebar.audio_enhancement_error = None;
                         } else {
-                            Hsla::from(theme.editor.text_2)
-                        },
-                    )),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(Hsla::from(theme.editor.text_1))
-                    .child(tr::editor::workbench::voice_enhance()),
-            )
-            .child(
-                ui::Toggle::plain(&theme, "audio-improve", enabled).on_click(cx.listener(
-                    move |this, _, window, cx| {
-                        this.edit_project("audio-improve", window, cx, move |project| {
-                            project.audio.improve = !enabled;
-                            true
-                        });
-                    },
-                )),
+                            this.sidebar.audio_enhancement_error =
+                                Some(tr::editor::tabs::audio::studio_sound_save_failed().into());
+                        }
+                        cx.notify();
+                    }))
+                    .into_any_element(),
             )
             .into_any_element()
     }
@@ -2538,7 +2515,6 @@ impl EditorWindow {
             ),
         ];
         let enabled = self.project.audio.improve;
-        let enabled_by_default = self.sidebar.audio_enhancement_default;
         let description = isolation_options
             .iter()
             .find(|(value, _, _)| *value == self.project.audio.isolation)
@@ -2605,25 +2581,6 @@ impl EditorWindow {
                         ),
                 )
             })
-            .child(
-                ui::Field::inline(&theme, tr::editor::tabs::audio::use_for_new()).value(
-                    ui::Toggle::plain(&theme, "audio-improve-default", enabled_by_default)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let next = !enabled_by_default;
-                            if store::set_studio_sound_defaults(next, this.project.audio.isolation)
-                            {
-                                this.sidebar.audio_enhancement_default = next;
-                                this.sidebar.audio_enhancement_error = None;
-                            } else {
-                                this.sidebar.audio_enhancement_error = Some(
-                                    tr::editor::tabs::audio::studio_sound_save_failed().into(),
-                                );
-                            }
-                            cx.notify();
-                        }))
-                        .into_any_element(),
-                ),
-            )
             .into_any_element()
     }
 
@@ -2676,7 +2633,7 @@ impl EditorWindow {
             .child(self.slider_field(
                 tr::editor::tabs::cursor::size_label(),
                 SliderKey::Cursor(CursorSlider::Size),
-                "",
+                "%",
                 cx,
             ))
             .child(self.render_cursor_ripple(cx));
@@ -2797,13 +2754,13 @@ impl EditorWindow {
                             .child(self.slider_field(
                                 tr::editor::tabs::cursor::tension(),
                                 SliderKey::Cursor(CursorSlider::Tension),
-                                "",
+                                "int",
                                 cx,
                             ))
                             .child(self.slider_field(
                                 tr::editor::tabs::cursor::friction(),
                                 SliderKey::Cursor(CursorSlider::Friction),
-                                "",
+                                "int",
                                 cx,
                             ))
                             .child(self.slider_field(
@@ -3162,7 +3119,7 @@ impl EditorWindow {
                                     .child(this.slider_field(
                                         tr::editor::tabs::keyboard::background_opacity(),
                                         SliderKey::Keyboard(KeyboardSlider::BackgroundOpacity),
-                                        "",
+                                        "%",
                                         cx,
                                     )),
                             )
@@ -3937,7 +3894,7 @@ impl EditorWindow {
                                     self.slider_field(
                                         tr::editor::tabs::captions::background_opacity(),
                                         SliderKey::Caption(CaptionSlider::BackgroundOpacity),
-                                        "",
+                                        "%",
                                         cx,
                                     )
                                     .into_any_element(),

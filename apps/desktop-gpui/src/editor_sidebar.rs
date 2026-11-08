@@ -3991,19 +3991,19 @@ impl EditorWindow {
                             .child(self.slider_field(
                                 tr::editor::sidebar::shadow::shadow_size(),
                                 SliderKey::Bg(BgSlider::ShadowSize),
-                                "",
+                                "int",
                                 cx,
                             ))
                             .child(self.slider_field(
                                 tr::editor::sidebar::shadow::opacity(),
                                 SliderKey::Bg(BgSlider::ShadowOpacity),
-                                "",
+                                "%",
                                 cx,
                             ))
                             .child(self.slider_field(
                                 tr::editor::sidebar::shadow::blur(),
                                 SliderKey::Bg(BgSlider::ShadowBlur),
-                                "",
+                                "int",
                                 cx,
                             ))
                             .into_any_element(),
@@ -4149,20 +4149,24 @@ impl EditorWindow {
     }
 }
 
-/// `formatTooltip`: a plain string suffix means `value.toFixed(1)` plus it, and
-/// the two formatter call sites are motion blur (`${round(v * 100)}%`) and the
-/// notch's three (`${(v * 100).toFixed(1)}%`).
 pub(crate) fn format_slider_value(value: f32, unit: &str) -> String {
     match unit {
-        "" => format!("{value:.1}"),
         "deg" => format!("{}\u{b0}", value.round() as i32),
         "int" => format!("{}", value.round() as i32),
-        "x100%" => format!("{}%", (value * 100.).round() as i32),
-        "pct" => format!("{:.1}%", value * 100.),
+        "%" => format!("{}%", value.round() as i32),
+        "x100%" | "pct" => format!("{}%", (value * 100.).round() as i32),
         "volume" => format!("{:.0}%", 100. * 10_f32.powf(value / 20.)),
-        // The ripple duration's `${v.toFixed(2)}s`.
         "secs" => format!("{value:.2}s"),
-        unit => format!("{value:.1}{unit}"),
+        unit => format!("{}{unit}", trim_tenths(value)),
+    }
+}
+
+fn trim_tenths(value: f32) -> String {
+    let tenths = (value * 10.).round() / 10.;
+    if tenths.fract() == 0. {
+        format!("{}", tenths as i32)
+    } else {
+        format!("{tenths:.1}")
     }
 }
 
@@ -4337,7 +4341,8 @@ pub(crate) fn section_action(
     let group: SharedString = SharedString::from(format!("sa-{id:?}"));
     let rest = Hsla::from(theme.editor.text_2);
     let hover = Hsla::from(theme.editor.text_1);
-    let foreground = if active { hover } else { rest };
+    let accent = Hsla::from(theme.editor.accent);
+    let foreground = if active { accent } else { rest };
 
     div()
         .id(id)
@@ -4353,20 +4358,24 @@ pub(crate) fn section_action(
         .text_size(px(12.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(foreground)
-        .when(active, |this| this.bg(Hsla::from(theme.editor.ctl_hover)))
-        .cursor_pointer()
-        .hover(move |this| {
-            this.bg(Hsla::from(theme.editor.ctl_hover))
-                .text_color(hover)
+        .when(active, |this| this.bg(accent.opacity(0.12)))
+        .when(!active, |this| {
+            this.cursor_pointer()
+                .hover(move |this| {
+                    this.bg(Hsla::from(theme.editor.ctl_hover))
+                        .text_color(hover)
+                })
+                .active(move |this| this.bg(Hsla::from(theme.editor.ctl_active)))
         })
-        .active(move |this| this.bg(Hsla::from(theme.editor.ctl_active)))
         .children(icon.map(|icon| {
             svg()
                 .path(icon)
                 .size(px(12.))
                 .flex_shrink_0()
                 .text_color(foreground)
-                .group_hover(group, move |style| style.text_color(hover))
+                .when(!active, |this| {
+                    this.group_hover(group, move |style| style.text_color(hover))
+                })
         }))
         .child(label.into())
         .on_click(handler)
@@ -4496,8 +4505,7 @@ impl EditorWindow {
         // rail's indices shift when a tab is hidden), the latter with its
         // model menu showing. `CAP_GPUI_AUTO_ASSISTANT_SEND=<request>` then
         // sends a request the way the composer does.
-        if name.eq_ignore_ascii_case("assistant") || name.eq_ignore_ascii_case("assistant-models")
-        {
+        if name.eq_ignore_ascii_case("assistant") || name.eq_ignore_ascii_case("assistant-models") {
             self.sidebar.tab = SidebarTab::Assistant;
             if !self.assistant.open {
                 self.open_assistant(window, cx);
@@ -4843,12 +4851,15 @@ mod tests {
 
     #[test]
     fn slider_tooltips_print_what_the_source_formats() {
-        assert_eq!(format_slider_value(12.34, "%"), "12.3%");
-        assert_eq!(format_slider_value(5., "px"), "5.0px");
+        assert_eq!(format_slider_value(12.34, "%"), "12%");
+        assert_eq!(format_slider_value(84.6, "%"), "85%");
+        assert_eq!(format_slider_value(5., "px"), "5px");
+        assert_eq!(format_slider_value(2.5, "px"), "2.5px");
         assert_eq!(format_slider_value(0.55, "x100%"), "55%");
-        assert_eq!(format_slider_value(0.1224, "pct"), "12.2%");
+        assert_eq!(format_slider_value(0.1224, "pct"), "12%");
         assert_eq!(format_slider_value(90., "deg"), "90\u{b0}");
-        assert_eq!(format_slider_value(50., ""), "50.0");
+        assert_eq!(format_slider_value(50., ""), "50");
+        assert_eq!(format_slider_value(0.36, ""), "0.4");
         assert_eq!(format_slider_value(0., "volume"), "100%");
         assert_eq!(format_slider_value(-20., "volume"), "10%");
         assert_eq!(format_slider_value(6., "volume"), "200%");

@@ -292,7 +292,11 @@ pub(crate) struct AssetLibraryState {
     drag: Option<AssetDrag>,
     library: library::LibraryUi,
     /// The animation a sticker on its way in should land with.
-    pending_motion: Option<(cap_project::ImageMotion, cap_project::ImageEmphasis, cap_project::ImageMotion)>,
+    pending_motion: Option<(
+        cap_project::ImageMotion,
+        cap_project::ImageEmphasis,
+        cap_project::ImageMotion,
+    )>,
 }
 
 impl Default for AssetLibraryState {
@@ -894,7 +898,11 @@ impl EditorWindow {
     /// The motion a sticker import asked for, once.
     pub(crate) fn take_pending_motion(
         &mut self,
-    ) -> Option<(cap_project::ImageMotion, cap_project::ImageEmphasis, cap_project::ImageMotion)> {
+    ) -> Option<(
+        cap_project::ImageMotion,
+        cap_project::ImageEmphasis,
+        cap_project::ImageMotion,
+    )> {
         self.assets.pending_motion.take()
     }
 
@@ -1114,12 +1122,14 @@ impl EditorWindow {
                         )
                         .stretch()
                         .item_height(px(28.))
-                        .on_select(cx.listener(move |this, index: &usize, window, cx| {
-                            let Some((kind, _)) = kinds.get(*index) else {
-                                return;
-                            };
-                            this.set_stock_kind(*kind, window, cx);
-                        })),
+                        .on_select(cx.listener(
+                            move |this, index: &usize, window, cx| {
+                                let Some((kind, _)) = kinds.get(*index) else {
+                                    return;
+                                };
+                                this.set_stock_kind(*kind, window, cx);
+                            },
+                        )),
                     ),
                 )
                 .child(
@@ -1197,36 +1207,32 @@ impl EditorWindow {
         } else {
             STOCK_PHOTO_PRESETS
         };
-        body = body.child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(6.))
-                .children(presets.iter().enumerate().map(|(index, (label, query))| {
-                    let query = *query;
-                    // Chinese words for a Chinese interface; elsewhere the
-                    // query itself reads fine.
-                    let label = if crate::i18n::current() == crate::i18n::Locale::ZhCn {
-                        *label
-                    } else {
-                        query
-                    };
-                    ui::EditorButton::plain(&theme, ("stock-preset", index))
-                        .outlined(&theme)
-                        .label(label)
-                        .text_size(px(12.))
-                        .height(px(26.))
-                        .radius(px(13.))
-                        .padding_x(px(10.))
-                        .disabled(self.assets.searching || waiting)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            if let Some(input) = &this.assets.input {
-                                input.update(cx, |input, cx| input.set_text(query, cx));
-                            }
-                            this.search_assets(1, true, window, cx);
-                        }))
-                })),
-        );
+        body = body.child(div().flex().flex_wrap().gap(px(6.)).children(
+            presets.iter().enumerate().map(|(index, (label, query))| {
+                let query = *query;
+                // Chinese words for a Chinese interface; elsewhere the
+                // query itself reads fine.
+                let label = if crate::i18n::current() == crate::i18n::Locale::ZhCn {
+                    *label
+                } else {
+                    query
+                };
+                ui::EditorButton::plain(&theme, ("stock-preset", index))
+                    .outlined(&theme)
+                    .label(label)
+                    .text_size(px(12.))
+                    .height(px(26.))
+                    .radius(px(13.))
+                    .padding_x(px(10.))
+                    .disabled(self.assets.searching || waiting)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if let Some(input) = &this.assets.input {
+                            input.update(cx, |input, cx| input.set_text(query, cx));
+                        }
+                        this.search_assets(1, true, window, cx);
+                    }))
+            }),
+        ));
         let mut results = div()
             .id("stock-results")
             .flex_1()

@@ -553,7 +553,6 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::sidebar::style_group::back(), "Back to Style"),
         (tr::editor::sidebar::cursor::default(), "Default"),
         (tr::editor::sidebar::cursor::circle(), "Circle"),
-        (tr::editor::sidebar::cursor::recorded(), "Recorded cursors"),
         (
             tr::editor::sidebar::cursor::recorded_tooltip(),
             "Recorded with this cursor",

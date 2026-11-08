@@ -3529,7 +3529,7 @@ impl MainWindow {
                                     .text_size(px(12.))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(theme.gray_12)
-                                    .child(recording.pretty_name),
+                                    .child(library::display_project_name(&recording.pretty_name)),
                             )
                             .child(
                                 div()
@@ -3831,15 +3831,15 @@ impl MainWindow {
                     .gap(px(4.))
                     .flex_shrink_0()
                     .child(
-                        icon_button("recordings", "icons/history.svg", 16.).on_click(
-                            cx.listener(|this, _, window, cx| {
+                        icon_button("recordings", "icons/history.svg", 16.).on_click(cx.listener(
+                            |this, _, window, cx| {
                                 this.open_panel(
                                     Panel::Library(LibraryKind::Recordings),
                                     window,
                                     cx,
                                 );
-                            }),
-                        ),
+                            },
+                        )),
                     )
                     .child(
                         icon_button("teleprompter", "icons/scan-text.svg", 16.).on_click(
@@ -3866,7 +3866,7 @@ impl MainWindow {
                                 )
                             });
                         }),
-                    ))
+                    )),
             );
 
         #[cfg(target_os = "windows")]
@@ -3994,23 +3994,24 @@ impl MainWindow {
         match self.panel {
             Some(panel) => root.child(self.render_panel(panel, cx)),
             None => root
-                .when(self.session.read(cx).editor_recording_target().is_some(), |root| {
-                    root.child(self.render_logo_row(cx))
-                })
+                .when(
+                    self.session.read(cx).editor_recording_target().is_some(),
+                    |root| root.child(self.render_logo_row(cx)),
+                )
                 .child(
-                div()
-                    .id("home-scroll")
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_h_0()
-                    .w_full()
-                    .pb(px(4.))
-                    .gap(px(8.))
-                    .overflow_y_scroll()
-                    .child(self.render_targets(cx))
-                    .child(self.render_base_controls(cx)),
-            ),
+                    div()
+                        .id("home-scroll")
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .pb(px(4.))
+                        .gap(px(8.))
+                        .overflow_y_scroll()
+                        .child(self.render_targets(cx))
+                        .child(self.render_base_controls(cx)),
+                ),
         }
     }
 
@@ -4688,7 +4689,10 @@ impl MainWindow {
         match (kind, &self.library) {
             (LibraryKind::Recordings, Some(LibraryItems::Recordings(rows))) => {
                 for row in rows {
-                    if !self.matches_search(&row.item.pretty_name) {
+                    if !self.matches_search(&row.item.pretty_name)
+                        && !self
+                            .matches_search(&library::display_project_name(&row.item.pretty_name))
+                    {
                         continue;
                     }
                     cards.push(self.render_recording_card(row, cx).into_any_element());
@@ -4873,12 +4877,12 @@ impl MainWindow {
             .map(std::path::Path::to_path_buf);
         let opens_editor = item.opens_editor(active.as_deref());
         let subtitle = item.upload.as_ref().map_or_else(
-            || item.mode.label().to_string(),
+            || library::recording_details(item),
             |upload| {
-                upload.last_error.as_deref().map_or_else(
+                Some(upload.last_error.as_deref().map_or_else(
                     || upload.label().to_string(),
                     crate::i18n::messages::localize,
-                )
+                ))
             },
         );
         let actions = self.render_recording_card_actions(item, cx);
@@ -4887,8 +4891,8 @@ impl MainWindow {
             gpui::ElementId::Path(item.path.as_path().into()),
             row.thumbnail.clone(),
             "icons/square-play.svg",
-            item.pretty_name.clone(),
-            Some(subtitle),
+            library::display_project_name(&item.pretty_name),
+            subtitle,
             item.clip_count,
             cx.listener(move |_, _, _window, cx| {
                 if studio && opens_editor {
@@ -7049,11 +7053,7 @@ impl MainWindow {
                     self.render_device_row(
                         "system-audio-row",
                         "icons/screen.svg",
-                        if self.system_audio {
-                            tr::main::device::system_audio_on().into()
-                        } else {
-                            tr::main::device::system_audio_off().into()
-                        },
+                        tr::main::device::system_audio().into(),
                         if self.system_audio {
                             PillState::On
                         } else {

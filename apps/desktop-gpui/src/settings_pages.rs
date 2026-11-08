@@ -504,6 +504,7 @@ impl SettingsWindow {
                 self.pages.shortcut_blocked = None;
             }
             Page::Cli => self.cli_refresh(window, cx),
+            Page::Assets => self.stock_page_shown(cx),
             Page::Transcription => {
                 self.pages.hints = store::transcription_hints();
                 self.pages.hint_draft.clear();
@@ -1706,8 +1707,6 @@ impl SettingsWindow {
     ) -> gpui::AnyElement {
         let theme = self.theme;
         let ink = theme.settings_text();
-        // The card tokens are translucent, so on this tinted panel they read
-        // as gray; the chosen option needs a solid, lighter surface.
         let raised = if theme.is_dark() {
             gpui::hsla(0., 0., 1., 0.1)
         } else {
@@ -1788,7 +1787,6 @@ impl SettingsWindow {
             .flex_col()
             .gap(px(10.))
             .p(px(12.))
-            .bg(theme.settings_fill())
             .child(
                 div()
                     .flex()
@@ -8204,7 +8202,7 @@ mod tests {
             }
         };
         let picker = match mode {
-            crate::main_window::Mode::Studio => "record it in Studio mode",
+            crate::main_window::Mode::Studio => "record it",
             crate::main_window::Mode::Instant => "record it in Instant mode",
             crate::main_window::Mode::Screenshot => "take a screenshot of it",
         };
@@ -8226,7 +8224,7 @@ mod tests {
                 format!("capture the display under your pointer and {screenshot}")
             }
             "startStudioRecording" => {
-                format!("record your selected screen or window in Studio mode{studio_stop}")
+                format!("record your selected screen or window{studio_stop}")
             }
             "startInstantRecording" => {
                 format!("record your selected screen or window in Instant mode{instant_stop}")
@@ -8239,7 +8237,7 @@ mod tests {
             "stopRecording" => "stop the current recording".into(),
             "togglePauseRecording" => "pause the current recording, or resume it".into(),
             "restartRecording" => "throw away the current take and start again".into(),
-            "addRecordingMarker" => "mark this moment in a Studio recording".into(),
+            "addRecordingMarker" => "mark this moment in the recording".into(),
             _ => String::new(),
         }
     }

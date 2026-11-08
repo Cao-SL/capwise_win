@@ -26,6 +26,7 @@ const FORMATTED: &[&str] = &[
     "main.device.format.channels",
     "main.device.format.current",
     "main.library.clips",
+    "main.library.recording_name",
     "main.recording.starts_in",
     "main.recovery.duration_minutes",
     "main.recovery.duration_minutes_seconds",
@@ -104,8 +105,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::main::device::heading(),
             "Choose your camera and microphone",
         ),
-        (tr::main::device::system_audio_on(), "Record System Audio"),
-        (tr::main::device::system_audio_off(), "No System Audio"),
+        (tr::main::device::system_audio(), "System audio"),
         (tr::main::device::pill::on(), "On"),
         (tr::main::device::pill::off(), "Off"),
         (tr::main::device::pill::not_connected(), "Not connected"),
@@ -158,6 +158,8 @@ fn main_surfaces_match_the_literals_they_replaced() {
             "No matching screenshots",
         ),
         (tr::main::library::importing(), "Importing"),
+        (tr::main::library::today(), "Today"),
+        (tr::main::library::yesterday(), "Yesterday"),
         (
             tr::main::library::recordings_description(),
             "Your screen recordings will appear here. Start recording to get started!",
@@ -385,7 +387,10 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::onboarding::modes::instant::feature_4(),
             "Browser-based playback",
         ),
-        (tr::onboarding::modes::studio::title(), "Record, edit, export"),
+        (
+            tr::onboarding::modes::studio::title(),
+            "Record, edit, export",
+        ),
         (
             tr::onboarding::modes::studio::tagline(),
             "Record it, then just export",
@@ -459,10 +464,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::onboarding::faq::shortcuts::answer(),
             "Head to Settings → Shortcuts at any time to customize all your keyboard shortcuts.",
         ),
-        (
-            tr::onboarding::faq::sharing::question(),
-            "How do I export?",
-        ),
+        (tr::onboarding::faq::sharing::question(), "How do I export?"),
         (
             tr::onboarding::faq::sharing::answer(),
             "Export an MP4 or GIF from the editor, or copy it to the clipboard, then send it anywhere.",
@@ -690,6 +692,10 @@ fn main_surface_messages_format_like_the_code_they_replaced() {
             format!("{clip_count} clips")
         );
     }
+    assert_eq!(
+        tr::main::library::recording_name("Nov 7", "22:08"),
+        "Recording Nov 7, 22:08"
+    );
     for remaining in [1_u32, 3, 10] {
         assert_eq!(
             tr::main::recording::starts_in(remaining),

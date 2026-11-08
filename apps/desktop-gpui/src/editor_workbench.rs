@@ -1,6 +1,6 @@
 use gpui::{
     AnyElement, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, svg,
 };
 
 use crate::{
@@ -166,18 +166,28 @@ impl EditorWindow {
                                             }))
                                             .child(workbench_time(segment.start)),
                                     )
-                                    .child(
+                                    .child(if active {
+                                        div()
+                                            .flex_1()
+                                            .flex()
+                                            .justify_end()
+                                            .h(px(20.))
+                                            .items_center()
+                                            .child(
+                                                svg()
+                                                    .path("icons/chevron-up.svg")
+                                                    .size(px(12.))
+                                                    .text_color(Hsla::from(theme.editor.text_3)),
+                                            )
+                                    } else {
                                         div()
                                             .flex_1()
                                             .min_w_0()
                                             .text_size(px(13.))
                                             .line_height(px(20.))
                                             .text_color(Hsla::from(theme.editor.text_1))
-                                            .when(active, |text| {
-                                                text.font_weight(gpui::FontWeight::MEDIUM)
-                                            })
-                                            .child(segment.text.clone()),
-                                    )
+                                            .child(segment.text.clone())
+                                    })
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         // A second click on the open line
                                         // folds it again.

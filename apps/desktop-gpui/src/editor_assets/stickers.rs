@@ -7,8 +7,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use gpui::{
     AnyElement, AppContext as _, Context, Entity, Hsla, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, RenderImage, SharedString, StatefulInteractiveElement as _,
-    Styled, StyledImage as _, Window, div, img, prelude::FluentBuilder, px, rgb,
+    MouseButton, ParentElement, RenderImage, SharedString, StatefulInteractiveElement as _, Styled,
+    StyledImage as _, Window, div, img, prelude::FluentBuilder, px, rgb,
 };
 
 use crate::{
@@ -100,7 +100,11 @@ impl EditorWindow {
         }
         let missing: Vec<_> = results
             .into_iter()
-            .filter(|sticker| !picker.thumbs.contains_key(&Self::sticker_key(picker, &sticker.id)))
+            .filter(|sticker| {
+                !picker
+                    .thumbs
+                    .contains_key(&Self::sticker_key(picker, &sticker.id))
+            })
             .map(|sticker| (sticker, Self::sticker_key(picker, &sticker.id)))
             .collect();
         if missing.is_empty() {
@@ -143,7 +147,12 @@ impl EditorWindow {
         self.draw_sticker_thumbs(cx);
     }
 
-    pub(crate) fn auto_insert_sticker(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn auto_insert_sticker(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let sticker = stickers::STICKERS
             .emoji
             .iter()
@@ -244,15 +253,17 @@ impl EditorWindow {
                             )
                             .stretch()
                             .item_height(px(26.))
-                            .on_select(cx.listener(move |this, index: &usize, _, cx| {
-                                if let (Some(picker), Some((kind, _))) =
-                                    (&mut this.sticker_picker, kinds.get(*index))
-                                {
-                                    picker.kind = *kind;
-                                }
-                                this.draw_sticker_thumbs(cx);
-                                cx.notify();
-                            })),
+                            .on_select(cx.listener(
+                                move |this, index: &usize, _, cx| {
+                                    if let (Some(picker), Some((kind, _))) =
+                                        (&mut this.sticker_picker, kinds.get(*index))
+                                    {
+                                        picker.kind = *kind;
+                                    }
+                                    this.draw_sticker_thumbs(cx);
+                                    cx.notify();
+                                },
+                            )),
                         ),
                     )
                     .child(
@@ -266,11 +277,9 @@ impl EditorWindow {
                             })),
                     ),
             )
-            .child(
-                div().px(px(10.)).child(
-                    ui::TextInput::search(&theme, "sticker-query", &picker.query).height(px(32.)),
-                ),
-            );
+            .child(div().px(px(10.)).child(
+                ui::TextInput::search(&theme, "sticker-query", &picker.query).height(px(32.)),
+            ));
         if picker.kind == StickerKind::Icon {
             panel = panel.child(
                 div()
@@ -282,8 +291,8 @@ impl EditorWindow {
                     .children(COLORS.iter().enumerate().map(|(index, color)| {
                         let color = *color;
                         let selected = picker.color == color;
-                        let hex = u32::from_str_radix(color.trim_start_matches('#'), 16)
-                            .unwrap_or(0);
+                        let hex =
+                            u32::from_str_radix(color.trim_start_matches('#'), 16).unwrap_or(0);
                         div()
                             .id(("sticker-color", index))
                             .size(px(20.))
@@ -293,7 +302,9 @@ impl EditorWindow {
                             .border_color(Hsla::from(theme.editor.line_strong))
                             .cursor_pointer()
                             .when(selected, |swatch| {
-                                swatch.border_2().border_color(Hsla::from(theme.editor.accent))
+                                swatch
+                                    .border_2()
+                                    .border_color(Hsla::from(theme.editor.accent))
                             })
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 if let Some(picker) = &mut this.sticker_picker {
@@ -371,7 +382,9 @@ impl EditorWindow {
                             |cell| cell.bg(gpui::hsla(0., 0., 0.25, 1.)),
                         )
                         .children(thumb.map(|thumb| {
-                            img(thumb).size(px(30.)).object_fit(gpui::ObjectFit::Contain)
+                            img(thumb)
+                                .size(px(30.))
+                                .object_fit(gpui::ObjectFit::Contain)
                         }))
                         .tooltip(move |_, cx| ui::Tooltip::new(&theme, name.clone()).view(cx))
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -381,16 +394,7 @@ impl EditorWindow {
             }
             grid = grid.child(line);
         }
-        panel = panel.child(grid).child(
-            div()
-                .px(px(12.))
-                .py(px(8.))
-                .border_t_1()
-                .border_color(Hsla::from(theme.editor.line))
-                .text_size(px(11.))
-                .text_color(Hsla::from(theme.editor.text_3))
-                .child(tr::editor::stickers::hint()),
-        );
+        panel = panel.child(grid);
         Some(
             div()
                 .absolute()

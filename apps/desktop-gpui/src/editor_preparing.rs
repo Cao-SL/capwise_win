@@ -486,7 +486,7 @@ impl PreparingRunner {
         );
         let seed = Arc::new(PreparingTimelineSeed {
             project: input.project.clone(),
-            pretty_name: input.recording_meta.pretty_name.clone(),
+            pretty_name: crate::library::display_project_name(&input.recording_meta.pretty_name),
             has_camera: input
                 .recording_meta
                 .studio_meta()

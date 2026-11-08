@@ -920,8 +920,7 @@ no_matching_cameras = "कोई मिलता-जुलता कैमरा
 no_matching_microphones = "कोई मिलता-जुलता माइक्रोफ़ोन नहीं"
 no_microphone = "कोई माइक्रोफ़ोन नहीं"
 no_microphones = "कोई माइक्रोफ़ोन नहीं मिला"
-system_audio_off = "सिस्टम ऑडियो नहीं"
-system_audio_on = "सिस्टम ऑडियो रिकॉर्ड करें"
+system_audio = "सिस्टम ऑडियो"
 
 [main.device.access]
 allow_access = "एक्सेस दें"
@@ -2167,7 +2166,6 @@ description_macos = "क्लासिक macOS रूप। कस्टम �
 description_tahoe = "macOS Tahoe रूप। कस्टम कर्सर का रिकॉर्ड किया गया आकार बना रहता है।"
 description_windows = "Windows रूप। कस्टम कर्सर का रिकॉर्ड किया गया आकार बना रहता है।"
 duration = "अवधि"
-recorded = "रिकॉर्ड किए गए कर्सर"
 recorded_tooltip = "इस कर्सर से रिकॉर्ड किया गया"
 ripple_size = "आकार"
 strength = "तीव्रता"
@@ -2896,7 +2894,6 @@ undo = "पहले जैसा करें"
 [editor.window.add_track]
 button = "जोड़ें"
 hide_3d = "3D ट्रैक छिपाएँ।"
-hint = "प्लेहेड पर सबसे आगे जोड़ा जाता है। ज़रूरत पड़ने पर पंक्तियाँ बनती हैं।"
 more = "और"
 
 [editor.window.aspect]
@@ -2937,7 +2934,6 @@ prompt = "अपनी रिकॉर्डिंग में सिनेम�
 [editor.window.clip_menu]
 more = "और सेटिंग्स"
 audio = "ऑडियो"
-cursor = "कर्सर"
 delete = "क्लिप हटाएँ"
 delete_only_clip = "इकलौती क्लिप नहीं हटाई जा सकती"
 hide_cursor = "कर्सर छिपाएँ"
@@ -2954,8 +2950,6 @@ speed = "स्पीड"
 split = "प्लेहेड पर विभाजित करें"
 split_hint = "प्लेहेड को इस क्लिप के अंदर ले जाएँ"
 volume = "वॉल्यूम"
-transition = "ट्रांज़िशन"
-transition_none = "कोई नहीं"
 transition_seconds = "{seconds} सेकंड"
 
 [editor.window.clip_menu.merge_blocker]
@@ -3067,7 +3061,6 @@ remove_fillers = "ठहराव और भराव शब्द हटाए�
 title = "ट्रांज़िशन"
 add = "ट्रांज़िशन जोड़ें"
 duration = "अवधि"
-seconds_unit = "सेकंड"
 remove = "ट्रांज़िशन हटाएँ"
 cross_fade = "क्रॉस डिज़ॉल्व"
 fade_through_black = "काले में फ़ेड"

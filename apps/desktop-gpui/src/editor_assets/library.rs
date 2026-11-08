@@ -33,12 +33,50 @@ pub(crate) struct LibraryUi {
     /// First frames of videos, decoded off the main thread.
     frames: HashMap<PathBuf, Arc<RenderImage>>,
     pending: HashSet<PathBuf>,
+    /// Pictures with see-through edges (stickers, cut-outs), drawn whole
+    /// instead of cropped to fill the tile.
+    see_through: HashMap<PathBuf, bool>,
     /// Project asset paths whose bytes are already in the library.
     saved: HashSet<String>,
     working: bool,
 }
 
 const TILE_HEIGHT: f32 = 76.;
+
+fn has_see_through_edges(path: &std::path::Path) -> bool {
+    use image::{ImageDecoder, ImageFormat, ImageReader};
+
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+    {
+        return true;
+    }
+    let Ok(reader) = ImageReader::open(path).and_then(ImageReader::with_guessed_format) else {
+        return false;
+    };
+    if matches!(reader.format(), Some(ImageFormat::Jpeg) | None) {
+        return false;
+    }
+    let Ok(decoder) = reader.into_decoder() else {
+        return false;
+    };
+    if !decoder.color_type().has_alpha() {
+        return false;
+    }
+    let Ok(image) = image::DynamicImage::from_decoder(decoder) else {
+        return false;
+    };
+    let image = image.to_rgba8();
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 {
+        return false;
+    }
+    let clear = |x: u32, y: u32| image.get_pixel(x, y)[3] < 250;
+    (0..width).any(|x| clear(x, 0) || clear(x, height - 1))
+        || (0..height).any(|y| clear(0, y) || clear(width - 1, y))
+}
 
 impl EditorWindow {
     /// Loads the library and works out which project assets are already in
@@ -62,10 +100,9 @@ impl EditorWindow {
                     let saved = records
                         .into_iter()
                         .filter(|path| {
-                            asset_library::project_asset_path(&project, path)
-                                .is_some_and(|file| {
-                                    !hashes.is_empty() && global_library::contains(&file)
-                                })
+                            asset_library::project_asset_path(&project, path).is_some_and(|file| {
+                                !hashes.is_empty() && global_library::contains(&file)
+                            })
                         })
                         .collect::<HashSet<_>>();
                     (items, saved)
@@ -118,6 +155,32 @@ impl EditorWindow {
         None
     }
 
+    fn library_see_through(&mut self, path: &PathBuf, cx: &mut Context<Self>) -> bool {
+        if let Some(see_through) = self.assets.library.see_through.get(path) {
+            return *see_through;
+        }
+        self.assets.library.see_through.insert(path.clone(), false);
+        let source = path.clone();
+        cx.spawn(async move |this, cx| {
+            let see_through = cx
+                .background_executor()
+                .spawn({
+                    let source = source.clone();
+                    async move { has_see_through_edges(&source) }
+                })
+                .await;
+            if see_through {
+                this.update(cx, |this, cx| {
+                    this.assets.library.see_through.insert(source, true);
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+        false
+    }
+
     fn library_thumbnail(
         &mut self,
         kind: AssetKind,
@@ -146,6 +209,17 @@ impl EditorWindow {
                 .child(svg().path(icon).size(px(11.)).text_color(gpui::white()))
         };
         match kind {
+            AssetKind::Photo if self.library_see_through(path, cx) => frame
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    img(path.clone())
+                        .w_full()
+                        .h(px(TILE_HEIGHT - 20.))
+                        .object_fit(gpui::ObjectFit::Contain),
+                )
+                .into_any_element(),
             AssetKind::Photo => frame
                 .child(
                     img(path.clone())
@@ -176,14 +250,12 @@ impl EditorWindow {
                     &theme,
                     crate::editor_timeline::TrackKind::Audio.color(),
                 ))
-                .child(
-                    svg().path("icons/music.svg").size(px(22.)).text_color(
-                        crate::editor_timeline::tile_fg(
-                            &theme,
-                            crate::editor_timeline::TrackKind::Audio.color(),
-                        ),
+                .child(svg().path("icons/music.svg").size(px(22.)).text_color(
+                    crate::editor_timeline::tile_fg(
+                        &theme,
+                        crate::editor_timeline::TrackKind::Audio.color(),
                     ),
-                )
+                ))
                 .into_any_element(),
         }
     }
@@ -309,12 +381,7 @@ impl EditorWindow {
         while tiles.peek().is_some() {
             let mut row = div().flex().gap(px(4.));
             for _ in 0..3 {
-                row = row.child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .children(tiles.next()),
-                );
+                row = row.child(div().flex_1().min_w_0().children(tiles.next()));
             }
             grid = grid.child(row);
         }
@@ -416,17 +483,10 @@ impl EditorWindow {
                               event: &MouseDownEvent,
                               window: &mut Window,
                               cx: &mut Context<Self>| {
-                            this.start_asset_drag(
-                                drag_record.clone(),
-                                event.position,
-                                window,
-                                cx,
-                            );
+                            this.start_asset_drag(drag_record.clone(), event.position, window, cx);
                         },
                     )
-                        as Box<
-                            dyn Fn(&mut Self, &MouseDownEvent, &mut Window, &mut Context<Self>),
-                        >
+                        as Box<dyn Fn(&mut Self, &MouseDownEvent, &mut Window, &mut Context<Self>)>
                 }),
                 cx,
             ));
@@ -477,20 +537,25 @@ impl EditorWindow {
             .flex()
             .items_center()
             .gap(px(4.))
-            .children(filters.into_iter().enumerate().map(|(index, (kind, label))| {
-                ui::EditorButton::plain(&theme, ("library-filter", index))
-                    .label(label)
-                    .text_size(px(12.))
-                    .height(px(28.))
-                    .radius(px(14.))
-                    .padding_x(px(10.))
-                    .pressed(filter == kind)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.assets.library.filter = kind;
-                        cx.notify();
-                    }))
-                    .into_any_element()
-            }))
+            .children(
+                filters
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (kind, label))| {
+                        ui::EditorButton::plain(&theme, ("library-filter", index))
+                            .label(label)
+                            .text_size(px(12.))
+                            .height(px(28.))
+                            .radius(px(14.))
+                            .padding_x(px(10.))
+                            .pressed(filter == kind)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.assets.library.filter = kind;
+                                cx.notify();
+                            }))
+                            .into_any_element()
+                    }),
+            )
             .child(div().flex_1())
             .child(
                 ui::EditorButton::plain(&theme, "library-import")
@@ -501,7 +566,9 @@ impl EditorWindow {
                     .height(px(28.))
                     .label(tr::editor::assets::library_import())
                     .disabled(self.assets.library.working)
-                    .on_click(cx.listener(|this, _, window, cx| this.import_to_library(window, cx))),
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.import_to_library(window, cx)),
+                    ),
             );
 
         let status = self.asset_status(cx);
@@ -633,8 +700,8 @@ impl EditorWindow {
 
     fn import_to_library(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         const EXTENSIONS: &[&str] = &[
-            "png", "jpg", "jpeg", "webp", "gif", "bmp", "mp4", "mov", "m4v", "mp3", "m4a",
-            "wav", "aac", "flac", "ogg", "aif", "aiff",
+            "png", "jpg", "jpeg", "webp", "gif", "bmp", "mp4", "mov", "m4v", "mp3", "m4a", "wav",
+            "aac", "flac", "ogg", "aif", "aiff",
         ];
         cx.spawn_in(window, async move |this, cx| {
             #[cfg(target_os = "linux")]
@@ -664,7 +731,12 @@ impl EditorWindow {
 
     /// Puts a library item into this video the way the matching import does:
     /// pictures and sound at the playhead, video at the end of the clips.
-    fn insert_library_item(&mut self, item: &LibraryItem, window: &mut Window, cx: &mut Context<Self>) {
+    fn insert_library_item(
+        &mut self,
+        item: &LibraryItem,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.asset_import_busy() {
             return;
         }

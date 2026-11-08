@@ -179,7 +179,7 @@ description = "Capture cursor state separately so you can adjust size and smooth
 label = "Custom cursor capture (Studio)"
 
 [settings.general.recording.auto_zoom]
-description = "Automatically add zoom segments around mouse clicks in Studio recordings."
+description = "Automatically add zoom segments around mouse clicks while recording."
 label = "Auto zoom on clicks"
 
 [settings.general.recording.default_zoom]
@@ -205,12 +205,12 @@ fps_60 = { text = "60 FPS (Recommended)", max_px = 180, size = 12 }
 label = "Max capture framerate"
 
 [settings.general.recording.marker_sound]
-description = "Plays a short sound when you add a marker during a Studio recording. Your microphone or system audio can pick it up."
+description = "Plays a short sound when you add a marker while recording. Your microphone or system audio can pick it up."
 label = "Play a sound for markers"
 
 [settings.general.storage]
-choose_folder = "Choose Folder"
-default_location = { text = "Default (Application Support)", context = "Shown in place of a folder path when recordings use the default location." }
+choose_folder = { text = "Change…", context = "Button that picks a different folder." }
+default_location = { text = "Default location", context = "Shown in place of a folder path when recordings use the default location." }
 description = "Where Capwise saves your recordings."
 title = "Storage"
 
@@ -304,8 +304,8 @@ all = "No projects yet"
 all_matching = "No matching recordings"
 instant = "No instant recordings"
 instant_matching = "No matching instant recordings"
-studio = "No studio recordings"
-studio_matching = "No matching studio recordings"
+studio = "No recordings yet"
+studio_matching = "No matching recordings"
 
 [settings.screenshots]
 copy = "Copy to clipboard"
@@ -396,7 +396,7 @@ while_recording_title = "While recording"
 
 [settings.shortcuts.after_studio]
 hint = "When you stop"
-title = "After a Studio recording"
+title = "After recording"
 
 [settings.shortcuts.on_cancel]
 hint = "Esc or closing the picker"
@@ -428,11 +428,11 @@ screenshot_area = "Screenshot an area"
 screenshot_display = "Screenshot the display"
 screenshot_window = "Screenshot a window"
 start_instant = "Start Instant recording"
-start_studio = "Start Studio recording"
+start_studio = "Start recording"
 stop = "Stop recording"
 
 [settings.shortcuts.effect]
-add_marker = "mark this moment in a Studio recording"
+add_marker = "mark this moment in the recording"
 cycle_mode = "switch between Studio, Instant and Screenshot mode"
 instant_copy = "record your selected screen or window in Instant mode, then copy its share link when you stop"
 instant_copy_and_open = "record your selected screen or window in Instant mode, then copy and open its share link when you stop"
@@ -440,13 +440,13 @@ open_picker = "open Capwise so you can choose what to record"
 pause = "pause the current recording, or resume it"
 picker_area_instant = "select an area, then record it in Instant mode"
 picker_area_screenshot = "select an area, then take a screenshot of it"
-picker_area_studio = "select an area, then record it in Studio mode"
+picker_area_studio = "select an area, then record it"
 picker_display_instant = "choose a display, then record it in Instant mode"
 picker_display_screenshot = "choose a display, then take a screenshot of it"
-picker_display_studio = "choose a display, then record it in Studio mode"
+picker_display_studio = "choose a display, then record it"
 picker_window_instant = "choose a window, then record it in Instant mode"
 picker_window_screenshot = "choose a window, then take a screenshot of it"
-picker_window_studio = "choose a window, then record it in Studio mode"
+picker_window_studio = "choose a window, then record it"
 restart = "throw away the current take and start again"
 screenshot_area_copy = "select an area and copy it to your clipboard"
 screenshot_area_copy_and_open_editor = "select an area and copy it and open the editor"
@@ -461,11 +461,11 @@ screenshot_window_copy_and_open_editor = "capture the window under your pointer 
 screenshot_window_open_editor = "capture the window under your pointer and open it in the editor"
 screenshot_window_save = "capture the window under your pointer and save it to your library without opening anything"
 stop = "stop the current recording"
-studio = "record your selected screen or window in Studio mode"
-studio_open_editor = "record your selected screen or window in Studio mode, then open the editor when you stop"
+studio = "record your selected screen or window"
+studio_open_editor = "record your selected screen or window, then open the editor when you stop"
 
 [settings.shortcuts.sentence]
-add_marker = "Mark this moment in a Studio recording."
+add_marker = "Mark this moment in the recording."
 cycle_mode = "Switch between Studio, Instant and Screenshot mode."
 instant_copy = "Record your selected screen or window in Instant mode, then copy its share link when you stop."
 instant_copy_and_open = "Record your selected screen or window in Instant mode, then copy and open its share link when you stop."
@@ -473,13 +473,13 @@ open_picker = "Open Capwise so you can choose what to record."
 pause = "Pause the current recording, or resume it."
 picker_area_instant = "Select an area, then record it in Instant mode."
 picker_area_screenshot = "Select an area, then take a screenshot of it."
-picker_area_studio = "Select an area, then record it in Studio mode."
+picker_area_studio = "Select an area, then record it."
 picker_display_instant = "Choose a display, then record it in Instant mode."
 picker_display_screenshot = "Choose a display, then take a screenshot of it."
-picker_display_studio = "Choose a display, then record it in Studio mode."
+picker_display_studio = "Choose a display, then record it."
 picker_window_instant = "Choose a window, then record it in Instant mode."
 picker_window_screenshot = "Choose a window, then take a screenshot of it."
-picker_window_studio = "Choose a window, then record it in Studio mode."
+picker_window_studio = "Choose a window, then record it."
 restart = "Throw away the current take and start again."
 screenshot_area_copy = "Select an area and copy it to your clipboard."
 screenshot_area_copy_and_open_editor = "Select an area and copy it and open the editor."
@@ -494,8 +494,8 @@ screenshot_window_copy_and_open_editor = "Capture the window under your pointer 
 screenshot_window_open_editor = "Capture the window under your pointer and open it in the editor."
 screenshot_window_save = "Capture the window under your pointer and save it to your library without opening anything."
 stop = "Stop the current recording."
-studio = "Record your selected screen or window in Studio mode."
-studio_open_editor = "Record your selected screen or window in Studio mode, then open the editor when you stop."
+studio = "Record your selected screen or window."
+studio_open_editor = "Record your selected screen or window, then open the editor when you stop."
 
 [settings.cli]
 command = "Command"
@@ -923,8 +923,7 @@ no_matching_cameras = "No matching cameras"
 no_matching_microphones = "No matching microphones"
 no_microphone = { text = "No Microphone", max_px = 180, size = 14 }
 no_microphones = "No microphones found"
-system_audio_off = { text = "No System Audio", max_px = 180, size = 14 }
-system_audio_on = { text = "Record System Audio", max_px = 180, size = 14 }
+system_audio = { text = "System audio", max_px = 180, size = 14, context = "A recorder row with an On/Off switch for recording the computer's own sound." }
 
 [main.device.access]
 allow_access = { text = "Allow access", max_px = 130, size = 11 }
@@ -981,10 +980,13 @@ no_matching_recordings = "No matching recordings"
 no_matching_screenshots = "No matching screenshots"
 no_recordings = "No recordings yet"
 no_screenshots = "No screenshots yet"
+recording_name = { text = "Recording {date}, {time}", context = "The title of a recording that still has its automatic name. {date} is a short date such as Nov 7; {time} is a 24-hour time such as 22:08." }
 recordings_description = "Your screen recordings will appear here. Start recording to get started!"
 screenshots_description = "Your screenshots will appear here. Take a screenshot to get started!"
+today = { text = "Today", context = "When a project was recorded, next to its length." }
 view_all_recordings = "View All Recordings"
 view_all_screenshots = "View All Screenshots"
+yesterday = { text = "Yesterday", context = "When a project was recorded, next to its length." }
 
 [main.mic_warning]
 body = "This recording will not include your voice. Select a microphone, or continue without one."
@@ -2176,7 +2178,6 @@ description_macos = "Classic macOS appearance. Custom cursors keep their recorde
 description_tahoe = "macOS Tahoe appearance. Custom cursors keep their recorded shape."
 description_windows = "Windows appearance. Custom cursors keep their recorded shape."
 duration = "Duration"
-recorded = "Recorded cursors"
 recorded_tooltip = "Recorded with this cursor"
 ripple_size = "Size"
 strength = "Strength"
@@ -2457,7 +2458,7 @@ stereo_mode = "Microphone Stereo Mode"
 studio_sound_description = "Reduces background noise and balances your voice level."
 studio_sound_save_failed = "Could not save the Studio Sound default"
 system_volume = "System Audio Volume"
-use_for_new = "Use for new recordings"
+use_for_new = "Enhance voice in new recordings"
 
 [editor.tabs.audio.stereo]
 mono_left = "Mono L"
@@ -2500,7 +2501,7 @@ vertical = "Portrait 9:16"
 more = "More ratios…"
 back = "‹ Common ratios"
 custom = "Custom ratio"
-adjust = "Adjust framing"
+adjust = "Framing"
 horizontal = "Horizontal framing"
 vertical_position = "Vertical framing"
 crop_hint = "Preview changes on the canvas. Position only changes the cropped axis."
@@ -2920,7 +2921,6 @@ undo = "Undo"
 [editor.window.add_track]
 button = "Add"
 hide_3d = "Hide the 3D track."
-hint = "Adds at the playhead, in front of everything there. Rows appear as needed."
 more = "More"
 
 [editor.window.aspect]
@@ -2961,8 +2961,7 @@ prompt = "Add cinematic 3D shots to your recording"
 
 [editor.window.clip_menu]
 more = "More settings"
-audio = { text = "AUDIO", context = "Section heading in the clip menu, written in capitals." }
-cursor = { text = "CURSOR", context = "Section heading in the clip menu, written in capitals." }
+audio = { text = "Audio", context = "Section heading for the selected clip's settings." }
 delete = "Delete clip"
 delete_only_clip = "Can't delete the only clip"
 hide_cursor = "Hide cursor"
@@ -2975,12 +2974,10 @@ mute = "Mute"
 mute_clip = "Mute clip"
 mute_clip_description = "Silence this clip's audio"
 rename = "Rename clip"
-speed = { text = "SPEED", context = "Section heading in the clip menu, written in capitals." }
+speed = { text = "Speed", context = "Section heading for the selected clip's settings." }
 split = "Split at playhead"
 split_hint = "Move the playhead into this clip"
 volume = "Volume"
-transition = { text = "TRANSITION", context = "Section heading in the clip menu, written in capitals." }
-transition_none = { text = "None", context = "Transition chip: no transition before this clip." }
 transition_seconds = { text = "{seconds}s", context = "Transition length chip; {seconds} is a number such as 0.5." }
 
 [editor.window.clip_menu.merge_blocker]
@@ -3093,7 +3090,6 @@ remove_fillers = "Remove pauses and filler words"
 title = { text = "Transition", context = "Title of the popover that edits the transition between two clips." }
 add = { text = "Add transition", context = "Tooltip on the + button at a cut between two clips on the timeline." }
 duration = { text = "Duration", context = "Label for the transition length field." }
-seconds_unit = { text = "s", context = "Unit after the transition length field: seconds." }
 remove = "Remove transition"
 cross_fade = { text = "Cross dissolve", context = "Transition type: the previous clip dissolves into the next." }
 fade_through_black = { text = "Dip to black", context = "Transition type: fades out to black, then in from black." }
@@ -3627,11 +3623,11 @@ missing_media = "This media file was moved or deleted. Import it again."
 
 [settings.stock]
 title = "Stock media"
-description = "Connect photo and video sources. Keys stay in this Mac’s system keychain. Saving a key does not verify online access."
-unsplash_description = "Photography · uses an Unsplash Access Key"
-pixabay_description = "Photos and videos"
-configured = "Configured"
-not_configured = "Not configured"
+description = "Free photos and videos for your projects. Keys stay in this Mac’s keychain."
+unsplash_description = "Free stock photos"
+pixabay_description = "Free stock videos"
+configured = "Saved"
+not_configured = "Not set"
 configure = "Set up key"
 edit = "Change"
 unsplash_placeholder = "Paste your Unsplash Access Key"
@@ -3639,7 +3635,7 @@ pixabay_placeholder = "Paste your Pixabay API key"
 save = "Save key"
 remove = "Remove key"
 get_key = "Get a key"
-saved = "Saved in the system keychain. Online access has not been tested."
+saved = "Key saved."
 removed = "The key was removed from this device."
 invalid_key = "Enter a complete API key (8–512 ASCII characters, without spaces or line breaks)."
 save_failed = "The key could not be saved. Check system keychain access and try again."
@@ -3991,7 +3987,6 @@ thin = "Thin"
 regular = "Regular"
 bold = "Bold"
 empty = "Nothing found. Try arrow, heart or warning."
-hint = "Click to place at the playhead, then move and resize it on the canvas."
 
 [editor.panel.image.motion]
 title = "Animation"
@@ -4004,6 +3999,8 @@ pop = "Pop"
 zoom = "Zoom"
 stamp = "Stamp"
 spin = "Spin"
+slide_in = "Slide in"
+slide_out = "Slide out"
 up = "Up"
 down = "Down"
 left = "Left"

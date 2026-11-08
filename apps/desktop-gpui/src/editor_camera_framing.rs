@@ -150,28 +150,27 @@ impl EditorWindow {
             .flex_col()
             .gap(px(12.))
             .child(
-                ui::Field::inline(&theme, tr::editor::tabs::camera::shape_label()).child(
-                    div().w(px(170.)).child(self.menu_select_owned(
+                ui::Field::inline(&theme, tr::editor::tabs::camera::shape_label())
+                    .child(div().flex_1().min_w_0().child(self.menu_select_owned(
                         SidebarMenu::CameraShape,
                         "camera-aspect-ratio".into(),
                         self.camera_ratio_label(),
                         cx,
-                    )),
-                ),
-            )
-            .child(
-                ui::Button::plain(
-                    &theme,
-                    "camera-adjust-framing",
-                    ui::ButtonVariant::Gray,
-                    ui::ButtonSize::Md,
-                )
-                .icon("icons/crop.svg")
-                .label(tr::editor::tabs::camera::framing::adjust())
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.camera_framing.crop_open = !this.camera_framing.crop_open;
-                    cx.notify();
-                })),
+                    )))
+                    .child(
+                        ui::EditorButton::plain(&theme, "camera-adjust-framing")
+                            .tinted(&theme)
+                            .choice(&theme)
+                            .left_icon("icons/crop.svg")
+                            .icon_size(px(14.))
+                            .text_size(px(12.))
+                            .label(tr::editor::tabs::camera::framing::adjust())
+                            .pressed(self.camera_framing.crop_open)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.camera_framing.crop_open = !this.camera_framing.crop_open;
+                                cx.notify();
+                            })),
+                    ),
             )
             .children(self.camera_framing.crop_open.then(|| {
                 div()
