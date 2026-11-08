@@ -189,19 +189,16 @@ fn first_difference(
 
 async fn render_fresh(
     constants: &RenderVideoConstants,
-    project: &ProjectConfiguration,
     frames: DecodedSegmentFrames,
     uniforms: ProjectUniforms,
     cursor: &CursorEvents,
 ) -> cap_rendering::RenderedFrame {
     let mut renderer = FrameRenderer::new(constants);
-    let mut layers = RendererLayers::new_for_preparing_preview(
+    let mut layers = RendererLayers::new_with_options(
         &constants.device,
         &constants.queue,
         constants.is_software_adapter,
-        project,
-    )
-    .unwrap();
+    );
     renderer
         .render_immediate(frames, uniforms, cursor, true, &mut layers)
         .await
@@ -224,13 +221,11 @@ async fn reused_layers_match_fresh_layers_every_frame() {
             continue;
         }
         let mut renderer = FrameRenderer::new(&constants);
-        let mut layers = RendererLayers::new_for_preparing_preview(
+        let mut layers = RendererLayers::new_with_options(
             &constants.device,
             &constants.queue,
             constants.is_software_adapter,
-            &project,
-        )
-        .unwrap();
+        );
         let mut shared = Arc::new(project.clone());
 
         for frame_number in 0..FRAMES {
@@ -258,7 +253,7 @@ async fn reused_layers_match_fresh_layers_every_frame() {
                 .await
                 .unwrap();
 
-            let expected = render_fresh(&constants, &project, frames, uniforms, &cursor).await;
+            let expected = render_fresh(&constants, frames, uniforms, &cursor).await;
 
             if let Some(row) = first_difference(&actual, &expected) {
                 panic!("{name} frame {frame_number}: row {row} differs");
