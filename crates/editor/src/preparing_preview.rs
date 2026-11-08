@@ -700,6 +700,7 @@ async fn run_preview(
                     .map(EditorFrameOutput::Surface),
             };
             layout.caption = layers.caption_frame_box();
+            layout.title_text = layers.title_text_frame_box();
             check_cursor_error(&constants)?;
             control.check()?;
             decoders.check()?;

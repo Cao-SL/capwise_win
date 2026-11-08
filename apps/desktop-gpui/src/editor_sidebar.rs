@@ -872,6 +872,7 @@ pub struct SidebarState {
     /// Which edge the text panel's Animation tiles and Duration row point at:
     /// `false` is In, `true` is Out.
     pub text_anim_edge: bool,
+    pub(crate) text_panel_tab: crate::editor_panels::TextPanelTab,
     pub(crate) title_cards: crate::editor_title_cards::TitleCardUi,
     /// `editingEnd` on the 3D panel -- which of the two poses the camera
     /// sliders point at (`ConfigSidebar.tsx:4908`).
@@ -959,6 +960,7 @@ impl SidebarState {
             caption_more_styles: false,
             text_style_group: 0,
             text_anim_edge: false,
+            text_panel_tab: Default::default(),
             title_cards: Default::default(),
             editing_end_pose: false,
             more_open: Default::default(),
@@ -4200,6 +4202,8 @@ impl EditorWindow {
             })
             .child(if key == "captions" {
                 tr::editor::workbench::more_actions()
+            } else if key == "text-typography" {
+                tr::editor::panel::text_segment::more_typography()
             } else if key == "caption-segment" {
                 tr::editor::panel::timing::title()
             } else {

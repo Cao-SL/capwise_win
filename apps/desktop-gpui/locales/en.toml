@@ -2061,6 +2061,11 @@ title = { text = "Introducing Capwise", context = "Sample text a new text segmen
 typewriter = "typing it out…"
 
 [editor.panel.text_segment]
+basic = "Basic"
+alignment = "Alignment"
+more_typography = "More typography"
+italic = "Italic"
+uppercase = "All caps"
 animation = "Animation"
 background = "Background"
 color = "Color"
@@ -2244,6 +2249,7 @@ orange = "Orange"
 purple = "Purple"
 
 [editor.canvas]
+edit_text = "Edit on canvas"
 camera = "Camera"
 camera_follows_zoom = "Camera size follows the zoom — drag to move"
 captions = "Captions"

@@ -2059,7 +2059,12 @@ title = "隆重推出灵录"
 typewriter = "逐字输入中…"
 
 [editor.panel.text_segment]
-animation = "动画"
+basic = "基础"
+alignment = "对齐"
+more_typography = "更多排版"
+italic = "斜体"
+uppercase = "全部大写"
+animation = "动效"
 background = "背景"
 color = "颜色"
 font = "字体"
@@ -2242,6 +2247,7 @@ orange = "橙色"
 purple = "紫色"
 
 [editor.canvas]
+edit_text = "在画布上编辑"
 camera = "摄像头"
 camera_follows_zoom = "摄像头大小随缩放变化；拖动即可移动"
 captions = "字幕"

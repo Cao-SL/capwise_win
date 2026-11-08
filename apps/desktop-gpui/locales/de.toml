@@ -2053,6 +2053,11 @@ title = "Das ist Capwise"
 typewriter = "wird getippt…"
 
 [editor.panel.text_segment]
+basic = "Basis"
+alignment = "Ausrichtung"
+more_typography = "Weitere Typografie"
+italic = "Kursiv"
+uppercase = "Großbuchstaben"
 animation = "Animation"
 background = "Hintergrund"
 color = "Farbe"
@@ -2236,6 +2241,7 @@ orange = "Orange"
 purple = "Lila"
 
 [editor.canvas]
+edit_text = "Auf der Leinwand bearbeiten"
 camera = "Kamera"
 camera_follows_zoom = "Die Kameragröße folgt dem Zoom – zum Verschieben ziehen"
 captions = "Untertitel"

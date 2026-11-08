@@ -688,6 +688,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn open_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.stop_canvas_text_edit(cx);
         if self.playing {
             self.toggle_play_from_crop(cx);
         }

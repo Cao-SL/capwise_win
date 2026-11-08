@@ -2053,6 +2053,11 @@ title = "पेश है Capwise"
 typewriter = "टाइप हो रहा है…"
 
 [editor.panel.text_segment]
+basic = "मूल"
+alignment = "संरेखण"
+more_typography = "और टाइपोग्राफ़ी"
+italic = "इटैलिक"
+uppercase = "सभी बड़े अक्षर"
 animation = "एनिमेशन"
 background = "बैकग्राउंड"
 color = "रंग"
@@ -2236,6 +2241,7 @@ orange = "नारंगी"
 purple = "बैंगनी"
 
 [editor.canvas]
+edit_text = "कैनवास पर संपादित करें"
 camera = "कैमरा"
 camera_follows_zoom = "कैमरे का आकार ज़ूम के साथ बदलता है; हिलाने के लिए खींचें"
 captions = "कैप्शन"

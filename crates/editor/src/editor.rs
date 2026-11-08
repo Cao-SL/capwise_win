@@ -556,6 +556,7 @@ impl Renderer {
                         EditorFrameOutput::Surface(frame) => frame.frame_number,
                     };
                     frame_layout.caption = layers.caption_frame_box();
+                    frame_layout.title_text = layers.title_text_frame_box();
                     let callback_start = Instant::now();
                     (frame_cb)(frame, frame_layout);
                     let callback_duration = callback_start.elapsed();

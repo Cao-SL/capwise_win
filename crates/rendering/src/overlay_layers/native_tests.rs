@@ -1306,3 +1306,63 @@ async fn cover_text_moves_in_rendered_frames_and_accepts_inserted_text() {
             > 100
     );
 }
+
+#[tokio::test]
+async fn inline_title_edit_keeps_background_and_metrics_without_hiding_exports() {
+    let directory = tempfile::tempdir().unwrap();
+    let constants = constants(directory.path()).await;
+    let mut layers = RendererLayers::new(&constants.device, &constants.queue);
+    let mut project = project();
+    let mut card =
+        cap_project::TextSegment::new_title_card(cap_project::TitleCardRole::Intro, "HELLO");
+    card.end = 3.0;
+    card.title_card.as_mut().unwrap().background = cap_project::TitleCardBackground::Solid {
+        color: "#000000".into(),
+    };
+    project.timeline.as_mut().unwrap().text_segments.push(card);
+    let resolution = XY::new(640, 480);
+    let (visible, _) =
+        render_for(&constants, &project, &mut layers, 15, resolution, frames()).await;
+    let initial = layers.title_text_frame_box().unwrap();
+    assert_eq!(initial.segment_index, 0);
+    assert!(initial.font_size > 0.0 && initial.line_height > 0.0);
+    assert!(initial.bounds[2] > initial.bounds[0] && initial.bounds[3] > initial.bounds[1]);
+    project.editing_text_segment = Some(0);
+    let (editing, _) =
+        render_for(&constants, &project, &mut layers, 15, resolution, frames()).await;
+    let editing_box = layers.title_text_frame_box().unwrap();
+    assert_eq!(initial.bounds, editing_box.bounds);
+    assert_eq!(initial.font_size, editing_box.font_size);
+    let light_pixels = |frame: &RenderedFrame| {
+        pixels(frame)
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 150 && pixel[1] > 150 && pixel[2] > 150)
+            .count()
+    };
+    assert!(light_pixels(&visible) > light_pixels(&editing) + 100);
+    let center = (240 * 640 + 320) * 4;
+    assert!(
+        pixels(&editing)[center..center + 3]
+            .iter()
+            .all(|channel| *channel < 10)
+    );
+    let saved = serde_json::to_value(&project).unwrap();
+    assert!(saved.get("editingTextSegment").is_none());
+    let mut exported: ProjectConfiguration = serde_json::from_value(saved).unwrap();
+    assert!(exported.editing_text_segment.is_none());
+    let (restored, _) =
+        render_for(&constants, &exported, &mut layers, 15, resolution, frames()).await;
+    assert_eq!(pixels(&visible), pixels(&restored));
+    let card = &mut exported.timeline.as_mut().unwrap().text_segments[0];
+    card.stroke_width = 12.0;
+    card.stroke_color = "#ff0000".into();
+    let (outlined, _) =
+        render_for(&constants, &exported, &mut layers, 15, resolution, frames()).await;
+    assert!(
+        pixels(&outlined)
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 100 && pixel[1] < 70 && pixel[2] < 70)
+            .count()
+            > 100
+    );
+}

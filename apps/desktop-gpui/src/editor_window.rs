@@ -1674,6 +1674,7 @@ pub struct EditorWindow {
     pub(crate) player_panel_hovered: bool,
     /// `editorState.canvasSelection`.
     pub(crate) canvas_selection: Option<crate::editor_canvas::CanvasSelection>,
+    pub(crate) canvas_text_edit: Option<crate::editor_canvas::CanvasTextEdit>,
     /// `hovered` on `ElementBox` (`CanvasElementsOverlay.tsx:790`).
     pub(crate) hovered_canvas: Option<crate::editor_canvas::CanvasSelection>,
     /// The live display/camera drag.
@@ -2439,6 +2440,7 @@ impl EditorWindow {
             crop_area_rect: ui::SliderTrack::default(),
             player_frame_rect,
             canvas_selection: None,
+            canvas_text_edit: None,
             hovered_canvas: None,
             player_panel_bounds: ui::SliderTrack::default(),
             player_panel_hovered: false,
@@ -3120,7 +3122,19 @@ impl EditorWindow {
         let Some(instance) = &self.instance else {
             return;
         };
-        instance.project_config.0.send(self.project.clone()).ok();
+        let mut preview = self.project.clone();
+        if let Some(edit) = &self.canvas_text_edit {
+            preview.editing_text_segment = Some(edit.index);
+            if let Some(segment) = preview
+                .timeline
+                .as_mut()
+                .and_then(|timeline| timeline.text_segments.get_mut(edit.index))
+                && segment.content.trim().is_empty()
+            {
+                segment.content = edit.before.clone();
+            }
+        }
+        instance.project_config.0.send(preview).ok();
         if !self.playing {
             let time = self.view.preview_time.unwrap_or(self.playhead).max(0.0);
             request_frame(
@@ -3162,6 +3176,7 @@ impl EditorWindow {
         if self.voiceover.is_busy() {
             return;
         }
+        self.stop_canvas_text_edit(cx);
         self.close_frame_controls(window, cx);
         self.end_field_edit(cx);
         self.close_color_picker(cx);
@@ -3177,6 +3192,7 @@ impl EditorWindow {
         if self.voiceover.is_busy() {
             return;
         }
+        self.stop_canvas_text_edit(cx);
         self.close_frame_controls(window, cx);
         self.end_field_edit(cx);
         self.close_color_picker(cx);
@@ -3742,6 +3758,7 @@ impl EditorWindow {
     }
 
     fn start_playback(&mut self, from: f64, cx: &mut Context<Self>) {
+        self.stop_canvas_text_edit(cx);
         if self.voiceover.is_busy() {
             return;
         }
@@ -3889,6 +3906,7 @@ impl EditorWindow {
         if self.voiceover.is_busy() {
             return;
         }
+        self.stop_canvas_text_edit(cx);
         if self.apply_seek(time) {
             self.transcript_sync_active(true, cx);
             cx.notify();
@@ -3958,6 +3976,7 @@ impl EditorWindow {
     /// the 3D panel's "on the playhead" pose marker, which is only redrawn
     /// when it changes. Playing and handoff seeks keep the full invalidation.
     fn scrub_to_time(&mut self, time: f64, cx: &mut Context<Self>) {
+        self.stop_canvas_text_edit(cx);
         let poses = self.camera3d_poses_at_playhead();
         if !self.apply_seek(time) {
             return;
@@ -5085,6 +5104,7 @@ impl EditorWindow {
     /// `setEditorState("timeline", "selection", ...)`.
     pub(crate) fn set_selection(&mut self, selection: Option<Selection>, cx: &mut Context<Self>) {
         if self.selection != selection {
+            self.stop_canvas_text_edit(cx);
             self.text_menu = None;
             self.style_presets.close_menu();
             self.dismiss_frame_controls(cx);
@@ -7199,6 +7219,7 @@ impl EditorWindow {
             self.assistant.open = false;
             self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
             self.sidebar.text_style_group = 0;
+            self.sidebar.text_panel_tab = Default::default();
         }
         self.set_selection(Some(Selection::single(kind, index)), cx);
         let target = match reveal {
@@ -9065,6 +9086,7 @@ impl EditorWindow {
             self.assistant.open = false;
             self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
             self.sidebar.text_style_group = 0;
+            self.sidebar.text_panel_tab = Default::default();
         }
         self.set_selection(Some(Selection::single(kind, index)), cx);
         let target = match reveal {
@@ -17574,6 +17596,7 @@ mod tests {
             display: [0., 0., 1920., 1080.],
             camera: None,
             output_size: [1920, 1080],
+            title_text: None,
             caption: None,
         };
         let preset = |bounds| FrameLayout {

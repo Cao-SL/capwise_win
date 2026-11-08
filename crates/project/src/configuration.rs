@@ -3297,6 +3297,8 @@ pub struct ProjectConfiguration {
     pub annotations: Vec<Annotation>,
     #[serde(skip_serializing)]
     pub hidden_text_segments: Vec<usize>,
+    #[serde(skip)]
+    pub editing_text_segment: Option<usize>,
     #[serde(default = "ProjectConfiguration::default_screen_motion_blur")]
     pub screen_motion_blur: f32,
     #[serde(default)]
@@ -3376,6 +3378,7 @@ impl Default for ProjectConfiguration {
             clips: Default::default(),
             annotations: Default::default(),
             hidden_text_segments: Default::default(),
+            editing_text_segment: None,
             screen_motion_blur: Self::default_screen_motion_blur(),
             screen_movement_spring: Default::default(),
             color_correction: ColorCorrectionConfiguration {

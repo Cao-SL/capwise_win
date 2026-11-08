@@ -2053,6 +2053,11 @@ title = "Voici Capwise"
 typewriter = "en train d'écrire…"
 
 [editor.panel.text_segment]
+basic = "Base"
+alignment = "Alignement"
+more_typography = "Typographie avancée"
+italic = "Italique"
+uppercase = "Tout en majuscules"
 animation = "Animation"
 background = "Arrière-plan"
 color = "Couleur"
@@ -2236,6 +2241,7 @@ orange = "Orange"
 purple = "Violet"
 
 [editor.canvas]
+edit_text = "Modifier sur le canevas"
 camera = "Caméra"
 camera_follows_zoom = "La taille de la caméra suit le zoom ; faites glisser pour la déplacer"
 captions = "Sous-titres"

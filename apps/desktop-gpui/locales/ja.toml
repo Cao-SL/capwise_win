@@ -2053,6 +2053,11 @@ title = "Capwiseのご紹介"
 typewriter = "タイプ中…"
 
 [editor.panel.text_segment]
+basic = "基本"
+alignment = "配置"
+more_typography = "その他の文字設定"
+italic = "斜体"
+uppercase = "すべて大文字"
 animation = "アニメーション"
 background = "背景"
 color = "色"
@@ -2236,6 +2241,7 @@ orange = "オレンジ"
 purple = "パープル"
 
 [editor.canvas]
+edit_text = "キャンバスで編集"
 camera = "カメラ"
 camera_follows_zoom = "カメラのサイズはズームに合わせて変わります。ドラッグで移動できます"
 captions = "字幕"

@@ -48,6 +48,28 @@ use crate::{
 // Catalogues
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum TextPanelTab {
+    #[default]
+    Basic,
+    Style,
+    Animation,
+    Layout,
+}
+
+impl TextPanelTab {
+    const ALL: [Self; 4] = [Self::Basic, Self::Style, Self::Animation, Self::Layout];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Basic => tr::editor::panel::text_segment::basic(),
+            Self::Style => tr::editor::panel::text_segment::style(),
+            Self::Animation => tr::editor::panel::text_segment::animation(),
+            Self::Layout => tr::editor::panel::text_segment::layout(),
+        }
+    }
+}
+
 /// `TEXT_FONT_SIZE_MIN` / `_MAX` (`text.ts:7-8`).
 pub const TEXT_FONT_SIZE_MIN: f32 = 8.;
 pub const TEXT_FONT_SIZE_MAX: f32 = 400.;
@@ -2798,6 +2820,8 @@ pub enum FieldKey {
     AudioName(usize),
     KeyboardText(usize),
     /// `<Input type="number">` boxes.
+    TextStart(usize),
+    TextEnd(usize),
     CaptionStart(usize),
     CaptionEnd(usize),
     KeyboardStart(usize),
@@ -3018,6 +3042,12 @@ impl EditorWindow {
                 out.push_str(&timeline.keyboard_segments.get(index)?.display_text)
             }
             // `value={props.segment.start.toFixed(2)}` on all four.
+            FieldKey::TextStart(index) => {
+                let _ = write!(out, "{:.2}", timeline.text_segments.get(index)?.start);
+            }
+            FieldKey::TextEnd(index) => {
+                let _ = write!(out, "{:.2}", timeline.text_segments.get(index)?.end);
+            }
             FieldKey::CaptionStart(index) => {
                 let _ = write!(out, "{:.2}", timeline.caption_segments.get(index)?.start);
             }
@@ -3288,6 +3318,18 @@ impl EditorWindow {
                     commit_segment_timing(segment, start, &text, value)
                 });
             }
+            FieldKey::TextStart(index) | FieldKey::TextEnd(index) => {
+                if !final_commit {
+                    return;
+                }
+                let Some(value) = ui::parse_number(&text).filter(|value| value.is_finite()) else {
+                    return;
+                };
+                let start = matches!(key, FieldKey::TextStart(_));
+                self.edit_text_segment("text-timing", index, window, cx, move |segment| {
+                    commit_text_timing(segment, start, &text, value)
+                });
+            }
             FieldKey::SyncOffset(clip, kind) => {
                 let value = match ui::parse_number(&text) {
                     Some(value) => value,
@@ -3381,6 +3423,18 @@ fn commit_segment_timing(
         segment.set_end(value);
     }
     true
+}
+
+fn commit_text_timing(segment: &mut TextSegment, start: bool, text: &str, value: f64) -> bool {
+    if !value.is_finite() {
+        return false;
+    }
+    let value = if start {
+        value.clamp(0.0, (segment.end - 0.05).max(0.0))
+    } else {
+        value.max(segment.start + 0.05)
+    };
+    commit_segment_timing(segment, start, text, value)
 }
 
 // ---------------------------------------------------------------------------
@@ -4345,12 +4399,21 @@ impl EditorWindow {
                         )
                         .child(self.render_title_card_panel(indices[0], cx))
                         .into_any_element()
+                } else if indices.len() == 1 {
+                    return div()
+                        .id("sidebar-text-workspace")
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .gap(px(16.))
+                        .p(px(16.))
+                        .text_size(px(13.))
+                        .child(self.panel_header("text", "text", 1, cx))
+                        .child(self.render_text_panel(indices[0], cx))
+                        .into_any_element();
                 } else {
-                    let presets = indices
-                        .iter()
-                        .all(|index| timeline.text_segments[*index].title_card.is_none())
-                        .then_some(crate::style_presets::PresetKind::Text);
-                    self.stacked_panel("text", "text", presets, indices, cx, |this, index, cx| {
+                    self.stacked_panel("text", "text", None, indices, cx, |this, index, cx| {
                         this.render_text_panel(index, cx)
                     })
                 }
@@ -5412,46 +5475,6 @@ impl EditorWindow {
             .into_any_element()
     }
 
-    /// One of the Text section's two case chips.
-    fn text_case_chip(
-        &self,
-        id: SharedString,
-        label: &'static str,
-        italic: bool,
-        selected: bool,
-        on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
-    ) -> AnyElement {
-        let theme = self.theme;
-        div()
-            .id(id)
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .h(px(28.))
-            .px(px(10.))
-            .rounded(px(7.))
-            .text_size(px(12.))
-            .font_weight(FontWeight::MEDIUM)
-            .when(italic, |this| this.italic())
-            .when(selected, |this| {
-                this.bg(with_alpha(theme.editor.accent, 0.12))
-                    .text_color(Hsla::from(theme.editor.accent))
-            })
-            .when(!selected, |this| {
-                this.bg(Hsla::from(theme.editor.ctl))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .hover(|style| {
-                        style
-                            .bg(Hsla::from(theme.editor.ctl_hover))
-                            .text_color(Hsla::from(theme.editor.text_1))
-                    })
-            })
-            .child(label)
-            .on_click(on_click)
-            .into_any_element()
-    }
-
     /// The Animation section's tile grid, for whichever edge is in force.
     fn render_text_animation_tiles(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
@@ -5597,25 +5620,11 @@ impl EditorWindow {
                             "int",
                             cx,
                         ))
-                    })
-                    .child(self.slider_field(
-                        tr::editor::panel::text_segment::line_height(),
-                        SliderKey::Panel(PanelSlider::TextLineHeight, index),
-                        "",
-                        cx,
-                    ))
-                    .child(self.slider_field(
-                        tr::editor::panel::text_segment::letter_spacing(),
-                        SliderKey::Panel(PanelSlider::TextLetterSpacing, index),
-                        "px",
-                        cx,
-                    )),
+                    }),
             )
             .into_any_element()
     }
 
-    /// `TextSegmentConfig` (`:3613-4000`), rebuilt as the six sections of the
-    /// text-track spec: Text, Style, Font, Look, Animation, Layout.
     fn render_text_panel(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let Some(segment) = self
@@ -5653,406 +5662,467 @@ impl EditorWindow {
             0
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(16.))
-            // -- A. Text ---------------------------------------------------
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.))
-                    .child(self.render_text_content_input(index))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(self.text_case_chip(
-                                SharedString::from(format!("text-italic-{index}")),
-                                "I",
-                                true,
-                                italic,
-                                cx.listener(move |this, _, window, cx| {
-                                    this.edit_text_segment(
-                                        "text-italic",
-                                        index,
-                                        window,
-                                        cx,
-                                        move |segment| {
-                                            segment.italic = !italic;
-                                            true
-                                        },
-                                    );
-                                }),
-                            ))
-                            .child(self.text_case_chip(
-                                SharedString::from(format!("text-uppercase-{index}")),
-                                "AA",
-                                false,
-                                uppercase,
-                                cx.listener(move |this, _, window, cx| {
-                                    this.edit_text_segment(
-                                        "text-uppercase",
-                                        index,
-                                        window,
-                                        cx,
-                                        move |segment| {
-                                            segment.uppercase = !uppercase;
-                                            true
-                                        },
-                                    );
-                                }),
-                            ))
-                            .child(
-                                div().ml_auto().child(
-                                    ui::SegmentedControl::editor(
+        let body = match self.sidebar.text_panel_tab {
+            TextPanelTab::Basic => div()
+                .flex()
+                .flex_col()
+                .gap(px(16.))
+                .child(self.render_text_font_controls(index, true, cx))
+                .child(
+                    ui::Field::stacked(&theme, tr::editor::panel::text_segment::color())
+                        .child(self.render_color_input(ColorTarget::TextColor(index), &color, cx)),
+                )
+                .child(
+                    ui::Field::inline(&theme, tr::editor::panel::text_segment::alignment()).child(
+                        ui::SegmentedControl::editor(
+                            &theme,
+                            SharedString::from(format!("text-align-{index}")),
+                            TEXT_ALIGNS
+                                .iter()
+                                .map(|(value, icon)| {
+                                    ui::SegmentOption::icon(*icon, *value == align)
+                                })
+                                .collect(),
+                        )
+                        .on_select(cx.listener(
+                            move |this, choice: &usize, window, cx| {
+                                let Some((value, _)) = TEXT_ALIGNS.get(*choice) else {
+                                    return;
+                                };
+                                let value = *value;
+                                this.edit_text_segment(
+                                    "text-align",
+                                    index,
+                                    window,
+                                    cx,
+                                    move |segment| {
+                                        segment.align = value;
+                                        true
+                                    },
+                                );
+                            },
+                        )),
+                    ),
+                )
+                .child(self.more_settings("text-typography", cx, move |_this, cx| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(12.))
+                        .child(
+                            ui::Field::inline(&theme, tr::editor::panel::text_segment::italic())
+                                .child(
+                                    ui::Toggle::plain(
                                         &theme,
-                                        SharedString::from(format!("text-align-{index}")),
-                                        TEXT_ALIGNS
-                                            .iter()
-                                            .map(|(value, icon)| {
-                                                ui::SegmentOption::icon(*icon, *value == align)
-                                            })
-                                            .collect(),
+                                        SharedString::from(format!("text-italic-{index}")),
+                                        italic,
                                     )
-                                    .on_select(cx.listener(
-                                        move |this, choice: &usize, window, cx| {
-                                            let Some((value, _)) = TEXT_ALIGNS.get(*choice) else {
-                                                return;
-                                            };
-                                            let value = *value;
+                                    .on_click(cx.listener(
+                                        move |this, _, window, cx| {
                                             this.edit_text_segment(
-                                                "text-align",
+                                                "text-italic",
                                                 index,
                                                 window,
                                                 cx,
                                                 move |segment| {
-                                                    segment.align = value;
+                                                    segment.italic = !italic;
                                                     true
                                                 },
                                             );
                                         },
                                     )),
                                 ),
-                            ),
+                        )
+                        .child(
+                            ui::Field::inline(&theme, tr::editor::panel::text_segment::uppercase())
+                                .child(
+                                    ui::Toggle::plain(
+                                        &theme,
+                                        SharedString::from(format!("text-uppercase-{index}")),
+                                        uppercase,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, window, cx| {
+                                            this.edit_text_segment(
+                                                "text-uppercase",
+                                                index,
+                                                window,
+                                                cx,
+                                                move |segment| {
+                                                    segment.uppercase = !uppercase;
+                                                    true
+                                                },
+                                            );
+                                        },
+                                    )),
+                                ),
+                        )
+                        .child(self.slider_field(
+                            tr::editor::panel::text_segment::line_height(),
+                            SliderKey::Panel(PanelSlider::TextLineHeight, index),
+                            "",
+                            cx,
+                        ))
+                        .child(self.slider_field(
+                            tr::editor::panel::text_segment::letter_spacing(),
+                            SliderKey::Panel(PanelSlider::TextLetterSpacing, index),
+                            "px",
+                            cx,
+                        ))
+                        .into_any_element()
+                }))
+                .into_any_element(),
+            TextPanelTab::Style => div()
+                .flex()
+                .flex_col()
+                .gap(px(20.))
+                .child(self.render_style_presets_bar(
+                    crate::style_presets::PresetKind::Text,
+                    &[index],
+                    cx,
+                ))
+                .child(self.render_text_presets(index, cx))
+                .child(
+                    ui::Field::section(&theme, tr::editor::panel::text_segment::look()).child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .child(
+                                ui::Field::inline(
+                                    &theme,
+                                    tr::editor::panel::text_segment::gradient(),
+                                )
+                                .child(
+                                    ui::Toggle::plain(
+                                        &theme,
+                                        SharedString::from(format!("text-gradient-{index}")),
+                                        gradient_color.is_some(),
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, window, cx| {
+                                            this.edit_text_segment(
+                                                "text-gradient",
+                                                index,
+                                                window,
+                                                cx,
+                                                move |segment| {
+                                                    segment.gradient_color =
+                                                        match segment.gradient_color.is_some() {
+                                                            true => None,
+                                                            false => Some("#7c9cff".to_string()),
+                                                        };
+                                                    true
+                                                },
+                                            );
+                                        },
+                                    )),
+                                ),
+                            )
+                            .children(gradient_color.map(|gradient| {
+                                self.render_color_input(
+                                    ColorTarget::TextGradient(index),
+                                    &gradient,
+                                    cx,
+                                )
+                            }))
+                            .child(
+                                ui::Field::stacked(
+                                    &theme,
+                                    tr::editor::panel::text_segment::background(),
+                                )
+                                .child(
+                                    ui::SegmentedControl::editor(
+                                        &theme,
+                                        SharedString::from(format!("text-background-{index}")),
+                                        std::iter::once(ui::SegmentOption::new(
+                                            tr::editor::panel::text_background::none(),
+                                            background_slot == 0,
+                                        ))
+                                        .chain(TEXT_BACKGROUND_STYLES.iter().enumerate().map(
+                                            |(slot, (_, label))| {
+                                                ui::SegmentOption::new(
+                                                    label(),
+                                                    background_slot == slot + 1,
+                                                )
+                                            },
+                                        ))
+                                        .collect(),
+                                    )
+                                    .stretch()
+                                    .on_select(cx.listener(
+                                        move |this, choice: &usize, window, cx| {
+                                            let style = choice
+                                                .checked_sub(1)
+                                                .and_then(|slot| TEXT_BACKGROUND_STYLES.get(slot))
+                                                .map(|(style, _)| *style);
+                                            this.edit_text_segment(
+                                                "text-background",
+                                                index,
+                                                window,
+                                                cx,
+                                                move |segment| match style {
+                                                    None => {
+                                                        if segment.background_color.is_none() {
+                                                            return false;
+                                                        }
+                                                        segment.background_color = None;
+                                                        true
+                                                    }
+                                                    Some(style) => {
+                                                        segment.background_style = style;
+                                                        if segment.background_color.is_none() {
+                                                            segment.background_color =
+                                                                Some("#000000".to_string());
+                                                        }
+                                                        true
+                                                    }
+                                                },
+                                            );
+                                        },
+                                    )),
+                                ),
+                            )
+                            .children(background_color.map(|background| {
+                                self.render_color_input(
+                                    ColorTarget::TextBackground(index),
+                                    &background,
+                                    cx,
+                                )
+                            }))
+                            .child(self.slider_field(
+                                tr::editor::panel::text_segment::outline(),
+                                SliderKey::Panel(PanelSlider::TextStroke, index),
+                                "px",
+                                cx,
+                            ))
+                            .children((stroke_width > 0.).then(|| {
+                                self.render_color_input(
+                                    ColorTarget::TextStroke(index),
+                                    &stroke_color,
+                                    cx,
+                                )
+                            }))
+                            .child(self.slider_field(
+                                tr::editor::panel::text_segment::shadow(),
+                                SliderKey::Panel(PanelSlider::TextShadow, index),
+                                "x100%",
+                                cx,
+                            ))
+                            .child(self.slider_field(
+                                tr::editor::panel::text_segment::glow(),
+                                SliderKey::Panel(PanelSlider::TextGlow, index),
+                                "x100%",
+                                cx,
+                            ))
+                            .child(self.slider_field(
+                                tr::editor::panel::opacity(),
+                                SliderKey::Panel(PanelSlider::TextOpacity, index),
+                                "x100%",
+                                cx,
+                            )),
                     ),
-            )
-            // -- B. Style --------------------------------------------------
-            .child(
-                ui::Field::section(&theme, tr::editor::panel::text_segment::style())
-                    .child(self.render_text_presets(index, cx)),
-            )
-            .child(self.slider_field(
-                tr::editor::panel::text_segment::font_size(),
-                SliderKey::Panel(PanelSlider::TextFontSize, index),
-                "int",
-                cx,
-            ))
-            .child(
-                ui::Field::stacked(&theme, tr::editor::panel::text_segment::color())
-                    .child(self.render_color_input(ColorTarget::TextColor(index), &color, cx)),
-            )
-            .child(self.more_settings("text", cx, move |this, cx| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(16.))
-                    .child(this.render_text_font_controls(index, false, cx))
-                    // -- D. Look ---------------------------------------------------
-                    .child(
-                        ui::Field::section(&theme, tr::editor::panel::text_segment::look()).child(
+                )
+                .into_any_element(),
+            TextPanelTab::Animation => div()
+                .flex()
+                .flex_col()
+                .gap(px(16.))
+                .child(
+                    ui::Field::section(&theme, tr::editor::panel::text_segment::animation())
+                        .value(
+                            ui::SegmentedControl::editor(
+                                &theme,
+                                SharedString::from(format!("text-anim-edge-{index}")),
+                                vec![
+                                    ui::SegmentOption::new(tr::editor::panel::edge_in(), !is_out),
+                                    ui::SegmentOption::new(tr::editor::panel::edge_out(), is_out),
+                                ],
+                            )
+                            .on_select(cx.listener(move |this, choice: &usize, _window, cx| {
+                                this.sidebar.text_anim_edge = *choice == 1;
+                                cx.notify();
+                            }))
+                            .into_any_element(),
+                        )
+                        .child(
                             div()
                                 .flex()
                                 .flex_col()
                                 .gap(px(8.))
-                                .child(
-                                    ui::Field::inline(
-                                        &theme,
-                                        tr::editor::panel::text_segment::gradient(),
-                                    )
-                                    .child(
-                                        ui::Toggle::plain(
-                                            &theme,
-                                            SharedString::from(format!("text-gradient-{index}")),
-                                            gradient_color.is_some(),
-                                        )
-                                        .on_click(
-                                            cx.listener(move |this, _, window, cx| {
-                                                this.edit_text_segment(
-                                                    "text-gradient",
-                                                    index,
-                                                    window,
-                                                    cx,
-                                                    move |segment| {
-                                                        segment.gradient_color = match segment
-                                                            .gradient_color
-                                                            .is_some()
-                                                        {
-                                                            true => None,
-                                                            false => Some("#7c9cff".to_string()),
-                                                        };
-                                                        true
-                                                    },
-                                                );
-                                            }),
+                                .child(self.render_text_animation_tiles(index, cx))
+                                .children((edge_animation != TextAnimation::None).then(|| {
+                                    self.slider_field(
+                                        tr::editor::panel::duration(),
+                                        SliderKey::Panel(
+                                            if is_out {
+                                                PanelSlider::TextAnimOutDuration
+                                            } else {
+                                                PanelSlider::TextAnimInDuration
+                                            },
+                                            index,
                                         ),
-                                    ),
-                                )
-                                .children(gradient_color.map(|gradient| {
-                                    this.render_color_input(
-                                        ColorTarget::TextGradient(index),
-                                        &gradient,
+                                        "secs",
                                         cx,
                                     )
-                                }))
-                                .child(
-                                    ui::Field::stacked(
-                                        &theme,
-                                        tr::editor::panel::text_segment::background(),
-                                    )
-                                    .child(
-                                        ui::SegmentedControl::editor(
-                                            &theme,
-                                            SharedString::from(format!("text-background-{index}")),
-                                            std::iter::once(ui::SegmentOption::new(
-                                                tr::editor::panel::text_background::none(),
-                                                background_slot == 0,
-                                            ))
-                                            .chain(TEXT_BACKGROUND_STYLES.iter().enumerate().map(
-                                                |(slot, (_, label))| {
-                                                    ui::SegmentOption::new(
-                                                        label(),
-                                                        background_slot == slot + 1,
-                                                    )
-                                                },
-                                            ))
-                                            .collect(),
-                                        )
-                                        .stretch()
-                                        .on_select(
-                                            cx.listener(move |this, choice: &usize, window, cx| {
-                                                let style = choice
-                                                    .checked_sub(1)
-                                                    .and_then(|slot| {
-                                                        TEXT_BACKGROUND_STYLES.get(slot)
-                                                    })
-                                                    .map(|(style, _)| *style);
-                                                this.edit_text_segment(
-                                                    "text-background",
-                                                    index,
-                                                    window,
-                                                    cx,
-                                                    move |segment| match style {
-                                                        None => {
-                                                            if segment.background_color.is_none() {
-                                                                return false;
-                                                            }
-                                                            segment.background_color = None;
-                                                            true
-                                                        }
-                                                        Some(style) => {
-                                                            segment.background_style = style;
-                                                            if segment.background_color.is_none() {
-                                                                segment.background_color =
-                                                                    Some("#000000".to_string());
-                                                            }
-                                                            true
-                                                        }
-                                                    },
-                                                );
-                                            }),
-                                        ),
-                                    ),
-                                )
-                                .children(background_color.map(|background| {
-                                    this.render_color_input(
-                                        ColorTarget::TextBackground(index),
-                                        &background,
-                                        cx,
-                                    )
-                                }))
-                                .child(this.slider_field(
-                                    tr::editor::panel::text_segment::outline(),
-                                    SliderKey::Panel(PanelSlider::TextStroke, index),
-                                    "px",
-                                    cx,
-                                ))
-                                .children((stroke_width > 0.).then(|| {
-                                    this.render_color_input(
-                                        ColorTarget::TextStroke(index),
-                                        &stroke_color,
-                                        cx,
-                                    )
-                                }))
-                                .child(this.slider_field(
-                                    tr::editor::panel::text_segment::shadow(),
-                                    SliderKey::Panel(PanelSlider::TextShadow, index),
-                                    "x100%",
-                                    cx,
-                                ))
-                                .child(this.slider_field(
-                                    tr::editor::panel::text_segment::glow(),
-                                    SliderKey::Panel(PanelSlider::TextGlow, index),
-                                    "x100%",
-                                    cx,
-                                ))
-                                .child(this.slider_field(
-                                    tr::editor::panel::opacity(),
-                                    SliderKey::Panel(PanelSlider::TextOpacity, index),
-                                    "x100%",
-                                    cx,
-                                )),
+                                    .into_any_element()
+                                })),
                         ),
-                    )
-                    // -- E. Animation ----------------------------------------------
-                    .child(
-                        ui::Field::section(&theme, tr::editor::panel::text_segment::animation())
-                            .value(
+                )
+                .into_any_element(),
+            TextPanelTab::Layout => div()
+                .flex()
+                .flex_col()
+                .gap(px(16.))
+                .child(
+                    ui::Field::section(&theme, tr::editor::panel::text_segment::layout()).child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .child(
                                 ui::SegmentedControl::editor(
                                     &theme,
-                                    SharedString::from(format!("text-anim-edge-{index}")),
-                                    vec![
-                                        ui::SegmentOption::new(
-                                            tr::editor::panel::edge_in(),
-                                            !is_out,
-                                        ),
-                                        ui::SegmentOption::new(
-                                            tr::editor::panel::edge_out(),
-                                            is_out,
-                                        ),
-                                    ],
+                                    SharedString::from(format!("text-layout-{index}")),
+                                    TEXT_LAYOUTS
+                                        .iter()
+                                        .map(|(value, label)| {
+                                            ui::SegmentOption::new(label(), *value == layout)
+                                        })
+                                        .collect(),
                                 )
-                                .on_select(cx.listener(move |this, choice: &usize, _window, cx| {
-                                    this.sidebar.text_anim_edge = *choice == 1;
-                                    cx.notify();
-                                }))
-                                .into_any_element(),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(8.))
-                                    .child(this.render_text_animation_tiles(index, cx))
-                                    .children((edge_animation != TextAnimation::None).then(|| {
-                                        this.slider_field(
-                                            tr::editor::panel::duration(),
-                                            SliderKey::Panel(
-                                                if is_out {
-                                                    PanelSlider::TextAnimOutDuration
-                                                } else {
-                                                    PanelSlider::TextAnimInDuration
-                                                },
-                                                index,
-                                            ),
-                                            "secs",
+                                .stretch()
+                                .on_select(cx.listener(
+                                    move |this, choice: &usize, window, cx| {
+                                        let Some((value, _)) = TEXT_LAYOUTS.get(*choice) else {
+                                            return;
+                                        };
+                                        let value = *value;
+                                        this.edit_text_segment(
+                                            "text-layout",
+                                            index,
+                                            window,
                                             cx,
-                                        )
-                                        .into_any_element()
-                                    })),
-                            ),
-                    )
-                    // -- F. Layout -------------------------------------------------
-                    .child(
-                        ui::Field::section(&theme, tr::editor::panel::text_segment::layout())
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(8.))
-                                    .child(
-                                        ui::SegmentedControl::editor(
-                                            &theme,
-                                            SharedString::from(format!("text-layout-{index}")),
-                                            TEXT_LAYOUTS
-                                                .iter()
-                                                .map(|(value, label)| {
-                                                    ui::SegmentOption::new(
-                                                        label(),
-                                                        *value == layout,
-                                                    )
-                                                })
-                                                .collect(),
-                                        )
-                                        .stretch()
-                                        .on_select(
-                                            cx.listener(move |this, choice: &usize, window, cx| {
-                                                let Some((value, _)) = TEXT_LAYOUTS.get(*choice)
-                                                else {
-                                                    return;
-                                                };
-                                                let value = *value;
-                                                this.edit_text_segment(
-                                                    "text-layout",
-                                                    index,
-                                                    window,
-                                                    cx,
-                                                    move |segment| {
-                                                        if segment.layout == value {
-                                                            return false;
-                                                        }
-                                                        segment.layout = value;
-                                                        // A takeover layout implies where the
-                                                        // text belongs (`:3672-3677`).
-                                                        if value == TextLayout::Fullscreen {
-                                                            segment.center = XY::new(0.5, 0.5);
-                                                        }
-                                                        true
-                                                    },
-                                                );
-                                            }),
-                                        ),
-                                    )
-                                    .children((layout == TextLayout::Fullscreen).then(|| {
-                                        div()
-                                            .text_size(px(12.))
-                                            .text_color(Hsla::from(theme.editor.text_3))
-                                            .child(
-                                                tr::editor::panel::text_segment::fullscreen_help(),
-                                            )
-                                            .into_any_element()
-                                    }))
-                                    .children((layout != TextLayout::Overlay).then(|| {
-                                        this.slider_field(
-                                            tr::editor::panel::text_segment::screen_transition(),
-                                            SliderKey::Panel(
-                                                PanelSlider::TextLayoutTransition,
-                                                index,
-                                            ),
-                                            "secs",
-                                            cx,
-                                        )
-                                        .into_any_element()
-                                    })),
-                            ),
-                    )
-                    .child(
-                        ui::Field::inline(&theme, tr::editor::panel::enabled()).value(
-                            ui::Toggle::plain(
-                                &theme,
-                                SharedString::from(format!("text-enabled-{index}")),
-                                enabled,
-                            )
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.edit_text_segment(
-                                    "text-enabled",
-                                    index,
-                                    window,
-                                    cx,
-                                    move |segment| {
-                                        segment.enabled = !enabled;
-                                        true
+                                            move |segment| {
+                                                if segment.layout == value {
+                                                    return false;
+                                                }
+                                                segment.layout = value;
+                                                // A takeover layout implies where the
+                                                // text belongs (`:3672-3677`).
+                                                if value == TextLayout::Fullscreen {
+                                                    segment.center = XY::new(0.5, 0.5);
+                                                }
+                                                true
+                                            },
+                                        );
                                     },
-                                );
+                                )),
+                            )
+                            .children((layout == TextLayout::Fullscreen).then(|| {
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(Hsla::from(theme.editor.text_3))
+                                    .child(tr::editor::panel::text_segment::fullscreen_help())
+                                    .into_any_element()
                             }))
-                            .into_any_element(),
-                        ),
-                    )
-                    .into_any_element()
-            }))
+                            .children((layout != TextLayout::Overlay).then(|| {
+                                self.slider_field(
+                                    tr::editor::panel::text_segment::screen_transition(),
+                                    SliderKey::Panel(PanelSlider::TextLayoutTransition, index),
+                                    "secs",
+                                    cx,
+                                )
+                                .into_any_element()
+                            })),
+                    ),
+                )
+                .child(
+                    ui::Field::inline(&theme, tr::editor::panel::enabled()).value(
+                        ui::Toggle::plain(
+                            &theme,
+                            SharedString::from(format!("text-enabled-{index}")),
+                            enabled,
+                        )
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.edit_text_segment(
+                                "text-enabled",
+                                index,
+                                window,
+                                cx,
+                                move |segment| {
+                                    segment.enabled = !enabled;
+                                    true
+                                },
+                            );
+                        }))
+                        .into_any_element(),
+                    ),
+                )
+                .child(self.timing_field(
+                    FieldKey::TextStart(index),
+                    FieldKey::TextEnd(index),
+                    segment.start,
+                    segment.end,
+                    cx,
+                ))
+                .into_any_element(),
+        };
+        let single = self.selection.as_ref().is_some_and(|selection| {
+            selection.track == TrackKind::Text && selection.indices.len() == 1
+        });
+        div()
+            .flex()
+            .flex_col()
+            .when(single, |panel| panel.flex_1().min_h_0())
+            .gap(px(12.))
+            .child(self.render_text_content_input(index))
+            .child(
+                ui::EditorButton::plain(&theme, "edit-text-on-canvas")
+                    .left_icon("icons/pencil.svg")
+                    .label(tr::editor::canvas::edit_text())
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.begin_canvas_text_edit(index, window, cx);
+                    })),
+            )
+            .child(
+                ui::SegmentedControl::editor(
+                    &theme,
+                    SharedString::from(format!("text-panel-tabs-{index}")),
+                    TextPanelTab::ALL
+                        .iter()
+                        .map(|tab| {
+                            ui::SegmentOption::new(tab.label(), *tab == self.sidebar.text_panel_tab)
+                        })
+                        .collect(),
+                )
+                .stretch()
+                .on_select(cx.listener(|this, choice: &usize, window, cx| {
+                    let Some(tab) = TextPanelTab::ALL.get(*choice).copied() else {
+                        return;
+                    };
+                    this.stop_canvas_text_edit(cx);
+                    this.end_field_edit(cx);
+                    this.close_color_picker(cx);
+                    this.sidebar.menu = None;
+                    this.sidebar.text_panel_tab = tab;
+                    this.sidebar.scroll.set_offset(gpui::point(px(0.), px(0.)));
+                    this.focus_root(window, cx);
+                    cx.notify();
+                })),
+            )
+            .child(
+                div()
+                    .id(SharedString::from(format!("text-settings-scroll-{index}")))
+                    .when(single, |body| {
+                        body.flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.sidebar.scroll)
+                    })
+                    .pb(px(16.))
+                    .child(body),
+            )
             .into_any_element()
     }
 
@@ -8334,7 +8404,11 @@ impl EditorWindow {
                     TrackKind::Text => {
                         for index in indices(timeline.text_segments.len()) {
                             let segment = &timeline.text_segments[index];
-                            fields.push(FieldKey::TextContent(index));
+                            fields.extend([
+                                FieldKey::TextContent(index),
+                                FieldKey::TextStart(index),
+                                FieldKey::TextEnd(index),
+                            ]);
                             if let Some(card) = &segment.title_card {
                                 if matches!(
                                     card.background,
@@ -8485,6 +8559,21 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn text_timing_preserves_precision_and_a_positive_visible_interval() {
+        let mut segment = TextSegment::new_title_card(cap_project::TitleCardRole::Intro, "Title");
+        segment.start = 1.2345;
+        segment.end = 3.6789;
+        assert!(!commit_text_timing(&mut segment, true, "1.23", 1.23));
+        assert!(!commit_text_timing(&mut segment, false, "NaN", f64::NAN));
+        assert!(commit_text_timing(&mut segment, true, "-10", -10.0));
+        assert_eq!(segment.start, 0.0);
+        assert!(commit_text_timing(&mut segment, true, "999", 999.0));
+        assert!((segment.end - segment.start - 0.05).abs() < 1e-9);
+        assert!(!commit_text_timing(&mut segment, false, "-1", -1.0));
+        assert!(segment.end > segment.start);
+    }
 
     #[test]
     fn unchanged_timing_fields_preserve_redo() {

@@ -3660,6 +3660,15 @@ impl MotionBlurDescriptor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TitleTextFrameBox {
+    pub segment_index: usize,
+    pub bounds: [f32; 4],
+    pub font_size: f32,
+    pub line_height: f32,
+    pub align: cap_project::TextAlign,
+}
+
 /// Final rendered placement of the display and camera layers in output-frame
 /// pixels ([x0, y0, x1, y1]), used by the editor preview for hit-testing the
 /// on-canvas move/resize overlays. `display` is the outer card — chrome
@@ -3667,6 +3676,7 @@ impl MotionBlurDescriptor {
 /// to what the user actually sees.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameLayout {
+    pub title_text: Option<TitleTextFrameBox>,
     pub display: [f32; 4],
     pub camera: Option<[f32; 4]>,
     pub output_size: [u32; 2],
@@ -3699,6 +3709,7 @@ impl ProjectUniforms {
 
     pub fn frame_layout(&self) -> FrameLayout {
         FrameLayout {
+            title_text: None,
             display: self.display_outer_bounds,
             camera: self.camera.as_ref().map(|c| c.target_bounds),
             output_size: [self.output_size.0, self.output_size.1],
@@ -5400,6 +5411,19 @@ impl ProjectUniforms {
             })
             .unwrap_or_default();
 
+        let hidden_text_segments = if let Some(index) = project.editing_text_segment {
+            std::borrow::Cow::Owned(
+                project
+                    .hidden_text_segments
+                    .iter()
+                    .copied()
+                    .chain([index])
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            std::borrow::Cow::Borrowed(&project.hidden_text_segments)
+        };
+
         let texts = project
             .timeline
             .as_ref()
@@ -5408,7 +5432,7 @@ impl ProjectUniforms {
                     XY::new(output_size.0, output_size.1),
                     timeline_time,
                     &timeline.text_segments,
-                    &project.hidden_text_segments,
+                    &hidden_text_segments,
                 )
             })
             .unwrap_or_default();
@@ -8320,6 +8344,14 @@ fn join_layer<T>(handle: std::thread::ScopedJoinHandle<'_, T>) -> T {
 }
 
 impl RendererLayers {
+    pub fn title_text_frame_box(&self) -> Option<TitleTextFrameBox> {
+        self.overlays
+            .as_ref()?
+            .title_card
+            .as_ref()?
+            .text_frame_box()
+    }
+
     pub fn caption_frame_box(&self) -> Option<CaptionFrameBox> {
         self.overlays.as_ref()?.captions.frame_box()
     }

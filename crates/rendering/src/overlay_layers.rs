@@ -39,9 +39,26 @@ impl OverlayLayers {
             )
         });
         if let Some(card) = card {
+            let index = uniforms
+                .project
+                .timeline
+                .as_ref()
+                .and_then(|timeline| {
+                    timeline
+                        .text_segments
+                        .iter()
+                        .position(|segment| std::ptr::eq(segment, card))
+                })
+                .unwrap();
             self.title_card
                 .get_or_insert_with(|| TitleCardLayer::new(&constants.device, &constants.queue))
-                .prepare(constants, uniforms.output_size, card)
+                .prepare(
+                    constants,
+                    uniforms.output_size,
+                    card,
+                    index,
+                    uniforms.project.editing_text_segment == Some(index),
+                )
                 .await?;
         } else if let Some(layer) = &mut self.title_card {
             layer.hide();

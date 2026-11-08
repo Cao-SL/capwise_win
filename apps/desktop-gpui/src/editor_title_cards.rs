@@ -18,8 +18,8 @@ use gpui::{
 use crate::{
     asset_library::{self, AssetKind, AssetRecord},
     editor_edits::{self, Selection},
-    editor_panels::FieldKey,
-    editor_sidebar::ColorTarget,
+    editor_panels::{FieldKey, PanelSlider},
+    editor_sidebar::{ColorTarget, SliderKey},
     editor_timeline::TrackKind,
     editor_window::EditorWindow,
     i18n::tr,
@@ -374,6 +374,7 @@ impl EditorWindow {
         if self.sidebar.title_cards.export_request.is_some() || !self.project_ready() {
             return;
         }
+        self.stop_canvas_text_edit(cx);
         self.end_field_edit(cx);
         self.close_color_picker(cx);
         let Some(segment) = self
@@ -920,6 +921,76 @@ impl EditorWindow {
             .flex()
             .flex_col()
             .gap(px(16.))
+            .child(
+                ui::EditorButton::plain(&theme, "edit-text-on-canvas")
+                    .left_icon("icons/pencil.svg")
+                    .label(tr::editor::canvas::edit_text())
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.begin_canvas_text_edit(index, window, cx);
+                    })),
+            )
+            .child(
+                ui::Field::stacked(&theme, tr::editor::title_cards::title())
+                    .child(self.render_field_input(FieldKey::TextContent(index), Some(72.))),
+            )
+            .child(self.render_text_font_controls(index, true, cx))
+            .child(
+                ui::Field::stacked(&theme, tr::editor::panel::text_segment::color()).child(
+                    self.render_color_input(ColorTarget::TextColor(index), &segment.color, cx),
+                ),
+            )
+            .child(
+                self.more_settings("title-card-text-effects", cx, move |this, cx| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(10.))
+                        .child(this.slider_field(
+                            tr::editor::panel::text_segment::line_height(),
+                            SliderKey::Panel(PanelSlider::TextLineHeight, index),
+                            "",
+                            cx,
+                        ))
+                        .child(this.slider_field(
+                            tr::editor::panel::text_segment::letter_spacing(),
+                            SliderKey::Panel(PanelSlider::TextLetterSpacing, index),
+                            "px",
+                            cx,
+                        ))
+                        .child(this.slider_field(
+                            tr::editor::panel::text_segment::outline(),
+                            SliderKey::Panel(PanelSlider::TextStroke, index),
+                            "px",
+                            cx,
+                        ))
+                        .children((segment.stroke_width > 0.).then(|| {
+                            this.render_color_input(
+                                ColorTarget::TextStroke(index),
+                                &segment.stroke_color,
+                                cx,
+                            )
+                        }))
+                        .child(this.slider_field(
+                            tr::editor::panel::text_segment::shadow(),
+                            SliderKey::Panel(PanelSlider::TextShadow, index),
+                            "x100%",
+                            cx,
+                        ))
+                        .child(this.slider_field(
+                            tr::editor::panel::text_segment::glow(),
+                            SliderKey::Panel(PanelSlider::TextGlow, index),
+                            "x100%",
+                            cx,
+                        ))
+                        .child(this.slider_field(
+                            tr::editor::panel::opacity(),
+                            SliderKey::Panel(PanelSlider::TextOpacity, index),
+                            "x100%",
+                            cx,
+                        ))
+                        .into_any_element()
+                }),
+            )
             .child(self.render_title_card_library(Some(role), cx))
             .child(
                 ui::Field::section(&theme, label).child(
@@ -968,10 +1039,6 @@ impl EditorWindow {
                         },
                     )),
                 ),
-            )
-            .child(
-                ui::Field::stacked(&theme, tr::editor::title_cards::title())
-                    .child(self.render_field_input(FieldKey::TextContent(index), Some(72.))),
             )
             .child(
                 ui::Field::stacked(&theme, tr::editor::title_cards::subtitle())
@@ -1043,12 +1110,6 @@ impl EditorWindow {
                 ),
             )
             .child(self.render_cover_generator(index, cx))
-            .child(self.render_text_font_controls(index, true, cx))
-            .child(
-                ui::Field::stacked(&theme, tr::editor::panel::text_segment::color()).child(
-                    self.render_color_input(ColorTarget::TextColor(index), &segment.color, cx),
-                ),
-            )
             .child(
                 div()
                     .flex()
