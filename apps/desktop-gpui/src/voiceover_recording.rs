@@ -53,6 +53,45 @@ pub struct TakeAudio {
     pub sample_rate: u32,
     pub channels: u16,
     pub recovered: bool,
+    #[serde(default)]
+    pub peak_db: Option<f32>,
+    #[serde(default)]
+    pub rms_db: Option<f32>,
+}
+
+impl TakeAudio {
+    pub fn suggested_gain_db(&self) -> Option<f32> {
+        let peak = self.peak_db?;
+        let rms = self.rms_db?;
+        (peak.is_finite() && rms.is_finite() && rms > -65.0 && peak > -60.0)
+            .then(|| (-6.0 - peak).clamp(-12.0, 24.0))
+    }
+}
+
+#[derive(Default)]
+struct AudioLevels {
+    peak: f64,
+    squares: f64,
+    count: u64,
+}
+
+impl AudioLevels {
+    fn push(&mut self, samples: &[f32]) {
+        for sample in samples.iter().copied().filter(|sample| sample.is_finite()) {
+            let sample = f64::from(sample);
+            self.peak = self.peak.max(sample.abs());
+            self.squares += sample * sample;
+            self.count += 1;
+        }
+    }
+
+    fn db(&self) -> (f32, f32) {
+        let rms = (self.squares / self.count.max(1) as f64).sqrt();
+        (
+            (20.0 * self.peak.max(1e-6).log10()) as f32,
+            (20.0 * rms.max(1e-6).log10()) as f32,
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -983,6 +1022,18 @@ fn validate_audio(path: &Path) -> Result<TakeAudio> {
         bail!("Invalid voiceover audio format");
     }
     let mut samples = 0u64;
+    if decoder.channel_layout().is_empty() {
+        decoder.set_channel_layout(ffmpeg::ChannelLayout::default(i32::from(channels)));
+    }
+    let mut resampler = ffmpeg::software::resampling::Context::get(
+        decoder.format(),
+        decoder.channel_layout(),
+        sample_rate,
+        ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Planar),
+        decoder.channel_layout(),
+        sample_rate,
+    )?;
+    let mut levels = AudioLevels::default();
     let mut drain = |decoder: &mut ffmpeg::decoder::Audio| -> Result<()> {
         let mut frame = ffmpeg::frame::Audio::empty();
         loop {
@@ -994,6 +1045,11 @@ fn validate_audio(path: &Path) -> Result<TakeAudio> {
                     samples = samples
                         .checked_add(frame.samples() as u64)
                         .ok_or_else(|| anyhow!("Voiceover sample count overflow"))?;
+                    let mut floats = ffmpeg::frame::Audio::empty();
+                    resampler.run(&frame, &mut floats)?;
+                    for channel in 0..usize::from(floats.channels()) {
+                        levels.push(floats.plane::<f32>(channel));
+                    }
                 }
                 Err(ffmpeg::Error::Eof) => return Ok(()),
                 Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::ffi::EAGAIN => {
@@ -1026,6 +1082,8 @@ fn validate_audio(path: &Path) -> Result<TakeAudio> {
         sample_rate,
         channels,
         recovered: false,
+        peak_db: Some(levels.db().0),
+        rms_db: Some(levels.db().1),
     })
 }
 

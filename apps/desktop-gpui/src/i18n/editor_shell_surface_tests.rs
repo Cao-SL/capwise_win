@@ -112,6 +112,22 @@ const FORMATTED: &[&str] = &[
 #[test]
 fn editor_shell_surfaces_match_the_literals_they_replaced() {
     let pairs: &[(&str, &str)] = &[
+        (
+            tr::editor::tabs::captions::edit_style(),
+            "Edit caption style",
+        ),
+        (
+            tr::editor::tabs::captions::style_live_note(),
+            "Changes apply to this video immediately. Save as a preset to reuse them.",
+        ),
+        (
+            tr::editor::timeline::empty::record_audio(),
+            "Click to record",
+        ),
+        (
+            tr::editor::transcript::back_to_captions(),
+            "Back to captions",
+        ),
         (tr::editor::canvas::camera(), "Camera"),
         (
             tr::editor::canvas::camera_follows_zoom(),
@@ -681,7 +697,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Smaller download · local multilingual recognition",
         ),
         (tr::editor::tabs::captions::model_label(), "Model"),
-        (tr::editor::tabs::captions::position(), "Position"),
+        (tr::editor::tabs::captions::position(), "Subtitle Position"),
         (
             tr::editor::tabs::captions::preset::classic(),
             "Soft black background",

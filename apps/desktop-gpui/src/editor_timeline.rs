@@ -2849,10 +2849,7 @@ fn render_empty_track(
         TrackKind::Keyboard => (tr::editor::timeline::empty::keyboard(), None),
         // `TL/AudioTrack.tsx:400-427`, `TL/ThreeDTrack.tsx:319-337`, and the
         // scene lane, which had no empty state at all.
-        TrackKind::Audio => (
-            tr::editor::timeline::empty::audio(),
-            Some(tr::editor::timeline::empty::add_audio()),
-        ),
+        TrackKind::Audio => ("", None),
         TrackKind::Scene => (
             tr::editor::timeline::empty::scene(),
             Some(tr::editor::timeline::empty::add_scene()),

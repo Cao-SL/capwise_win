@@ -219,6 +219,12 @@ fn independent_translation_typography_changes_pixels_and_reuses_cache_correctly(
     settings.outline_width = 8.0;
     settings.shadow = true;
     settings.shadow_size = 8.0;
+    settings.edit_translation_appearance(|a| {
+        a.outline = true;
+        a.outline_width = 8.;
+        a.shadow = true;
+        a.shadow_size = 8.;
+    });
     let effects = render(&constants, &mut reused, &settings, &latin_segment, size);
     assert!(effects != after_font);
     assert_eq!(
@@ -494,4 +500,111 @@ fn balanced_caption_wrap_avoids_a_single_character_last_line_without_changing_fo
     assert_eq!(balanced.len(), 2);
     assert!(balanced[1] >= balanced[0] * 0.4);
     assert_eq!(after.metrics().font_size, 42.0);
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn independent_caption_appearance_renders_source_and_translation_without_cache_coupling() {
+    let size = XY::new(640, 720);
+    let constants = constants(size);
+    let segment = segment("Source");
+    let mut settings = settings(&segment.text, "Translation");
+    settings.font = "Inter".into();
+    settings.translation_gap = Some(20);
+    settings.edit_source_appearance(|a| {
+        a.color = "#FF0000".into();
+        a.outline = false;
+        a.shadow = false;
+    });
+    settings.edit_translation_appearance(|a| {
+        a.color = "#0000FF".into();
+        a.outline = false;
+        a.shadow = false;
+        a.uppercase = true;
+        a.font_weight = 400;
+    });
+    let mut reused = layer(&constants);
+    let before = render(&constants, &mut reused, &settings, &segment, size);
+    let red = |pixels: &[u8]| {
+        pixels
+            .chunks_exact(4)
+            .filter(|p| p[0] > 150 && p[1] < 50 && p[2] < 50 && p[3] > 100)
+            .count()
+    };
+    let blue = |pixels: &[u8]| {
+        pixels
+            .chunks_exact(4)
+            .filter(|p| p[2] > 150 && p[1] < 50 && p[0] < 50 && p[3] > 100)
+            .count()
+    };
+    assert!(red(&before) > 20 && blue(&before) > 20);
+    assert_eq!(reused.text.shaped.as_ref().unwrap().text, "Source");
+    assert_eq!(
+        reused.translation_text.shaped.as_ref().unwrap().text,
+        "TRANSLATION"
+    );
+    assert!(
+        reused.text.shaped.as_ref().unwrap().colors
+            == CaptionTextColors::Uniform(Color::rgba(255, 0, 0, 255))
+    );
+    settings.edit_translation_appearance(|a| {
+        a.outline = true;
+        a.outline_color = "#00FF00".into();
+        a.outline_width = 10.;
+        a.shadow = true;
+        a.shadow_color = "#FFFF00".into();
+        a.shadow_opacity = 80;
+        a.shadow_size = 12.;
+    });
+    let effects = render(&constants, &mut reused, &settings, &segment, size);
+    assert_ne!(before, effects);
+    assert_eq!(red(&before), red(&effects));
+    assert!(
+        reused
+            .translation_outline_text
+            .shaped
+            .as_ref()
+            .unwrap()
+            .colors
+            == CaptionTextColors::Uniform(Color::rgba(0, 255, 0, 255))
+    );
+    assert_pixels_equal(
+        &effects,
+        &render(
+            &constants,
+            &mut layer(&constants),
+            &settings,
+            &segment,
+            size,
+        ),
+    );
+    settings.display_mode = CaptionDisplayMode::Translated;
+    let only_translation = render(&constants, &mut reused, &settings, &segment, size);
+    assert_eq!(red(&only_translation), 0);
+    assert!(blue(&only_translation) > 20);
+    assert_eq!(reused.text.shaped.as_ref().unwrap().text, "TRANSLATION");
+    assert_pixels_equal(
+        &only_translation,
+        &render(
+            &constants,
+            &mut layer(&constants),
+            &settings,
+            &segment,
+            size,
+        ),
+    );
+    settings.display_mode = CaptionDisplayMode::Original;
+    let only_source = render(&constants, &mut reused, &settings, &segment, size);
+    assert!(red(&only_source) > 20);
+    assert_eq!(blue(&only_source), 0);
+    assert_pixels_equal(
+        &only_source,
+        &render(
+            &constants,
+            &mut layer(&constants),
+            &settings,
+            &segment,
+            size,
+        ),
+    );
 }

@@ -12,3 +12,5 @@ This notice records their provenance and file integrity; it does not identify a 
 | friendly-welcome.mp3 | `68df03a8b6405893d42e8d9f6fe9638faf81ec6c004f993c2102f880529495e3` |
 | instrumental-bed.mp3 | `cc99f75a925652166846849c99da9820945238a2d2baf5bbfe4a794fd6c6b55d` |
 | instrumental-fade-out.mp3 | `1bc361817c538b9ca38cb6dde2efcab21e5ddb2a40e5928e5408008fed18b3d4` |
+
+The first-launch welcome uses `../onboarding/friendly-welcome-intro.mp3`, derived from the first 22 seconds of `friendly-welcome.mp3`, with -4 dB gain, a 1.2-second fade-in and a 4-second fade-out. The full soundtrack remains available in the music library.

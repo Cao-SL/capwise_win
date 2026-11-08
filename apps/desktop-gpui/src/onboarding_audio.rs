@@ -1,7 +1,8 @@
 use std::{
     io::Cursor,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread::JoinHandle,
+    time::Duration,
 };
 
 use gpui::{App, AssetSource, BackgroundExecutor};
@@ -84,20 +85,11 @@ fn play(mut muted: bool, receiver: Receiver<Command>) -> anyhow::Result<()> {
     }
     sink.set_volume(if muted { 0. } else { 1. });
     sink.play();
-    while let Ok(command) = receiver.recv() {
-        match command {
-            Command::Mute(true) => sink.set_volume(0.),
-            Command::Mute(false) => {
-                sink.set_volume(1.);
-                if sink.empty() {
-                    let bytes = crate::assets::Assets
-                        .load("onboarding/music.mp3")?
-                        .ok_or_else(|| anyhow::anyhow!("missing onboarding music"))?;
-                    sink.append(rodio::Decoder::new(Cursor::new(bytes))?);
-                }
-                sink.play();
-            }
-            Command::Stop => break,
+    while !sink.empty() {
+        match receiver.recv_timeout(Duration::from_millis(100)) {
+            Ok(Command::Mute(value)) => sink.set_volume(if value { 0. } else { 1. }),
+            Ok(Command::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => {}
         }
     }
     sink.stop();

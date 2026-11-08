@@ -508,6 +508,19 @@ pub struct ColorCorrection {
 
 impl ColorCorrection {
     pub const PRESET_NONE: &'static str = "none";
+
+    pub fn cinematic() -> Self {
+        Self {
+            preset: "cinematic".to_string(),
+            contrast: 0.12,
+            saturation: 0.06,
+            temperature: 0.04,
+            split_tone: 0.45,
+            vignette: 0.18,
+            grain: 0.12,
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for ColorCorrection {
@@ -2686,6 +2699,56 @@ pub struct CaptionTextStyle {
     pub size: u32,
 }
 
+#[derive(Type, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CaptionAppearance {
+    pub color: String,
+    pub outline: bool,
+    pub outline_width: f32,
+    pub outline_color: String,
+    pub shadow: bool,
+    pub shadow_color: String,
+    pub shadow_opacity: u32,
+    pub shadow_size: f32,
+    pub font_weight: u32,
+    pub uppercase: bool,
+}
+
+impl Default for CaptionAppearance {
+    fn default() -> Self {
+        CaptionSettings::default().source_appearance()
+    }
+}
+
+impl CaptionAppearance {
+    pub fn apply_to(&self, settings: &mut CaptionSettings) {
+        settings.color = self.color.clone();
+        settings.outline = self.outline;
+        settings.outline_width = self.outline_width;
+        settings.outline_color = self.outline_color.clone();
+        settings.shadow = self.shadow;
+        settings.shadow_color = self.shadow_color.clone();
+        settings.shadow_opacity = self.shadow_opacity;
+        settings.shadow_size = self.shadow_size;
+        settings.font_weight = self.font_weight;
+        settings.uppercase = self.uppercase;
+    }
+    pub fn normalized_outline_width(&self) -> f32 {
+        if self.outline_width.is_finite() {
+            self.outline_width.clamp(0., 20.)
+        } else {
+            5.5
+        }
+    }
+    pub fn normalized_shadow_size(&self) -> f32 {
+        if self.shadow_size.is_finite() {
+            self.shadow_size.clamp(0., 30.)
+        } else {
+            5.
+        }
+    }
+}
+
 #[derive(Type, Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CaptionSettings {
@@ -2697,6 +2760,8 @@ pub struct CaptionSettings {
     pub size: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub translation_style: Option<CaptionTextStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_appearance: Option<CaptionAppearance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub translation_gap: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2748,6 +2813,45 @@ pub struct CaptionSettings {
 }
 
 impl CaptionSettings {
+    pub fn source_appearance(&self) -> CaptionAppearance {
+        CaptionAppearance {
+            color: self.color.clone(),
+            outline: self.outline,
+            outline_width: self.outline_width,
+            outline_color: self.outline_color.clone(),
+            shadow: self.shadow,
+            shadow_color: self.shadow_color.clone(),
+            shadow_opacity: self.shadow_opacity,
+            shadow_size: self.shadow_size,
+            font_weight: self.font_weight,
+            uppercase: self.uppercase,
+        }
+    }
+    pub fn resolved_translation_appearance(&self) -> CaptionAppearance {
+        self.translation_appearance.clone().unwrap_or_else(|| {
+            let mut appearance = self.source_appearance();
+            appearance.outline_width = (self.normalized_outline_width() * self.size.max(1) as f32
+                / self.resolved_translation_style().size.max(1) as f32)
+                .min(20.);
+            appearance
+        })
+    }
+    fn freeze_translation_appearance(&mut self) {
+        if self.translation_appearance.is_none() {
+            self.translation_appearance = Some(self.resolved_translation_appearance());
+        }
+    }
+    pub fn edit_source_appearance(&mut self, change: impl FnOnce(&mut CaptionAppearance)) {
+        self.freeze_translation_appearance();
+        let mut appearance = self.source_appearance();
+        change(&mut appearance);
+        appearance.apply_to(self);
+    }
+    pub fn edit_translation_appearance(&mut self, change: impl FnOnce(&mut CaptionAppearance)) {
+        let mut appearance = self.resolved_translation_appearance();
+        change(&mut appearance);
+        self.translation_appearance = Some(appearance);
+    }
     pub fn resolved_translation_style(&self) -> CaptionTextStyle {
         self.translation_style
             .clone()
@@ -2769,6 +2873,7 @@ impl CaptionSettings {
     }
 
     pub fn set_source_font_size(&mut self, size: u32) {
+        self.freeze_translation_appearance();
         self.freeze_translation_style();
         self.size = size;
     }
@@ -2781,6 +2886,7 @@ impl CaptionSettings {
     }
 
     pub fn set_translation_font_size(&mut self, size: u32) {
+        self.freeze_translation_appearance();
         self.freeze_translation_style();
         if let Some(style) = &mut self.translation_style {
             style.size = size;
@@ -2855,6 +2961,7 @@ impl Default for CaptionSettings {
             font: "System Sans-Serif".to_string(),
             size: 24,
             translation_style: None,
+            translation_appearance: None,
             translation_gap: None,
             bottom_margin: None,
             color: "#FFFFFF".to_string(),
@@ -3236,7 +3343,10 @@ impl Default for ProjectConfiguration {
             hidden_text_segments: Default::default(),
             screen_motion_blur: Self::default_screen_motion_blur(),
             screen_movement_spring: Default::default(),
-            color_correction: Default::default(),
+            color_correction: ColorCorrectionConfiguration {
+                camera: ColorCorrection::cinematic(),
+                ..Default::default()
+            },
             text_size_version: TEXT_SIZE_VERSION,
             text_anim_version: TEXT_ANIM_VERSION,
             overlay_layer_version: OVERLAY_LAYER_VERSION,
@@ -3316,6 +3426,8 @@ impl ProjectConfiguration {
                 let translations = std::mem::take(&mut captions.settings.translations);
                 let display_mode = captions.settings.display_mode;
                 let current_translation_style = captions.settings.translation_style.take();
+                let current_translation_appearance =
+                    captions.settings.translation_appearance.take();
                 let mut settings = settings.unwrap_or_default();
                 settings.translation_gap = settings
                     .translation_gap
@@ -3323,6 +3435,9 @@ impl ProjectConfiguration {
                 settings.bottom_margin = settings.bottom_margin.or(captions.settings.bottom_margin);
                 if settings.translation_style.is_none() {
                     settings.translation_style = current_translation_style;
+                }
+                if settings.translation_appearance.is_none() {
+                    settings.translation_appearance = current_translation_appearance;
                 }
                 captions.settings = CaptionSettings {
                     filler_language,
@@ -3866,6 +3981,26 @@ mod notch_tests {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn camera_style_defaults_only_apply_to_new_projects() {
+        let fresh = ProjectConfiguration::default();
+        assert_eq!(fresh.color_correction.camera, ColorCorrection::cinematic());
+        assert_eq!(fresh.color_correction.screen, ColorCorrection::default());
+        let mut old = serde_json::to_value(&fresh).unwrap();
+        old.as_object_mut().unwrap().remove("colorCorrection");
+        let restored: ProjectConfiguration = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(
+            restored.color_correction,
+            ColorCorrectionConfiguration::default()
+        );
+        old["colorCorrection"] =
+            serde_json::json!({"camera": {"preset": "midnight", "contrast": 0.27}});
+        let restored: ProjectConfiguration = serde_json::from_value(old).unwrap();
+        assert_eq!(restored.color_correction.camera.preset, "midnight");
+        assert_eq!(restored.color_correction.camera.contrast, 0.27);
+        assert_eq!(restored.color_correction.screen, ColorCorrection::default());
+    }
 
     #[test]
     fn caption_effects_preserve_legacy_defaults_and_bound_extreme_inputs() {

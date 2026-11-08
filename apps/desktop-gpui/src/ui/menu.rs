@@ -428,6 +428,8 @@ impl RenderOnce for Menu {
             let handler = handler.clone();
             div()
                 .id(SharedString::from(format!("{row_prefix}-item-{index}")))
+                .role(gpui::Role::MenuItem)
+                .aria_label(item.label.clone())
                 .flex()
                 .flex_row()
                 .flex_shrink_0()

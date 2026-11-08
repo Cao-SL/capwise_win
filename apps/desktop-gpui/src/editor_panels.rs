@@ -54,7 +54,7 @@ pub const TEXT_FONT_SIZE_MAX: f32 = 400.;
 
 /// `MIN_VOLUME_DB` / `MAX_VOLUME_DB` (`audio.ts:24-25`).
 pub const MIN_VOLUME_DB: f32 = -30.;
-pub const MAX_VOLUME_DB: f32 = 12.;
+pub const MAX_VOLUME_DB: f32 = 24.;
 
 /// `TEXT_SEGMENT_WEIGHT_OPTIONS` (`text-style.tsx:42-50`).
 pub const TEXT_SEGMENT_WEIGHTS: [(f32, fn() -> &'static str); 7] = [
@@ -2777,6 +2777,12 @@ pub enum FieldKey {
     /// `HexColorInput`s, which live on the sidebar's `ColorTarget` map and are
     /// listed here only so a tab can name one.
     CaptionColor,
+    CaptionOutline,
+    CaptionShadow,
+    CaptionTranslationColor,
+    CaptionTranslationOutline,
+    CaptionTranslationShadow,
+
     CaptionBackground,
     CaptionHighlight,
     KeyboardColor,
@@ -2814,6 +2820,12 @@ impl FieldKey {
     pub fn color_target(self) -> Option<ColorTarget> {
         Some(match self {
             Self::CaptionColor => ColorTarget::CaptionColor,
+            Self::CaptionOutline => ColorTarget::CaptionOutline,
+            Self::CaptionShadow => ColorTarget::CaptionShadow,
+            Self::CaptionTranslationColor => ColorTarget::CaptionTranslationColor,
+            Self::CaptionTranslationOutline => ColorTarget::CaptionTranslationOutline,
+            Self::CaptionTranslationShadow => ColorTarget::CaptionTranslationShadow,
+
             Self::CaptionBackground => ColorTarget::CaptionBackground,
             Self::CaptionHighlight => ColorTarget::CaptionHighlight,
             Self::KeyboardColor => ColorTarget::KeyboardColor,
@@ -6045,7 +6057,7 @@ impl EditorWindow {
     }
 
     /// `CaptionSegmentConfig` (`:4231-4341`).
-    fn render_caption_panel(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_caption_panel(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
         let Some(segment) = self
             .timeline()
             .and_then(|timeline| timeline.caption_segments.get(index))
@@ -6245,8 +6257,8 @@ impl EditorWindow {
                 .icon_size(px(13.))
                 .text_size(px(12.))
                 .label(tr::editor::panel::audio::change())
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.open_audio_replace(index, cx);
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.open_audio_replace(index, window, cx);
                 })),
             );
         let ducking_row = div()
@@ -6287,7 +6299,7 @@ impl EditorWindow {
             .child(self.slider_field(
                 tr::editor::panel::audio::volume(),
                 SliderKey::Panel(PanelSlider::AudioVolume, index),
-                "db",
+                "volume",
                 cx,
             ))
             .child(
@@ -8384,6 +8396,11 @@ impl EditorWindow {
                 crate::editor_sidebar::SidebarTab::Captions => {
                     colors.extend([
                         ColorTarget::CaptionColor,
+                        ColorTarget::CaptionOutline,
+                        ColorTarget::CaptionShadow,
+                        ColorTarget::CaptionTranslationColor,
+                        ColorTarget::CaptionTranslationOutline,
+                        ColorTarget::CaptionTranslationShadow,
                         ColorTarget::CaptionBackground,
                         ColorTarget::CaptionHighlight,
                     ]);

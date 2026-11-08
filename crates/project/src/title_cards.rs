@@ -217,7 +217,11 @@ impl TextSegment {
     pub fn new_title_card(role: TitleCardRole, content: impl Into<String>) -> Self {
         Self {
             start: 0.0,
-            end: 2.0,
+            end: if role == TitleCardRole::Intro {
+                1.0
+            } else {
+                2.0
+            },
             track: 0,
             enabled: true,
             content: content.into(),

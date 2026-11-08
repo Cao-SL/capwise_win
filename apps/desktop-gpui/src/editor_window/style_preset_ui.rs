@@ -231,6 +231,176 @@ fn default_badge(theme: &crate::theme::Theme) -> gpui::Div {
 }
 
 impl EditorWindow {
+    pub(crate) fn open_caption_style_editor(
+        &mut self,
+        preset: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.stop_playback(cx);
+        self.end_field_edit(cx);
+        self.close_color_picker(cx);
+        self.sidebar.menu = None;
+        self.style_presets.close_menu();
+        if let Some(index) = preset {
+            self.apply_quick_caption_preset(index, window, cx);
+        }
+        self.caption_style_editor = true;
+        self.caption_style_scroll.set_offset(point(px(0.), px(0.)));
+        self.focus.focus(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn close_caption_style_editor(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.end_field_edit(cx);
+        self.close_color_picker(cx);
+        self.sidebar.menu = None;
+        self.caption_style_editor = false;
+        self.focus.focus(window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn render_caption_style_editor(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.caption_style_editor {
+            return None;
+        }
+        let theme = self.theme;
+        let settings = crate::editor_tabs::caption_settings(&self.project);
+        let height = (f32::from(window.viewport_size().height) - 48.).max(260.);
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .id("caption-style-backdrop")
+                        .absolute()
+                        .inset_0()
+                        .occlude()
+                        .bg(gpui::hsla(0., 0., 0., 0.35))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.close_caption_style_editor(window, cx)
+                        })),
+                )
+                .child(
+                    div()
+                        .id("caption-style-editor")
+                        .occlude()
+                        .w(px(480.))
+                        .max_w_full()
+                        .max_h(px(height))
+                        .flex()
+                        .flex_col()
+                        .rounded(px(12.))
+                        .bg(Hsla::from(theme.editor.card))
+                        .border_1()
+                        .border_color(Hsla::from(theme.editor.line))
+                        .shadow(theme.editor.pop_shadow())
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                        .child(
+                            div()
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .px(px(18.))
+                                .py(px(12.))
+                                .child(
+                                    div()
+                                        .text_size(px(15.))
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(tr::editor::tabs::captions::edit_style()),
+                                )
+                                .child(
+                                    ui::EditorButton::plain(&theme, "caption-style-close")
+                                        .left_icon("icons/x.svg")
+                                        .tooltip(&theme, tr::common::close())
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.close_caption_style_editor(window, cx)
+                                        })),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .px(px(18.))
+                                .pb(px(12.))
+                                .child(self.caption_style_preview(&settings))
+                                .child(
+                                    div()
+                                        .pt(px(8.))
+                                        .text_size(px(12.))
+                                        .text_color(Hsla::from(theme.editor.text_2))
+                                        .child(tr::editor::tabs::captions::style_live_note()),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id("caption-style-controls")
+                                .min_h_0()
+                                .flex_1()
+                                .overflow_y_scroll()
+                                .track_scroll(&self.caption_style_scroll)
+                                .px(px(18.))
+                                .py(px(8.))
+                                .child(self.render_caption_style_controls(cx)),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .justify_end()
+                                .gap(px(8.))
+                                .p(px(14.))
+                                .border_t_1()
+                                .border_color(Hsla::from(theme.editor.line))
+                                .child(
+                                    ui::EditorButton::plain(&theme, "caption-style-done")
+                                        .tinted(&theme)
+                                        .label(tr::common::close())
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.close_caption_style_editor(window, cx)
+                                        })),
+                                )
+                                .child(
+                                    ui::EditorButton::plain(&theme, "caption-style-save")
+                                        .filled(&theme)
+                                        .left_icon("icons/presets.svg")
+                                        .label(tr::editor::panel::style_presets::save())
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.close_caption_style_editor(window, cx);
+                                            this.open_style_dialog(
+                                                StyleDialog::Create {
+                                                    kind: PresetKind::Captions,
+                                                    index: 0,
+                                                    default: false,
+                                                },
+                                                window,
+                                                cx,
+                                            );
+                                        })),
+                                ),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
     pub(crate) fn render_style_presets_bar(
         &self,
         kind: PresetKind,
@@ -260,7 +430,13 @@ impl EditorWindow {
         let matched = current.as_ref().and_then(|style| presets.matching(style));
         let is_default = matched.is_some_and(|preset| presets.is_default(&preset.id));
         let label: SharedString = matched.map_or_else(
-            || tr::editor::panel::style_presets::custom().into(),
+            || {
+                if kind == PresetKind::Captions {
+                    tr::editor::workbench::my_styles().into()
+                } else {
+                    tr::editor::panel::style_presets::custom().into()
+                }
+            },
             |preset| preset.name.clone().into(),
         );
         let open = self
@@ -1076,8 +1252,7 @@ impl EditorWindow {
                     if default && let Some(id) = id.as_deref() {
                         presets.set_default(Some(id));
                     }
-                });
-                true
+                }).is_some()
             }),
             StyleDialog::Rename { kind, preset } => with_kind!(kind, S => {
                 if name.trim().is_empty() {
@@ -1089,16 +1264,15 @@ impl EditorWindow {
                 let name = name.to_string();
                 self.mutate_style_presets::<S, _>(window, cx, move |presets| {
                     presets.rename(&id, &name)
-                });
-                true
+                }).is_some()
             }),
             StyleDialog::Delete { kind, preset } => with_kind!(kind, S => {
-                if let Some(id) = self.style_preset_id::<S>(preset) {
-                    self.mutate_style_presets::<S, _>(window, cx, move |presets| {
-                        presets.remove(&id)
-                    });
-                }
-                true
+                let Some(id) = self.style_preset_id::<S>(preset) else {
+                    return true;
+                };
+                self.mutate_style_presets::<S, _>(window, cx, move |presets| {
+                    presets.remove(&id)
+                }).is_some()
             }),
         }
     }

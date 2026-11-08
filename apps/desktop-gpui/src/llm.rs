@@ -254,7 +254,7 @@ pub static PROVIDERS: &[LlmProvider] = &[
         tr::ai::llm::doubao,
         Group::Provider,
         "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-        Some("https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey"),
+        Some("https://ai.volcengine.com/console/apikey"),
         &[],
     ),
     openai(
@@ -602,6 +602,7 @@ async fn discovery_body(mut response: reqwest::Response) -> Result<Value, Discov
 }
 
 async fn discover_with(
+    provider_id: &str,
     protocol: Protocol,
     url: reqwest::Url,
     key: &str,
@@ -611,12 +612,13 @@ async fn discover_with(
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|_| DiscoveryError::Connection)?;
+    let session = uuid::Uuid::new_v4().to_string();
     let mut result = Vec::new();
     let mut ids = HashSet::new();
     let mut cursors = HashSet::new();
     let mut cursor: Option<String> = None;
     for _ in 0..DISCOVERY_MAX_PAGES {
-        let mut request = client.get(url.clone());
+        let mut request = provider_headers(client.get(url.clone()), provider_id, &session);
         request = match protocol {
             Protocol::Anthropic => request
                 .header("x-api-key", key)
@@ -689,7 +691,12 @@ pub async fn discover_models(
     }
     tokio::time::timeout(
         Duration::from_secs(25),
-        discover_with(provider.protocol, url, effective_key(provider, key.trim())),
+        discover_with(
+            provider.id,
+            provider.protocol,
+            url,
+            effective_key(provider, key.trim()),
+        ),
     )
     .await
     .map_err(|_| DiscoveryError::Timeout)?
@@ -816,7 +823,24 @@ pub(crate) fn error_message(body: &str) -> String {
         .unwrap_or_else(|| body.chars().take(160).collect())
 }
 
+fn provider_headers(
+    builder: reqwest::RequestBuilder,
+    provider_id: &str,
+    session: &str,
+) -> reqwest::RequestBuilder {
+    let builder = builder.header(
+        reqwest::header::USER_AGENT,
+        concat!("Capwise/", env!("CARGO_PKG_VERSION")),
+    );
+    if provider_id == "opencode-go" {
+        builder.header("x-opencode-session", session)
+    } else {
+        builder
+    }
+}
+
 async fn chat_with(
+    session: uuid::Uuid,
     provider: &LlmProvider,
     endpoint: &Endpoint,
     key: &str,
@@ -824,13 +848,21 @@ async fn chat_with(
     user: &str,
 ) -> Result<String, String> {
     let name = (provider.name)();
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| tr::asr::connection_failed(name, "HTTP client initialization failed"))?;
+    let session = session.to_string();
     let mut last = String::new();
     for attempt in 0..=RETRIES {
-        let sent = request(&client, provider, endpoint, key, system, user)
-            .timeout(REQUEST_TIMEOUT)
-            .send()
-            .await;
+        let sent = provider_headers(
+            request(&client, provider, endpoint, key, system, user),
+            provider.id,
+            &session,
+        )
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await;
         let response = match sent {
             Ok(response) => response,
             Err(error) => {
@@ -871,8 +903,33 @@ async fn chat_with(
 }
 
 pub async fn chat(id: &str, system: &str, user: &str) -> Result<String, String> {
+    chat_in_session(uuid::Uuid::new_v4(), id, system, user).await
+}
+
+pub async fn chat_in_session(
+    session: uuid::Uuid,
+    id: &str,
+    system: &str,
+    user: &str,
+) -> Result<String, String> {
+    chat_with_model(session, id, None, system, user).await
+}
+
+pub(crate) async fn chat_with_model(
+    session: uuid::Uuid,
+    id: &str,
+    model: Option<&str>,
+    system: &str,
+    user: &str,
+) -> Result<String, String> {
     let provider = provider(id).ok_or_else(|| format!("Unknown model provider {id}"))?;
-    let endpoint = provider.endpoint();
+    let mut endpoint = provider.endpoint();
+    if let Some(model) = model {
+        if model.trim().is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
+            return Err(tr::ai::model_missing().into());
+        }
+        endpoint.model = model.to_owned();
+    }
     if !provider.ready() {
         return Err(tr::ai::model_missing().to_string());
     }
@@ -880,7 +937,7 @@ pub async fn chat(id: &str, system: &str, user: &str) -> Result<String, String> 
     if provider.group == Group::Account {
         return oauth::chat(id, (provider.name)(), &key, &endpoint.model, system, user).await;
     }
-    chat_with(provider, &endpoint, &key, system, user).await
+    chat_with(session, provider, &endpoint, &key, system, user).await
 }
 
 /// Checks the address, key and model with a one-word question. Returns the
@@ -909,6 +966,7 @@ pub fn test(id: &str, key: &str, endpoint: &Endpoint) -> Result<u128, String> {
         return Ok(started.elapsed().as_millis());
     }
     tokio::runtime::Handle::current().block_on(chat_with(
+        uuid::Uuid::new_v4(),
         provider,
         endpoint,
         key.trim(),
@@ -1299,5 +1357,68 @@ mod tests {
             "bad key"
         );
         assert_eq!(error_message("plain"), "plain");
+    }
+    #[tokio::test]
+    async fn opencode_requests_identify_capwise_and_keep_sessions_across_retries_and_batches() {
+        let (base, server) = model_server(vec![
+            "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nRetry-After: 0\r\nConnection: close\r\n\r\n".into(),
+            model_json(json!({"choices":[{"message":{"content":"OK"}}]})),
+            model_json(json!({"choices":[{"message":{"content":"OK"}}]})),
+        ]);
+        let provider = provider("opencode-go").unwrap();
+        let endpoint = Endpoint {
+            base_url: format!("{base}/chat/completions"),
+            model: "synthetic-model".into(),
+        };
+        let session = uuid::Uuid::new_v4();
+        for _ in 0..2 {
+            assert_eq!(
+                chat_with(
+                    session,
+                    provider,
+                    &endpoint,
+                    "synthetic-secret",
+                    "Reply OK",
+                    "ping"
+                )
+                .await
+                .unwrap(),
+                "OK"
+            );
+        }
+        for request in server.join().unwrap() {
+            assert_eq!(
+                request_header(&request, "x-opencode-session"),
+                Some(session.to_string().as_str())
+            );
+            assert_eq!(
+                request_header(&request, "user-agent"),
+                Some(concat!("Capwise/", env!("CARGO_PKG_VERSION")))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn opencode_discovery_sends_session_without_affecting_other_providers() {
+        let (base, server) =
+            model_server(vec![model_json(json!({"data":[{"id":"synthetic-model"}]}))]);
+        discover_models(
+            "opencode-go",
+            &format!("{base}/v1/chat/completions"),
+            "synthetic-secret",
+        )
+        .await
+        .unwrap();
+        let requests = server.join().unwrap();
+        let session = request_header(&requests[0], "x-opencode-session").unwrap();
+        assert!(uuid::Uuid::parse_str(session).is_ok());
+        let request = provider_headers(
+            reqwest::Client::new().get("https://example.com"),
+            "openai",
+            "synthetic-session",
+        )
+        .build()
+        .unwrap();
+        assert!(!request.headers().contains_key("x-opencode-session"));
     }
 }

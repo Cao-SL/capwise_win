@@ -142,6 +142,8 @@ fn placement(
     })
 }
 
+struct MicrophonePreview;
+
 struct Panel {
     ticket: Ticket,
     placement: Placement,
@@ -150,6 +152,8 @@ struct Panel {
     selected: Option<String>,
     device_menu: bool,
     meter: Entity<ui::MicrophoneLevel>,
+    _microphone_preview: Entity<MicrophonePreview>,
+    normalize: bool,
     session: Option<Session>,
     take_id: Option<Uuid>,
     startup_cancel: Option<watch::Sender<bool>>,
@@ -233,7 +237,7 @@ impl EditorWindow {
         let level = feeds.read(cx).mic_level().clone();
         let selected = feeds.read(cx).microphone.clone();
         let meter = cx.new(|cx| {
-            ui::MicrophoneLevel::new(ui::MicrophoneLevelKind::DeviceRow, &level, window, cx)
+            ui::MicrophoneLevel::new(ui::MicrophoneLevelKind::Voiceover, &level, window, cx)
         });
         let theme = self.theme;
         meter.update(cx, |meter, cx| {
@@ -250,6 +254,16 @@ impl EditorWindow {
             project: self.project_path.clone(),
             instance,
         };
+        feeds.update(cx, |feeds, cx| {
+            feeds.acquire_mic_preview(selected.clone(), cx)
+        });
+        let preview = cx.new(|cx| {
+            cx.on_release(move |_: &mut MicrophonePreview, cx| {
+                feeds.update(cx, |feeds, cx| feeds.release_mic_tap(cx));
+            })
+            .detach();
+            MicrophonePreview
+        });
         self.voiceover.panel = Some(Panel {
             ticket: ticket.clone(),
             placement,
@@ -258,6 +272,8 @@ impl EditorWindow {
             selected,
             device_menu: false,
             meter,
+            _microphone_preview: preview,
+            normalize: false,
             session: None,
             take_id: None,
             startup_cancel: None,
@@ -292,6 +308,8 @@ impl EditorWindow {
                     panel.selected = devices.first().cloned();
                 }
                 panel.devices = devices;
+                let selected = panel.selected.clone();
+                Feeds::global(cx).update(cx, |feeds, cx| feeds.set_microphone(selected, cx));
                 match takes {
                     Ok(takes) => panel.takes = takes,
                     Err(error) => panel.error = Some(error),
@@ -590,7 +608,6 @@ impl EditorWindow {
                     Ok(Some(take)) => {
                         panel.ready = Some(take);
                         panel.phase = Phase::Ready;
-                        this.attach_voiceover(window, cx);
                     }
                     Ok(None) => {
                         if panel.close_after_cancel {
@@ -638,6 +655,11 @@ impl EditorWindow {
             return;
         };
         let (start, end) = (range.start, range.end);
+        let gain = if panel.normalize {
+            take.audio().suggested_gain_db().unwrap_or(0.0)
+        } else {
+            0.0
+        };
         let result = (|| -> Result<(), String> {
             if !take.is_in_project(&self.project) {
                 self.commit_project_audio_asset(
@@ -651,6 +673,7 @@ impl EditorWindow {
                     take.audio().duration,
                     start,
                     Some(lane),
+                    gain,
                     window,
                     cx,
                 )?;
@@ -766,6 +789,7 @@ impl EditorWindow {
         }
         if !panel.phase.busy() {
             self.voiceover.panel = None;
+            self.focus_root(window, cx);
             cx.notify();
             return;
         }
@@ -928,6 +952,50 @@ impl EditorWindow {
                 })),
             )
             .child(panel.meter.clone());
+        #[cfg(target_os = "macos")]
+        if matches!(panel.phase, Phase::Idle | Phase::Error) {
+            content = content.child(
+                ui::EditorButton::plain(&theme, "voiceover-input-settings")
+                    .tinted(&theme)
+                    .label(tr::editor::voiceover::input_settings())
+                    .on_click(|_, _, cx| {
+                        cx.open_url("x-apple.systempreferences:com.apple.Sound-Settings.extension")
+                    }),
+            );
+        }
+        if panel.phase == Phase::Ready {
+            content = content.child(
+                div()
+                    .text_size(px(12.))
+                    .child(tr::editor::voiceover::review_hint()),
+            );
+            if let Some(gain) = panel
+                .ready
+                .as_ref()
+                .and_then(|take| take.audio().suggested_gain_db())
+            {
+                content = content.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(format!(
+                            "{} ({gain:+.1} dB)",
+                            tr::editor::voiceover::normalize()
+                        ))
+                        .child(
+                            ui::Toggle::plain(&theme, "voiceover-normalize", panel.normalize)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.library_audition = None;
+                                    if let Some(panel) = this.voiceover.panel.as_mut() {
+                                        panel.normalize = !panel.normalize;
+                                    }
+                                    cx.notify();
+                                })),
+                        ),
+                );
+            }
+        }
         if panel.device_menu {
             content = content.child(
                 div()
@@ -1002,6 +1070,9 @@ impl EditorWindow {
         content = content.child(match panel.phase {
             Phase::Idle | Phase::Error => actions.child(
                 ui::EditorButton::plain(&theme, "voiceover-start")
+                    .filled(&theme)
+                    .grow()
+                    .height(px(36.))
                     .left_icon("icons/microphone.svg")
                     .label(tr::editor::voiceover::start())
                     .disabled(panel.selected.is_none() || panel.ready.is_some())
@@ -1022,6 +1093,8 @@ impl EditorWindow {
                 )
                 .child(
                     ui::EditorButton::plain(&theme, "voiceover-finish")
+                        .filled(&theme)
+                        .height(px(36.))
                         .label(tr::editor::voiceover::finish())
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.finish_voiceover(false, window, cx)
@@ -1037,7 +1110,9 @@ impl EditorWindow {
                 ),
             Phase::Ready => actions.child(
                 ui::EditorButton::plain(&theme, "voiceover-attach")
-                    .label(tr::editor::voiceover::retry_save())
+                    .filled(&theme)
+                    .height(px(36.))
+                    .label(tr::editor::voiceover::add_to_timeline())
                     .on_click(cx.listener(|this, _, window, cx| this.attach_voiceover(window, cx))),
             ),
             Phase::Attached => actions.child(
@@ -1077,7 +1152,7 @@ impl EditorWindow {
                     .label(if auditioning {
                         tr::editor::voiceover::stop_playback()
                     } else {
-                        tr::editor::voiceover::audition_original()
+                        tr::editor::voiceover::audition_take()
                     })
                     .on_click(cx.listener(|this, _, _, cx| {
                         let path = this
@@ -1087,7 +1162,15 @@ impl EditorWindow {
                             .and_then(|panel| panel.ready.as_ref())
                             .map(|take| take.path().to_path_buf());
                         if let Some(path) = path {
-                            this.toggle_audio_audition("voiceover-take", path, cx);
+                            let gain = this
+                                .voiceover
+                                .panel
+                                .as_ref()
+                                .filter(|panel| panel.normalize)
+                                .and_then(|panel| panel.ready.as_ref())
+                                .and_then(|take| take.audio().suggested_gain_db())
+                                .unwrap_or(0.0);
+                            this.toggle_audio_audition_with_gain("voiceover-take", path, gain, cx);
                         }
                     })),
             );

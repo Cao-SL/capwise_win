@@ -557,6 +557,10 @@ impl EditorWindow {
         let tiles = div().flex().flex_row().flex_wrap().gap(px(8.)).children(
             COLOR_CORRECTION_PRESETS
                 .iter()
+                .take(match target {
+                    GradeTarget::Camera => 6,
+                    GradeTarget::Screen => COLOR_CORRECTION_PRESETS.len(),
+                })
                 .enumerate()
                 .map(|(index, preset)| {
                     let selected = active == preset.id;
@@ -629,7 +633,16 @@ impl EditorWindow {
             .flex()
             .flex_col()
             .gap(px(14.))
-            .child(ui::Field::section(&theme, tr::editor::color::title()).child(tiles))
+            .child(
+                ui::Field::section(
+                    &theme,
+                    match target {
+                        GradeTarget::Camera => tr::editor::color::camera_title(),
+                        GradeTarget::Screen => tr::editor::color::title(),
+                    },
+                )
+                .child(tiles),
+            )
             .child(self.slider_field(
                 GradeSlider::Grain.label(),
                 crate::editor_sidebar::SliderKey::Grade(target, GradeSlider::Grain),

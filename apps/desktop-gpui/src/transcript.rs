@@ -163,6 +163,7 @@ pub(crate) fn category_index(kind: DisfluencyKind) -> usize {
 
 pub(crate) struct TranscriptState {
     pub open: bool,
+    pub caption_only: bool,
     pub player_share: f32,
     pub doc: Option<Arc<TranscriptDoc>>,
     pub edl: Option<Arc<TranscriptEdl>>,
@@ -199,6 +200,7 @@ impl TranscriptState {
             });
         Self {
             open: false,
+            caption_only: false,
             player_share,
             doc: None,
             edl: None,

@@ -140,12 +140,16 @@ pub async fn model_preferences(
     let mut preferred = vec![None; words.len().saturating_sub(1)];
     let windows = model_windows(words, MODEL_WINDOW_WIDTH);
     let mut answered = 0;
+    let session = uuid::Uuid::new_v4();
     for batch in windows.chunks(MODEL_CONCURRENCY) {
-        let replies = futures_util::future::join_all(batch.iter().map(|window| {
-            let input = model_input(&words[window.clone()]);
-            async move { crate::llm::chat(provider_id, SYSTEM_PROMPT, &input).await }
-        }))
-        .await;
+        let replies =
+            futures_util::future::join_all(batch.iter().map(|window| {
+                let input = model_input(&words[window.clone()]);
+                async move {
+                    crate::llm::chat_in_session(session, provider_id, SYSTEM_PROMPT, &input).await
+                }
+            }))
+            .await;
         for (window, reply) in batch.iter().zip(replies) {
             let slice = &words[window.clone()];
             let Some(found) = reply.ok().and_then(|reply| model_breaks(slice, &reply)) else {

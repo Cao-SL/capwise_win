@@ -158,6 +158,8 @@ xcrun actool "$HERE/packaging/macos/AppIcon.icon" --compile "$STAGE/Contents/Res
 mkdir -p "$STAGE/Contents/Helpers/llama-server" "$STAGE/Contents/Resources/licenses"
 cp -a "$HERE/target/llama-server/llama-server" "$HERE"/target/llama-server/*.dylib "$STAGE/Contents/Helpers/llama-server/"
 cp "$HERE/target/llama-server/LICENSE" "$STAGE/Contents/Resources/licenses/llama.cpp-LICENSE.txt"
+cp "$ROOT/LICENSE" "$STAGE/Contents/Resources/licenses/Capwise-LICENSE.txt"
+cp "$ROOT/licenses/LICENSE-MIT" "$STAGE/Contents/Resources/licenses/Cap-MIT.txt"
 mkdir -p "$STAGE/Contents/Resources/assets" "$STAGE/Contents/Resources/fonts"
 cp -R "$HERE/assets/music" "$STAGE/Contents/Resources/assets/music"
 cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
@@ -301,7 +303,8 @@ with open(path, "w") as out:
     out.write("\n")
 PY
 
-(cd "$DIST" && shasum -a 256 "$(basename "$DMG")" "$ARCHIVE_NAME" >SHA256SUMS.txt)
+cp "$DMG" "$DIST/$APP_NAME.dmg"
+(cd "$DIST" && shasum -a 256 "$(basename "$DMG")" "$APP_NAME.dmg" "$ARCHIVE_NAME" >SHA256SUMS.txt)
 
 step "Done"
 ls -lh "$DIST"
@@ -313,6 +316,6 @@ else
 
 Nothing has been uploaded. To publish (after committing the version bump and tagging $TAG):
   gh release create $TAG --repo $REPO --title "灵录 Capwise $VERSION" --notes-file <notes.md> \\
-    "$DMG" "$ARCHIVE" "$DIST/latest.json" "$DIST/SHA256SUMS.txt"
+    "$DMG" "$DIST/$APP_NAME.dmg" "$ARCHIVE" "$DIST/latest.json" "$DIST/SHA256SUMS.txt"
 EOF
 fi

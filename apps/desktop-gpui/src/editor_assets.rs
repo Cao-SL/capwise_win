@@ -1027,74 +1027,75 @@ impl EditorWindow {
 
     fn render_local_assets(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
-        let mut header = div()
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .gap(px(12.))
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::assets::local_hint()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .min_w_0()
-                    .gap(px(6.))
-                    .child(
-                        div().flex_1().min_w_0().whitespace_nowrap().child(
-                            ui::Button::plain(
-                                &theme,
-                                "asset-image",
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(tr::editor::assets::import_image())
-                            .icon("icons/image.svg")
-                            .full_width()
-                            .disabled(self.asset_import_busy())
-                            .on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.pick_asset_image(window, cx)
-                                }),
+        let mut header =
+            div()
+                .flex_shrink_0()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(Hsla::from(theme.editor.text_2))
+                        .child(tr::editor::assets::local_hint()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .min_w_0()
+                        .gap(px(6.))
+                        .child(
+                            div().flex_1().min_w_0().whitespace_nowrap().child(
+                                ui::Button::plain(
+                                    &theme,
+                                    "asset-image",
+                                    ui::ButtonVariant::Gray,
+                                    ui::ButtonSize::Sm,
+                                )
+                                .label(tr::editor::assets::import_image())
+                                .icon("icons/image.svg")
+                                .full_width()
+                                .disabled(self.asset_import_busy())
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| this.pick_asset_image(window, cx),
+                                )),
+                            ),
+                        )
+                        .child(
+                            div().flex_1().min_w_0().whitespace_nowrap().child(
+                                ui::Button::plain(
+                                    &theme,
+                                    "asset-video",
+                                    ui::ButtonVariant::Gray,
+                                    ui::ButtonSize::Sm,
+                                )
+                                .label(tr::editor::assets::import_video())
+                                .icon("icons/video.svg")
+                                .full_width()
+                                .disabled(self.asset_import_busy())
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| this.pick_mp4_asset(window, cx),
+                                )),
+                            ),
+                        )
+                        .child(
+                            div().flex_1().min_w_0().whitespace_nowrap().child(
+                                ui::Button::plain(
+                                    &theme,
+                                    "asset-audio",
+                                    ui::ButtonVariant::Gray,
+                                    ui::ButtonSize::Sm,
+                                )
+                                .label(tr::editor::assets::import_audio())
+                                .icon("icons/music.svg")
+                                .full_width()
+                                .disabled(self.asset_import_busy())
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| this.open_audio_picker(0, window, cx),
+                                )),
                             ),
                         ),
-                    )
-                    .child(
-                        div().flex_1().min_w_0().whitespace_nowrap().child(
-                            ui::Button::plain(
-                                &theme,
-                                "asset-video",
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(tr::editor::assets::import_video())
-                            .icon("icons/video.svg")
-                            .full_width()
-                            .disabled(self.asset_import_busy())
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.pick_mp4_asset(window, cx)),
-                            ),
-                        ),
-                    )
-                    .child(
-                        div().flex_1().min_w_0().whitespace_nowrap().child(
-                            ui::Button::plain(
-                                &theme,
-                                "asset-audio",
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(tr::editor::assets::import_audio())
-                            .icon("icons/music.svg")
-                            .full_width()
-                            .disabled(self.asset_import_busy())
-                            .on_click(cx.listener(|this, _, _, cx| this.open_audio_picker(0, cx))),
-                        ),
-                    ),
-            );
+                );
         header = header.child(
             div()
                 .text_size(px(12.))
@@ -2560,6 +2561,7 @@ impl EditorWindow {
                             duration,
                             intent.time,
                             intent.lane.as_ref().map(|target| target.lane),
+                            0.0,
                             window,
                             cx,
                         )

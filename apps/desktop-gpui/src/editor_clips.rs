@@ -622,8 +622,11 @@ impl EditorWindow {
         if self.clips.open {
             self.close_clips(window, cx);
         } else {
+            if self.transcript.open {
+                self.toggle_transcript(window, cx);
+            }
+            self.dismiss_sidebar_panels(cx);
             self.clips.open = true;
-            self.transcript.open = false;
             self.prepare_asset_library(window, cx);
         }
         cx.notify();

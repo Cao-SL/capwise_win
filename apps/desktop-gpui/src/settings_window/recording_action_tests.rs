@@ -30,6 +30,7 @@ fn settings_fixture(window: &mut Window, cx: &mut Context<SettingsWindow>) -> Se
         plan_refresh_failed: false,
         instant_quality_notice: None,
         studio_quality_save_failed: false,
+        export_folder_save_failed: false,
         pages: crate::settings_pages::PagesState::new(window, cx),
         project_name: String::new(),
         server_url: String::new(),

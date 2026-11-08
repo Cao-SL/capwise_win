@@ -16,7 +16,7 @@ use gpui::{
 
 use crate::theme::Theme;
 
-use super::{ClickHandler, Tooltip, menu::OpenHandler};
+use super::{ClickHandler, Tooltip, keyboard_nav, menu::OpenHandler};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorButtonVariant {
@@ -55,6 +55,7 @@ pub struct EditorButton {
     chevron: Hsla,
     rest_bg: Option<Hsla>,
     border: Option<Hsla>,
+    radius: Pixels,
     full: bool,
     tooltip: Option<(Theme, SharedString)>,
     on_click: Option<ClickHandler>,
@@ -88,6 +89,7 @@ impl EditorButton {
             chevron: Hsla::from(theme.editor.text_3),
             rest_bg: None,
             border: None,
+            radius: px(7.),
             full: false,
             tooltip: None,
             on_click: None,
@@ -127,6 +129,16 @@ impl EditorButton {
         self.text = Hsla::from(theme.editor.text_1);
         self.rest_bg = Some(Hsla::from(theme.editor.ctl));
         self.border = Some(Hsla::from(theme.editor.line));
+        self
+    }
+
+    pub fn outlined(mut self, theme: &Theme) -> Self {
+        self.border = Some(Hsla::from(theme.editor.line));
+        self
+    }
+
+    pub fn radius(mut self, radius: Pixels) -> Self {
+        self.radius = radius;
         self
     }
 
@@ -214,7 +226,7 @@ impl EditorButton {
 }
 
 impl RenderOnce for EditorButton {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let EditorButton {
             id,
             label,
@@ -240,6 +252,7 @@ impl RenderOnce for EditorButton {
             chevron,
             rest_bg,
             border,
+            radius,
             full,
             tooltip,
             on_click,
@@ -260,11 +273,18 @@ impl RenderOnce for EditorButton {
             other => SharedString::from(format!("eb-{other:?}")),
         };
         let icon_hover = (!disabled && !pressed).then_some(hover_text);
+        let accessible_name = label
+            .clone()
+            .or_else(|| tooltip.as_ref().map(|(_, text)| text.clone()));
 
         div()
             .id(id)
             .group(group.clone())
+            .role(gpui::Role::Button)
+            .when_some(accessible_name, |this, name| this.aria_label(name))
             .tab_index(0)
+            .tab_stop(!disabled)
+            .when(keyboard_nav::active(window, cx), keyboard_nav::ring)
             .flex()
             .flex_row()
             .items_center()
@@ -273,7 +293,7 @@ impl RenderOnce for EditorButton {
             .gap(px(6.))
             .h(height)
             .min_w(height)
-            .rounded(px(7.))
+            .rounded(radius)
             .flex_shrink_0()
             .when(right_icon_end, |this| this.justify_between())
             .when_some(width, |this, width| this.w(width))

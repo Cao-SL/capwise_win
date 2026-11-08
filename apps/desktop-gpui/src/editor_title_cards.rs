@@ -1145,9 +1145,9 @@ mod tests {
 
     fn cards() -> ProjectConfiguration {
         let mut project = fixture();
-        project
-            .upsert_title_card(TextSegment::new_title_card(TitleCardRole::Intro, "开场"))
-            .unwrap();
+        let mut intro = TextSegment::new_title_card(TitleCardRole::Intro, "开场");
+        intro.end = 2.0;
+        project.upsert_title_card(intro).unwrap();
         project
             .upsert_title_card(TextSegment::new_title_card(TitleCardRole::Outro, "结束"))
             .unwrap();

@@ -1,10 +1,13 @@
 ---
 name: Bug report
-about: Report a crash, error, or other unusual behaviour by Cap
+about: Report a crash, error, or other unusual behaviour in Capwise (灵录)
 title: ""
 labels: bug
 assignees: ""
 ---
+
+Please remove API keys, private recordings, and personal data from attachments.
+请勿在附件中包含密钥、私人录屏或个人信息。
 
 ### Description
 
@@ -16,7 +19,7 @@ assignees: ""
 
 ### Additional Context
 
-- Cap version:
+- Capwise / 灵录 version:
 - Operating system, version:
 - Device (optional):
 

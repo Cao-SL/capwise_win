@@ -416,6 +416,7 @@ fn decode_style_field_by_field<S: PresetStyle>(stored: &Map<String, Value>) -> S
     let mut merged = style_map(&S::default());
     if S::KIND == PresetKind::Captions {
         merged.insert("translationStyle".into(), Value::Null);
+        merged.insert("translationAppearance".into(), Value::Null);
         merged.insert("translationGap".into(), Value::Null);
         merged.insert("bottomMargin".into(), Value::Null);
     }
@@ -766,6 +767,11 @@ impl CaptionStyle {
             translations: current.translations.clone(),
             display_mode: current.display_mode,
             translation_gap: self.0.translation_gap.or(current.translation_gap),
+            translation_appearance: self
+                .0
+                .translation_appearance
+                .clone()
+                .or_else(|| current.translation_appearance.clone()),
             bottom_margin: self.0.bottom_margin.or(current.bottom_margin),
             translation_style: self
                 .0
@@ -809,6 +815,15 @@ impl PresetStyle for CaptionStyle {
                 style.font = fallback.font.clone();
             }
             style.size = style.size.clamp(12, 100);
+        }
+        if let Some(appearance) = &mut settings.translation_appearance {
+            appearance.outline_width = appearance.normalized_outline_width();
+            appearance.shadow_size = appearance.normalized_shadow_size();
+            appearance.shadow_opacity = appearance.shadow_opacity.min(100);
+            appearance.font_weight = appearance.font_weight.clamp(100, 900);
+            valid_color(&mut appearance.color, &fallback.color);
+            valid_color(&mut appearance.outline_color, &fallback.outline_color);
+            valid_color(&mut appearance.shadow_color, &fallback.shadow_color);
         }
         settings.background_opacity = settings.background_opacity.min(100);
         settings.outline_width = settings.normalized_outline_width();
@@ -1157,6 +1172,14 @@ pub fn new_style_segment(start: f64, end: f64, track: u32) -> cap_project::Style
     segment
 }
 
+pub(crate) fn new_caption_settings() -> CaptionSettings {
+    CaptionSettings {
+        position: "manual".into(),
+        manual_position: Some(cap_project::XY::new(0.5, 0.85)),
+        ..Default::default()
+    }
+}
+
 pub fn seed_default_captions(project: &mut ProjectConfiguration) {
     if project.captions.is_some() {
         return;
@@ -1165,7 +1188,7 @@ pub fn seed_default_captions(project: &mut ProjectConfiguration) {
         return;
     };
     project.captions = Some(cap_project::CaptionsData {
-        settings: style.applied_to(&CaptionSettings::default()),
+        settings: style.applied_to(&new_caption_settings()),
         ..Default::default()
     });
 }
@@ -2182,5 +2205,37 @@ mod tests {
         let badge = new_shape_segment(ShapeKind::Badge, 0., 2., XY::new(0.5, 0.5), 16. / 9.);
         assert!(badge.fill);
         assert_eq!(badge.stroke_color, "#2563EB");
+    }
+    #[test]
+    fn caption_preset_saves_both_appearances_and_recovers_them_independently() {
+        let mut settings = CaptionSettings::default();
+        settings.edit_source_appearance(|a| a.color = "#FF0000".into());
+        settings.edit_translation_appearance(|a| {
+            a.color = "#0000FF".into();
+            a.shadow = true;
+            a.outline_width = 12.;
+        });
+        let style = CaptionStyle::of(&settings);
+        let mut stored = style_map(&style);
+        let decoded = decode_style::<CaptionStyle>(&stored);
+        let applied = decoded.applied_to(&CaptionSettings::default());
+        assert_eq!(applied.source_appearance(), settings.source_appearance());
+        assert_eq!(
+            applied.translation_appearance,
+            settings.translation_appearance
+        );
+        stored.insert("size".into(), json!("broken"));
+        let recovered = decode_style::<CaptionStyle>(&stored);
+        assert_eq!(
+            recovered.0.translation_appearance,
+            settings.translation_appearance
+        );
+        stored["translationAppearance"]["outlineWidth"] = json!(200);
+        stored["translationAppearance"]["shadowOpacity"] = json!(500);
+        let bounded = decode_style::<CaptionStyle>(&stored)
+            .0
+            .resolved_translation_appearance();
+        assert_eq!(bounded.outline_width, 20.);
+        assert_eq!(bounded.shadow_opacity, 100);
     }
 }

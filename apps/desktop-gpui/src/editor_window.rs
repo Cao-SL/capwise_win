@@ -866,7 +866,9 @@ impl Render for EditorSectionView {
                             LoadState::Failed(_)
                         ));
                     }
-                    let sidebar = if editor.clips.open {
+                    let sidebar = if let Some(assistant) = editor.render_assistant(cx) {
+                        assistant
+                    } else if editor.clips.open {
                         editor.render_clips_sidebar(cx).into_any_element()
                     } else {
                         editor.with_style_controls(|editor| {
@@ -1713,6 +1715,7 @@ pub struct EditorWindow {
     add_track: Option<AddTrackMenu>,
     add_track_opens: usize,
     pub(crate) voiceover: crate::editor_voiceover::VoiceoverUi,
+    pub(crate) assistant: crate::editor_assistant::AssistantUi,
     pub(crate) audio_picker: Option<crate::editor_audio::AudioPicker>,
     pub(crate) library_audition: Option<crate::editor_audio::LibraryAudition>,
     pub(crate) audio_library: crate::editor_audio::AudioLibraryState,
@@ -1740,6 +1743,8 @@ pub struct EditorWindow {
     /// exactly as the Solid dialogs replace the dropdown.
     presets_menu: Option<PresetsMenu>,
     preset_dialog: Option<PresetDialog>,
+    pub(crate) caption_style_editor: bool,
+    caption_style_scroll: gpui::ScrollHandle,
     style_presets: style_preset_ui::StylePresetsState,
     caption_sync_signature: Option<u64>,
     pub(crate) export: Option<ExportUi>,
@@ -2463,6 +2468,7 @@ impl EditorWindow {
             add_track: None,
             add_track_opens: 0,
             voiceover: Default::default(),
+            assistant: Default::default(),
             audio_picker: None,
             library_audition: None,
             audio_library: Default::default(),
@@ -2479,6 +2485,8 @@ impl EditorWindow {
             timeline_resize: None,
             presets_menu: None,
             preset_dialog: None,
+            caption_style_editor: false,
+            caption_style_scroll: gpui::ScrollHandle::new(),
             style_presets: style_preset_ui::StylePresetsState::load(),
             caption_sync_signature: None,
             export: None,
@@ -4168,7 +4176,11 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.voiceover.is_open() {
+        if self.voiceover.is_open()
+            || self.caption_style_editor
+            || self.sidebar.caption_translation.review_is_open()
+            || self.preset_dialog.is_some()
+        {
             return;
         }
         if self.export.is_some() {
@@ -4221,6 +4233,11 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.assistant.open && event.keystroke.key == "escape" && !event.is_held {
+            self.close_assistant(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         if self.voiceover.is_open() {
             if event.keystroke.key == "escape" && !event.is_held {
                 self.close_voiceover(window, cx);
@@ -4232,6 +4249,30 @@ impl EditorWindow {
             if event.keystroke.key == "escape" && !event.is_held {
                 self.close_export(window, cx);
                 cx.stop_propagation();
+            }
+            return;
+        }
+        if self.sidebar.caption_translation.review_is_open() {
+            if event.keystroke.key == "escape" && !event.is_held {
+                self.close_translation_review(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.caption_style_editor {
+            if !event.is_held {
+                if self.sidebar.menu.is_some()
+                    && self.sidebar_menu_key(event.keystroke.key.as_str(), window, cx)
+                {
+                    cx.stop_propagation();
+                } else if event.keystroke.key == "escape" {
+                    if self.sidebar.color_picker.is_some() {
+                        self.close_color_picker(cx);
+                    } else {
+                        self.close_caption_style_editor(window, cx);
+                    }
+                    cx.stop_propagation();
+                }
             }
             return;
         }
@@ -5066,6 +5107,17 @@ impl EditorWindow {
                     self.audio_picker_request = None;
                 }
             }
+            if let Some(selected) = &selection {
+                if selected.track == TrackKind::Caption {
+                    self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+                    self.sidebar.caption_tab = crate::editor_workbench::CaptionTab::Content;
+                    if let Some(index) = selected.indices.first() {
+                        self.sidebar.caption_page = index / 8;
+                    }
+                } else if selected.track == TrackKind::Audio {
+                    self.sidebar.tab = crate::editor_sidebar::SidebarTab::Audio;
+                }
+            }
             self.selection = selection;
             self.refresh_image_asset_status();
             cx.notify();
@@ -5253,11 +5305,16 @@ impl EditorWindow {
                     self.add_style_at(lane, press_time, window, cx);
                 } else if kind == TrackKind::Audio {
                     cx.stop_propagation();
-                    self.open_audio_picker(lane, cx);
-                } else if matches!(
-                    kind,
-                    TrackKind::Text | TrackKind::Shape | TrackKind::Mask | TrackKind::Scene
-                ) {
+                    self.open_audio_picker(lane, window, cx);
+                } else if kind == TrackKind::Caption && self.timeline.segments(kind).is_empty() {
+                    cx.stop_propagation();
+                    self.open_captions_settings(window, cx);
+                } else if event.click_count == 2
+                    && matches!(
+                        kind,
+                        TrackKind::Text | TrackKind::Shape | TrackKind::Mask | TrackKind::Scene
+                    )
+                {
                     cx.stop_propagation();
                     let time = if kind == TrackKind::Scene {
                         let Some(time) = timeline::preview_time_from_x(
@@ -6635,7 +6692,38 @@ impl EditorWindow {
         true
     }
 
-    pub(crate) fn open_audio_picker(&mut self, lane: u32, cx: &mut Context<Self>) {
+    pub(crate) fn dismiss_sidebar_panels(&mut self, cx: &mut Context<Self>) {
+        self.sidebar.menu = None;
+        self.sidebar.style_target = None;
+        self.style_presets.close_menu();
+        self.close_color_picker(cx);
+        self.end_field_edit(cx);
+        self.audio_picker = None;
+        self.library_audition = None;
+    }
+
+    fn reveal_audio_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.transcript.open {
+            self.toggle_transcript(window, cx);
+        }
+        if self.clips.open {
+            self.close_clips(window, cx);
+        }
+        if let Some(index) = crate::editor_sidebar::SidebarTab::ALL
+            .iter()
+            .position(|tab| *tab == crate::editor_sidebar::SidebarTab::Audio)
+        {
+            self.select_sidebar_tab(index, window, cx);
+        }
+    }
+
+    pub(crate) fn open_audio_picker(
+        &mut self,
+        lane: u32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.reveal_audio_sidebar(window, cx);
         self.audio_picker_generation = self.audio_picker_generation.wrapping_add(1);
         self.audio_picker = Some(crate::editor_audio::AudioPicker::Add { lane });
         self.audio_picker_request = AudioImportRequest::new(
@@ -6649,7 +6737,13 @@ impl EditorWindow {
         cx.notify();
     }
 
-    pub(crate) fn open_audio_replace(&mut self, index: usize, cx: &mut Context<Self>) {
+    pub(crate) fn open_audio_replace(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.reveal_audio_sidebar(window, cx);
         self.audio_picker_generation = self.audio_picker_generation.wrapping_add(1);
         self.audio_picker = Some(crate::editor_audio::AudioPicker::Replace { index });
         self.audio_picker_request = AudioImportRequest::new(
@@ -7823,13 +7917,6 @@ impl EditorWindow {
         }
     }
 
-    /// `NameEditor`'s commit (`Header.tsx:303-318`), verbatim.
-    ///
-    /// Return and Escape both call `blur()` there, and it is `onBlur` that
-    /// does the work -- so **Escape commits rather than reverts** in the
-    /// shipping app, and it does here too. The guard is the same: a trimmed
-    /// name shorter than 5 or longer than 100 characters is rejected and the
-    /// field snaps back to the stored one.
     fn on_name_event(
         &mut self,
         event: &ui::TextInputEvent,
@@ -7837,6 +7924,15 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) {
         if matches!(event, ui::TextInputEvent::Changed) {
+            return;
+        }
+        if matches!(event, ui::TextInputEvent::Cancelled) {
+            if let Some(stored) = self.summary().map(|summary| summary.pretty_name.clone()) {
+                self.name_input
+                    .update(cx, |input, cx| input.set_text(stored, cx));
+            }
+            self.focus_root(window, cx);
+            cx.notify();
             return;
         }
         if let Err(error) = self.commit_pretty_name(cx) {
@@ -7867,28 +7963,10 @@ impl EditorWindow {
             return Ok(());
         };
         let draft = self.name_input.read(cx).text().trim().to_string();
-        let count = draft.chars().count();
-        if !(5..=100).contains(&count) || draft == stored {
-            if draft != stored {
-                self.name_input
-                    .update(cx, |input, cx| input.set_text(stored, cx));
-                cx.notify();
-            }
+        if draft == stored {
             return Ok(());
         }
-
-        // `set_pretty_name` (`apps/desktop/src-tauri/src/lib.rs:3175-3179`):
-        // load the meta, replace one field, save it back. It is
-        // `recording-meta.json`, not `project-config.json`, so it goes nowhere
-        // near the debounced project write or the undo history -- the Tauri
-        // history is `createStoreHistory` over the *project* store alone
-        // (`ED/context.ts:1920-1930`), so a rename is not undoable there either.
-        let path = self.project_path.clone();
-        let mut meta = RecordingMeta::load_for_project(&path)
-            .map_err(|error| tr::editor::window::title::read_failed(path.display(), error))?;
-        meta.pretty_name = draft.clone();
-        meta.save_for_project()
-            .map_err(|error| tr::editor::window::title::save_failed(path.display(), error))?;
+        save_project_title(&self.project_path, &draft)?;
         if let LoadState::Ready(summary) = &mut self.state {
             summary.pretty_name = draft.clone();
         }
@@ -8384,6 +8462,8 @@ impl EditorWindow {
             || self.sidebar.color_picker.is_some()
             || self.presets_menu.is_some()
             || self.preset_dialog.is_some()
+            || self.caption_style_editor
+            || self.sidebar.caption_translation.review_is_open()
             || self.clips.has_open_menu()
             || self.audio_picker.is_some()
             || self.camera3d_picker
@@ -8856,7 +8936,7 @@ impl EditorWindow {
                     .unwrap_or(lane_count);
                 self.tracks.audio = lane_count.max(lane + 1);
                 self.rebuild_timeline();
-                self.open_audio_picker(lane, cx);
+                self.open_audio_picker(lane, window, cx);
             }
             TrackKind::Text | TrackKind::Mask => {
                 self.add_overlay_segment(kind, window, cx);
@@ -9287,6 +9367,7 @@ impl EditorWindow {
         duration: f64,
         time: f64,
         requested_lane: Option<u32>,
+        gain_db: f32,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
@@ -9317,7 +9398,7 @@ impl EditorWindow {
             name: record.name.clone(),
             duration,
         };
-        if !self.commit_audio_import_at(lane, time, imported, window, cx) {
+        if !self.commit_audio_import_at(lane, time, imported, gain_db, window, cx) {
             return Err(tr::editor::assets::move_playhead().into());
         }
         self.remember_project_asset(record, cx);
@@ -9329,6 +9410,7 @@ impl EditorWindow {
         lane: u32,
         time: f64,
         imported: ImportedAudio,
+        gain_db: f32,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -9346,17 +9428,16 @@ impl EditorWindow {
         let path = imported.path.clone();
         let inserted = self.edit(
             |timeline| {
-                edits::insert_audio_segment(
-                    timeline,
-                    edits::default_audio_segment(
-                        start,
-                        end,
-                        lane,
-                        imported.path,
-                        imported.name,
-                        Some(imported.duration),
-                    ),
+                let mut segment = edits::default_audio_segment(
+                    start,
+                    end,
+                    lane,
+                    imported.path,
+                    imported.name,
+                    Some(imported.duration),
                 );
+                segment.volume_db = gain_db.clamp(-12., 24.);
+                edits::insert_audio_segment(timeline, segment);
                 true
             },
             window,
@@ -10747,9 +10828,9 @@ impl EditorWindow {
                         true,
                         false,
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    .on_click(cx.listener(move |this, _, window, cx| {
                         this.track_menu = None;
-                        this.open_audio_picker(lane, cx);
+                        this.open_audio_picker(lane, window, cx);
                     })),
                 )
                 .child(
@@ -11869,11 +11950,22 @@ impl EditorWindow {
                             })),
                     )
                     .child(self.render_clips_pill(compact, cx))
-                    .child(self.render_transcript_pill(compact, cx))
                     .child(div().w(px(6.)).flex_none())
                     .when(self.sharing.is_some(), |group| {
                         group.child(self.render_reupload_button(cx))
                     })
+                    .child(
+                        ui::EditorButton::plain(&theme, "assistant-open")
+                            .left_icon("icons/sparkles.svg")
+                            .when(!compact, |button| {
+                                button.label(tr::editor::assistant::title())
+                            })
+                            .tooltip(&theme, tr::editor::assistant::title())
+                            .disabled(!self.project_ready() || self.voiceover.is_busy())
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.open_assistant(window, cx)),
+                            ),
+                    )
                     .child(self.render_export_button(cx))
                     .relative()
                     .children((!self.visual_ready()).then(|| {
@@ -11906,19 +11998,6 @@ impl EditorWindow {
             .mx(px(6.))
             .flex_none()
             .bg(Hsla::from(self.theme.editor.line_strong))
-    }
-
-    fn render_transcript_pill(&self, compact: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
-        ui::EditorButton::plain(&theme, "editor-transcript-pill")
-            .left_icon("icons/scan-text.svg")
-            .when(!compact, |button| {
-                button.label(tr::editor::window::header::transcript())
-            })
-            .tooltip(&theme, tr::editor::window::header::transcript_tooltip())
-            .pressed(self.transcript.open)
-            .disabled(!self.project_ready())
-            .on_click(cx.listener(|this, _, window, cx| this.toggle_transcript(window, cx)))
     }
 
     fn render_transcript_grip(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -13248,6 +13327,76 @@ impl EditorWindow {
                     .child(div().when(row_hidden, |this| this.opacity(0.4)).child(
                         timeline::render_row(&theme, model, *row, self.view, viewport_width, ui),
                     ))
+                    .children(
+                        (kind == TrackKind::Audio && !model.row_has_segments(*row)).then(|| {
+                            div()
+                                .absolute()
+                                .left(px(timeline::TRACK_GUTTER))
+                                .right_0()
+                                .top_0()
+                                .bottom_0()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .gap(px(8.))
+                                .child(
+                                    div()
+                                        .id(gpui::ElementId::NamedInteger(
+                                            "empty-audio-actions".into(),
+                                            u64::from(lane),
+                                        ))
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(8.))
+                                        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                            cx.stop_propagation()
+                                        })
+                                        .child(
+                                            ui::EditorButton::plain(
+                                                &theme,
+                                                gpui::ElementId::NamedInteger(
+                                                    "empty-audio-record".into(),
+                                                    u64::from(lane),
+                                                ),
+                                            )
+                                            .tinted(&theme)
+                                            .height(px(28.))
+                                            .left_icon("icons/microphone.svg")
+                                            .label(tr::editor::timeline::empty::record_audio())
+                                            .disabled(
+                                                self.busy_reason().is_some()
+                                                    || self.audio_import_pending.is_some(),
+                                            )
+                                            .on_click(
+                                                cx.listener(move |this, _, window, cx| {
+                                                    cx.stop_propagation();
+                                                    this.open_voiceover(lane, window, cx);
+                                                }),
+                                            ),
+                                        )
+                                        .child(
+                                            ui::EditorButton::plain(
+                                                &theme,
+                                                gpui::ElementId::NamedInteger(
+                                                    "empty-audio-music".into(),
+                                                    u64::from(lane),
+                                                ),
+                                            )
+                                            .tinted(&theme)
+                                            .height(px(28.))
+                                            .left_icon("icons/music.svg")
+                                            .label(tr::editor::window::track_menu::add_music())
+                                            .disabled(self.audio_import_pending.is_some())
+                                            .on_click(
+                                                cx.listener(move |this, _, window, cx| {
+                                                    cx.stop_propagation();
+                                                    this.open_audio_picker(lane, window, cx);
+                                                }),
+                                            ),
+                                        ),
+                                )
+                        }),
+                    )
                     .when(reorder_source, |this| this.opacity(0.45))
                     .children((toggleable && (row_hovered || row_hidden)).then(|| {
                         let audio = kind == TrackKind::Audio;
@@ -13875,12 +14024,14 @@ fn dismiss_indexed_sidebar_menu(menu: &mut Option<crate::editor_tabs::OpenMenu>)
         | SidebarMenu::AudioStereo
         | SidebarMenu::CaptionModel
         | SidebarMenu::CaptionLanguage
+        | SidebarMenu::TranslationLanguage
         | SidebarMenu::CaptionFont
         | SidebarMenu::CaptionTranslationFont
         | SidebarMenu::CaptionHighlightStyle
         | SidebarMenu::CaptionPosition
         | SidebarMenu::CaptionAnimation
         | SidebarMenu::CaptionWeight
+        | SidebarMenu::CaptionTranslationWeight
         | SidebarMenu::KeyboardFont
         | SidebarMenu::KeyboardPosition
         | SidebarMenu::KeyboardWeight => false,
@@ -13900,7 +14051,7 @@ fn is_playback_shortcut(
 
 impl Render for EditorWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.audio_picker.is_none() {
+        if self.audio_picker.is_none() && !self.voiceover.is_open() {
             self.library_audition = None;
         }
         self.sync_appearance(window, cx);
@@ -14452,6 +14603,8 @@ impl Render for EditorWindow {
                         .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 }),
             )
+            .children(self.render_caption_style_editor(window, cx))
+            .children(self.render_translation_review(window, cx))
             .children(self.with_style_controls(|this| this.render_sidebar_menu(cx)))
             .children(self.render_toolbar_menu(cx))
             .children(self.render_text_menu(cx))
@@ -17766,5 +17919,58 @@ mod tests {
         // BGRA out: the red and blue channels are swapped, no 99 anywhere.
         assert_eq!(&bytes[0..4], &[30, 20, 10, 255]);
         assert!(!bytes.contains(&99));
+    }
+}
+
+fn save_project_title(path: &std::path::Path, name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if !(1..=100).contains(&name.chars().count()) || name.chars().any(char::is_control) {
+        return Err(tr::editor::window::title::invalid_length().into());
+    }
+    let mut meta = RecordingMeta::load_for_project(path)
+        .map_err(|error| tr::editor::window::title::read_failed(path.display(), error))?;
+    meta.pretty_name = name.to_owned();
+    meta.save_for_project()
+        .map_err(|error| tr::editor::window::title::save_failed(path.display(), error))
+}
+
+#[cfg(test)]
+mod project_title_tests {
+    use super::*;
+
+    #[test]
+    fn short_unicode_titles_persist_without_changing_media_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let meta = RecordingMeta {
+            platform: None,
+            project_path: dir.path().to_owned(),
+            pretty_name: "Original title".into(),
+            sharing: None,
+            inner: cap_project::RecordingMetaInner::Instant(
+                cap_project::InstantRecordingMeta::Complete {
+                    fps: 30,
+                    sample_rate: Some(48000),
+                },
+            ),
+            upload: None,
+        };
+        meta.save_for_project().unwrap();
+        for name in ["课", "第一课", "我的教程", "A", "🎬"] {
+            save_project_title(dir.path(), &format!("  {name}  ")).unwrap();
+            let saved = RecordingMeta::load_for_project(dir.path()).unwrap();
+            assert_eq!(saved.pretty_name, name);
+            assert_eq!(
+                serde_json::to_value(&saved.inner).unwrap(),
+                serde_json::to_value(&meta.inner).unwrap()
+            );
+        }
+        let before = std::fs::read(dir.path().join("recording-meta.json")).unwrap();
+        for invalid in [" ".to_owned(), "字".repeat(101), "bad\nname".into()] {
+            assert!(save_project_title(dir.path(), &invalid).is_err());
+            assert_eq!(
+                std::fs::read(dir.path().join("recording-meta.json")).unwrap(),
+                before
+            );
+        }
     }
 }

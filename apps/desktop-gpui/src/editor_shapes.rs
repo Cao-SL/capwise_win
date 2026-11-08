@@ -941,6 +941,9 @@ impl EditorWindow {
 
     fn shape_local(&self, position: Point<Pixels>) -> Option<(Px, Px)> {
         let (bounds, size) = self.shape_canvas()?;
+        if !bounds.contains(&position) {
+            return None;
+        }
         Some((
             (
                 f64::from(f32::from(position.x - bounds.origin.x)),

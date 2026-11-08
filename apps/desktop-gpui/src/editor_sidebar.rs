@@ -257,7 +257,7 @@ pub enum SidebarTab {
 }
 
 impl SidebarTab {
-    pub const ALL: [SidebarTab; 4] = [Self::Background, Self::Camera, Self::Audio, Self::Captions];
+    pub const ALL: [SidebarTab; 4] = [Self::Captions, Self::Background, Self::Camera, Self::Audio];
 
     pub fn icon(self) -> &'static str {
         match self {
@@ -729,6 +729,12 @@ pub enum ColorTarget {
     /// background tab.
     CursorRipple,
     CaptionColor,
+    CaptionOutline,
+    CaptionShadow,
+    CaptionTranslationColor,
+    CaptionTranslationOutline,
+    CaptionTranslationShadow,
+
     CaptionBackground,
     CaptionHighlight,
     KeyboardColor,
@@ -785,6 +791,8 @@ pub struct SidebarState {
     animated_gradient: animated_gradient::AnimatedGradientState,
     /// `state.selectedTab` (`:563-573`).
     pub tab: SidebarTab,
+    pub caption_tab: crate::editor_workbench::CaptionTab,
+    pub caption_page: usize,
     /// `backgroundSourceTab` (`:1799-1802`).
     pub source_tab: SourceTab,
     /// `backgroundTab` -- the wallpaper grid's theme (`:1786-1787`).
@@ -907,7 +915,9 @@ impl SidebarState {
             image_import_error: None,
             image_asset_status: None,
             animated_gradient: animated_gradient::AnimatedGradientState::new(),
-            tab: SidebarTab::Background,
+            tab: SidebarTab::Captions,
+            caption_tab: crate::editor_workbench::CaptionTab::Content,
+            caption_page: 0,
             source_tab: initial_source_tab(config),
             wallpaper_theme: 0,
             scroll: gpui::ScrollHandle::new(),
@@ -1065,18 +1075,21 @@ impl EditorWindow {
         }
     }
 
-    fn select_sidebar_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn select_sidebar_tab(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(tab) = SidebarTab::ALL.get(index).copied() else {
             return;
         };
         if self.sidebar_selection().is_some() {
             self.set_selection(None, cx);
         }
-        // A tab switch also dismisses whatever the previous tab had open: the
-        // `KSelect` menu, and a field's history bracket.
-        self.sidebar.menu = None;
-        self.end_field_edit(cx);
+        self.dismiss_sidebar_panels(cx);
         self.sidebar.tab = tab;
+        self.focus_root(window, cx);
         self.sidebar.scroll.set_offset(gpui::point(px(0.), px(0.)));
         cx.notify();
         window.refresh();
@@ -1838,6 +1851,18 @@ impl EditorWindow {
         let keyboard = crate::editor_tabs::keyboard_settings(&self.project);
         match target {
             ColorTarget::CaptionColor => Some(captions.color),
+            ColorTarget::CaptionOutline => Some(captions.outline_color),
+            ColorTarget::CaptionShadow => Some(captions.shadow_color),
+            ColorTarget::CaptionTranslationColor => {
+                Some(captions.resolved_translation_appearance().color)
+            }
+            ColorTarget::CaptionTranslationOutline => {
+                Some(captions.resolved_translation_appearance().outline_color)
+            }
+            ColorTarget::CaptionTranslationShadow => {
+                Some(captions.resolved_translation_appearance().shadow_color)
+            }
+
             ColorTarget::CaptionBackground => Some(captions.background_color),
             ColorTarget::CaptionHighlight => Some(captions.highlight_color),
             ColorTarget::KeyboardColor => Some(keyboard.color),
@@ -1979,7 +2004,34 @@ impl EditorWindow {
         let hex = rgb_to_hex(color);
         match target {
             ColorTarget::CaptionColor => {
-                self.set_caption_setting("caption-color", window, cx, move |s| s.color = hex)
+                self.set_caption_setting("caption-color", window, cx, move |s| {
+                    s.edit_source_appearance(|a| a.color = hex)
+                })
+            }
+            ColorTarget::CaptionOutline => {
+                self.set_caption_setting("caption-appearance-color", window, cx, move |s| {
+                    s.edit_source_appearance(|a| a.outline_color = hex)
+                })
+            }
+            ColorTarget::CaptionShadow => {
+                self.set_caption_setting("caption-appearance-color", window, cx, move |s| {
+                    s.edit_source_appearance(|a| a.shadow_color = hex)
+                })
+            }
+            ColorTarget::CaptionTranslationColor => {
+                self.set_caption_setting("caption-appearance-color", window, cx, move |s| {
+                    s.edit_translation_appearance(|a| a.color = hex)
+                })
+            }
+            ColorTarget::CaptionTranslationOutline => {
+                self.set_caption_setting("caption-appearance-color", window, cx, move |s| {
+                    s.edit_translation_appearance(|a| a.outline_color = hex)
+                })
+            }
+            ColorTarget::CaptionTranslationShadow => {
+                self.set_caption_setting("caption-appearance-color", window, cx, move |s| {
+                    s.edit_translation_appearance(|a| a.shadow_color = hex)
+                })
             }
             ColorTarget::CaptionBackground => {
                 self.set_caption_setting("caption-background-color", window, cx, move |s| {
@@ -2750,6 +2802,21 @@ impl EditorWindow {
                     .border_color(self.card_line())
                     .shadow(theme.editor.card_shadow())
                     .child(rail)
+                    .children(
+                        (selected_tab == SidebarTab::Captions && selection.is_none()
+                            || selection
+                                .as_ref()
+                                .is_some_and(|s| s.track == TrackKind::Caption))
+                        .then(|| self.render_caption_navigation(cx)),
+                    )
+                    .children(
+                        (self.audio_picker.is_none()
+                            && (selected_tab == SidebarTab::Audio && selection.is_none()
+                                || selection
+                                    .as_ref()
+                                    .is_some_and(|s| s.track == TrackKind::Audio)))
+                        .then(|| self.render_audio_entrypoints(cx)),
+                    )
                     .children(self.sidebar.image_import_error.as_ref().map(|error| {
                         div()
                             .p(px(12.))
@@ -2768,6 +2835,17 @@ impl EditorWindow {
                         self.render_audio_library(cx)
                     } else {
                         match selection {
+                            Some(selection) if selection.track == TrackKind::Caption => {
+                                self.render_tab_body(cx)
+                            }
+                            Some(selection) if selection.track == TrackKind::Audio => div()
+                                .flex()
+                                .flex_col()
+                                .min_h_0()
+                                .flex_1()
+                                .child(self.render_audio_back(cx))
+                                .child(self.render_selection_panel(&selection, cx))
+                                .into_any_element(),
                             Some(selection) => self.render_selection_panel(&selection, cx),
                             None => self.render_tab_body(cx),
                         }
@@ -4049,6 +4127,7 @@ pub(crate) fn format_slider_value(value: f32, unit: &str) -> String {
         "int" => format!("{}", value.round() as i32),
         "x100%" => format!("{}%", (value * 100.).round() as i32),
         "pct" => format!("{:.1}%", value * 100.),
+        "volume" => format!("{:.0}%", 100. * 10_f32.powf(value / 20.)),
         // The ripple duration's `${v.toFixed(2)}s`.
         "secs" => format!("{value:.2}s"),
         unit => format!("{value:.1}{unit}"),
@@ -4091,7 +4170,13 @@ impl EditorWindow {
                 this.bg(Hsla::from(theme.editor.ctl_hover))
                     .text_color(hover)
             })
-            .child(tr::editor::window::clip_menu::more())
+            .child(if key == "captions" {
+                tr::editor::workbench::more_actions()
+            } else if key == "caption-segment" {
+                tr::editor::panel::timing::title()
+            } else {
+                tr::editor::window::clip_menu::more()
+            })
             .child(
                 svg()
                     .path(if open {
@@ -4701,6 +4786,9 @@ mod tests {
         assert_eq!(format_slider_value(0.1224, "pct"), "12.2%");
         assert_eq!(format_slider_value(90., "deg"), "90\u{b0}");
         assert_eq!(format_slider_value(50., ""), "50.0");
+        assert_eq!(format_slider_value(0., "volume"), "100%");
+        assert_eq!(format_slider_value(-20., "volume"), "10%");
+        assert_eq!(format_slider_value(6., "volume"), "200%");
     }
 
     #[test]
@@ -4893,10 +4981,15 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.transcript.open {
+            self.toggle_transcript(window, cx);
+        }
+        if self.clips.open {
+            self.close_clips(window, cx);
+        }
         self.dismiss_frame_controls(cx);
-        self.end_field_edit(cx);
-        self.close_color_picker(cx);
-        self.sidebar.menu = None;
+        self.dismiss_sidebar_panels(cx);
+        self.focus_root(window, cx);
         self.sidebar.style_target = Some((index, group));
         self.sidebar.tab = match group {
             StyleGroup::Background => SidebarTab::Background,

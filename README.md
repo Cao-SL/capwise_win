@@ -1,205 +1,151 @@
-<p align="center">
-	<img width="150" height="150" src="https://github.com/CapSoftware/Cap/blob/main/apps/desktop-gpui/icons/Square310x310Logo.png" alt="Cap logo">
-</p>
+# 灵录 Capwise
 
-<h1 align="center">Cap</h1>
+**中文** · [English](#english)
 
-<p align="center">
-	Beautiful, shareable screen recordings. Open source, fast, and built for teams that want to own their data.
-</p>
+把录屏做成一段讲得清楚、看得舒服的视频。
+A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
-<p align="center">
-	<a href="https://cap.so">Website</a>
-	 |
-	<a href="https://cap.so/download">Download</a>
-	 |
-	<a href="https://cap.so/docs">Docs</a>
-	 |
-	<a href="https://cap.so/pricing">Pricing</a>
-	 |
-	<a href="https://cap.link/discord">Discord</a>
-</p>
+[下载 macOS 版](https://github.com/joeseesun/capwise/releases/latest) · [报告问题](https://github.com/joeseesun/capwise/issues) · [构建文档](apps/desktop-gpui/README.md) · [许可证](LICENSE)
 
-<p align="center">
-	<a href="https://console.algora.io/org/CapSoftware/bounties?status=open">
-		<img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapSoftware%2Fbounties%3Fstatus%3Dopen" alt="Open bounties">
-	</a>
-</p>
+![灵录：视频、时间线与 AI 助手在同一工作区](docs/assets/assistant-workbench.png)
 
-<img src="https://raw.githubusercontent.com/CapSoftware/Cap/refs/heads/main/apps/web/public/landing-cover.png" alt="Cap app preview">
+产品演示、操作教程、课程讲解，不必在录屏、字幕、配音和封面工具之间来回搬运。灵录把这些步骤放在一个本地编辑器里：先录下来，再慢慢打磨。
 
-Cap is the open source alternative to Loom. It gives you fast screen recording, polished local editing, instant share links, comments, transcripts, analytics, team workspaces, custom domains, custom S3 storage, and full self-hosting when you need complete control.
+## 你可以用它做什么
 
-Use Cap for product demos, bug reports, onboarding, tutorials, design reviews, engineering walkthroughs, async standups, client updates, and any moment where showing the work is faster than scheduling another call.
-
-## Why Cap
-
-- **Record, edit, share.** Capture your screen, camera, and microphone, then share a link or export a finished video.
-- **Instant Mode for speed.** Upload while recording and get a shareable link the moment you stop.
-- **Studio Mode for polish.** Record locally, edit with backgrounds, zooms, trimming, captions, and export controls.
-- **A native desktop app.** Cap runs on macOS, Windows, and Linux, with a web dashboard for viewing, sharing, and managing recordings.
-- **Own your storage.** Use Cap Cloud, connect your own S3-compatible bucket, keep recordings local, or self-host the full platform.
-- **Privacy by default.** Share publicly or privately, add passwords, use your own domain, or keep sensitive recordings off hosted infrastructure.
-- **Async collaboration.** Comments, reactions, transcripts, viewer analytics, and team workspaces keep feedback attached to the video.
-- **Cap AI.** Generate titles, summaries, clickable chapters, captions, and transcripts automatically.
-- **Move from Loom.** Import existing Loom videos into Cap and keep your library in one place.
-
-## Recording Modes
-
-| Mode | Best for | How it works |
-| --- | --- | --- |
-| Instant Mode | Fast feedback, bug reports, async updates | Cap uploads while you record, then gives you a share link as soon as recording stops. |
-| Studio Mode | Product demos, tutorials, launches, client work | Cap records locally, opens the editor, and lets you export or share a polished video. |
-
-## Data Ownership
-
-Cap is designed for people and teams who do not want their recording workflow locked inside a black box.
-
-- Use Cap Cloud for the fastest hosted experience.
-- Connect AWS S3, Cloudflare R2, Backblaze B2, MinIO, Wasabi, or another S3-compatible provider.
-- Serve share pages from your own domain.
-- Self-host Cap Web, the API, database, media server, and object storage with Docker Compose.
-- Point Cap Desktop at your self-hosted instance from `Settings > Cap Server URL`.
-
-## Get Started
-
-For most users, the fastest path is:
-
-1. Download Cap for macOS, Windows, or Linux from [cap.so/download](https://cap.so/download).
-2. Sign in or create an account.
-3. Choose Instant Mode or Studio Mode.
-4. Record your first Cap.
-5. Share the link, export the file, or keep it local.
-
-The full product docs live at [cap.so/docs](https://cap.so/docs).
-
-## Self-Hosting
-
-The fastest way to self-host Cap Web is Docker Compose:
-
-```bash
-git clone https://github.com/CapSoftware/Cap.git
-cd Cap
-docker compose up -d
-```
-
-Cap will be available at `http://localhost:3000`.
-
-Login links appear in the service logs when email is not configured:
-
-```bash
-docker compose logs cap-web
-```
-
-### Deployment Options
-
-| Method | Best for |
+| 能力 | 你得到的结果 |
 | --- | --- |
-| Docker Compose | VPS, home servers, and any Docker-capable host |
-| [Railway](https://railway.com/new/template/PwpGcf) | One-click managed hosting |
-| Coolify | Self-hosted PaaS deployments with `docker-compose.coolify.yml` |
+| 屏幕、摄像头与声音录制 | 把操作过程和讲解录进同一个项目 |
+| 时间线编辑 | 裁剪、缩放、转场、文字与形状标注，突出观众该看的地方 |
+| 字幕工作台 | 在「内容 / 翻译 / 样式」中分别校对文字、审阅译文、调整外观 |
+| 双语字幕 | 选择常见语言或自定义目标语言，原文与译文分别设置颜色、描边、阴影与字体 |
+| 音乐与配音 | 从音频面板直接添加配乐或录制配音，调整音量与淡入淡出 |
+| AI 剪辑助手 | 用一句话提出需求，审阅修改方案后应用，也可以撤销 |
+| 助手内制作封面 | 从描述到背景生成、标题和时长设置、预览应用，在同一工作区完成 |
+| 模型与 ACP 接入 | 配置自己的模型服务，或连接本机已安装并登录的 ACP 助手 |
+| 本地项目与导出 | 保存可继续编辑的项目，再导出成视频或字幕文件 |
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/PwpGcf)
+## 五分钟开始
 
-For production, configure public URLs and replace the default secrets before exposing the deployment to the internet:
+1. 从 [GitHub Releases](https://github.com/joeseesun/capwise/releases/latest) 下载 Apple Silicon 版 DMG。
+2. 打开 DMG，将 **Capwise** 拖到 **Applications**，再启动「灵录」。
+3. 按引导授权屏幕录制；需要录人声或摄像头时，再授予相应权限。
+4. 录制一段视频，或导入已有视频。在编辑器中处理字幕、画面和声音。
+5. 点击「导出」，选择输出设置和保存位置。
 
-```bash
-CAP_URL=https://cap.yourdomain.com
-S3_PUBLIC_URL=https://s3.yourdomain.com
+基础录制与编辑不需要注册 Cap 云服务账号。AI 功能可选：请在「设置 → AI 模型」中配置自己的服务。
+
+本次提供 **macOS 13+、Apple Silicon** 安装包。Intel、Windows 和 Linux 暂未提供本项目验证过的发布包。
+
+## AI 助手如何工作
+
+```text
+描述目标 → 生成方案 → 查看修改前后 → 应用 → 继续调整 / 撤销
 ```
 
-See the [self-hosting guide](https://cap.so/docs/self-hosting) for email setup, AI providers, SSL, storage, production hardening, and troubleshooting.
+可以这样说：
 
-For single-owner instances behind an authenticating reverse proxy, see
-[trusted-proxy authentication](docs/trusted-proxy-auth.md) for the required shared
-secret, proxy hardening, and how to trigger sign-in without a built-in login button.
+- 「润色这些字幕，保留人名、数字和原意。」
+- 「隐藏字幕中的口头禅。」
+- 「把字幕翻译成法语，并显示双语。」
+- 「把第一条背景音乐调低 6 dB。」
+- 「做一个浅绿色的产品演示封面，时长 1 秒。」
 
-## Local Development
+助手会先展示方案。对话中的模型选择只影响当前助手会话；你可以搜索模型，也可以进入模型设置管理服务。输入框支持 **⌘ Enter 发送**，运行中可以停止。
 
-Cap is a Turborepo monorepo. The desktop app is native Rust with a [GPUI](https://www.gpui.rs/) interface, the web app is Next.js with Drizzle and MySQL, and recording, rendering, and export live in shared Rust crates.
+封面背景通过你配置的图片服务生成。新封面默认 1 秒，时长可编辑；标题仍然是可修改的文字。
 
-Requirements:
+### 配置你的模型
 
-- Node.js 24 or newer
-- Bun 1.4.4
-- Rust via [rustup](https://rustup.rs). The workspace pins 1.88; the desktop app pins its own toolchain, which rustup installs on first build.
-- Docker for MySQL, MinIO, and local services
+| 设置页 | 用途 |
+| --- | --- |
+| 字幕识别 | 把音频识别为字幕 |
+| 内容生成 | 字幕校对、翻译和编辑助手 |
+| 封面生成 | 生成封面背景，支持自定义地址和模型 ID |
+| 内容生成 → 本地 AI 助手（ACP） | 检测并连接已安装的助手，读取可用模型 |
 
-Install and set up the repo:
+需要 API Key 的服务先填写密钥，再获取并选择模型；提供商没有开放模型列表时，可以手动填写模型 ID。火山方舟也支持以 `ep-…` 开头的推理接入点。
+
+ACP 使用本机已有的登录状态。不同适配器的安装、登录和模型支持不同；检测到命令不代表已经登录成功。灵录中的 ACP 编辑助手仅提出可审阅的修改方案，不授予它终端或文件读写权限。
+
+## 数据与费用
+
+- 项目和媒体保存在本机，基础编辑不依赖 Cap 云服务。
+- macOS 上的 API Key 保存在登录钥匙串；更新应用不会主动清空密钥。
+- 使用云端字幕识别时，音频会发送给所选识别服务。
+- 字幕校对、翻译和助手请求会发送相关字幕文字与编辑上下文给你选择的模型。助手不会把整个录屏上传给文本模型。
+- 封面生图会发送图片描述给图片服务商。模型服务可能收费，费用与额度由服务商决定。
+- 使用本地模型仍可能需要先下载模型文件；ACP 服务是否联网取决于所连接的助手。
+
+## 当前边界
+
+- 助手一次最多读取 80 条字幕；长视频需要分步处理。
+- 「去口头禅」目前处理的是字幕文字，不会自动剪掉相应语音。
+- AI 可能改错专有名词、语气或翻译，请在应用和导出前审阅。
+- 配音质量也取决于麦克风、输入电平和环境；增益调整不能恢复原始录音中缺失的细节。
+- 本项目仍在持续迭代。重要项目建议保留原始媒体与备份。
+
+## 开发与验证
+
+灵录基于 [Cap](https://github.com/CapSoftware/Cap)，桌面界面使用 Rust + GPUI，媒体管线使用项目中的录制、渲染和导出 crates。
+
+<details>
+<summary>从源码构建</summary>
+
+需要 macOS、Xcode Command Line Tools、Rust、Bun 及项目的原生媒体依赖。桌面应用拥有独立 Cargo workspace。首次准备会下载原生依赖及打过补丁的 GPUI 源码。
 
 ```bash
+git clone https://github.com/joeseesun/capwise.git
+cd capwise
 bun install
-bun run env-setup
 bun run cap-setup
+cd apps/desktop-gpui
+cargo build --bin cap-gpui
 ```
 
-Common commands:
+详细说明见 [桌面开发文档](apps/desktop-gpui/README.md)；分发签名、公证和更新包流程见 [发布文档](apps/desktop-gpui/docs/release.md)。开发环境安装不等于已公证的分发包。
 
-| Command | Purpose |
-| --- | --- |
-| `bun run dev` | Start the full local development stack |
-| `bun run dev:web` | Start the web app without the desktop app |
-| `bun run dev:desktop` | Build and run the desktop app, rebuilding on save on macOS |
-| `bun run build` | Build the workspace |
-| `bun run gpui:build <target>` | Build and package a desktop release for a Rust target triple |
-| `bun run lint` | Run Biome linting |
-| `bun run format` | Format with Biome |
-| `bun run typecheck` | Run TypeScript project references |
-| `cargo test -p <crate>` | Run Rust tests for a crate |
+</details>
 
-Database commands:
+验证重点包括：修改方案的范围校验、字幕时间保留、撤销恢复、模型接入，以及安装包签名。每个版本的实际验证结果与已知限制写在 [Release 说明](https://github.com/joeseesun/capwise/releases) 中。
 
-| Command | Purpose |
-| --- | --- |
-| `bun run db:generate` | Generate database artifacts |
-| `bun run db:push` | Push schema changes |
-| `bun run db:studio` | Open Drizzle Studio |
+## 反馈与来源
 
-## Repository Map
+遇到问题请提交 [Issue](https://github.com/joeseesun/capwise/issues)，附上应用版本、macOS 版本和复现步骤。**请勿上传 API Key 或未经处理的私人录屏。**
 
-| Path | What lives there |
-| --- | --- |
-| `apps/desktop-gpui` | The Cap desktop app: native Rust and GPUI for macOS, Windows, and Linux |
-| `apps/web` | Next.js web app for marketing, docs, dashboard, sharing, API routes, and auth |
-| `apps/cli` | Rust CLI |
-| `apps/media-server` | Media processing service used by the web app |
-| `apps/discord-bot` | Discord integration |
-| `packages/database` | Drizzle schema and database access |
-| `packages/ui` | Shared React UI |
-| `packages/web-backend` | Backend service layer |
-| `packages/web-domain` | Web domain models and types |
-| `packages/env` | Environment validation |
-| `packages/sdk-embed` | Embed SDK |
-| `packages/sdk-recorder` | Recorder SDK |
-| `crates/*` | Recording, capture, camera, audio, encoding, rendering, muxing, export, and test crates |
-| `scripts/*` | Setup, analytics, build, and maintenance tooling |
-| `infra/*` | Infrastructure configuration |
+- 基于 Cap，保留上游版权与许可；主要代码为 AGPLv3，部分录制与相机 crates 为 MIT，详见 [LICENSE](LICENSE)。
+- 助手交互参考 [Qiaomu Agent](https://github.com/joeseesun/Qiaomu-agent)，在原生 GPUI 界面中实现。
+- 图标使用项目已有图标与 [Lucide](https://lucide.dev/) 风格资源；字体、媒体与第三方组件遵循各自许可。
+- 随附配乐的来源记录见 [音乐说明](apps/desktop-gpui/assets/music/NOTICE.md)。
 
-The web API uses Effect and `@effect/platform` HTTP APIs. Desktop capture and export paths are backed by Rust crates for fast recording, rendering, and platform-specific media access.
+由 [向阳乔木](https://qiaomu.ai) 维护 · [博客](https://blog.qiaomu.ai) · [乔木推荐](https://tuijian.qiaomu.ai) · [X @vista8](https://x.com/vista8) · [GitHub](https://github.com/joeseesun) · 公众号「向阳乔木推荐看」
 
-## Analytics
+---
 
-Cap uses [Tinybird](https://www.tinybird.co) for viewer telemetry dashboards. Set `TINYBIRD_ADMIN_TOKEN` or `TINYBIRD_TOKEN` before running analytics commands.
+<a id="english"></a>
 
-| Command | Purpose |
-| --- | --- |
-| `bun run analytics:setup` | Deploy Tinybird datasources and pipes from `scripts/analytics/tinybird` |
-| `bun run analytics:check` | Validate that the Tinybird workspace matches the app expectations |
+## English
 
-`analytics:setup` can remove Tinybird resources outside the checked-in analytics configuration. Use it only against the workspace you intend to manage from this repo.
+**Capwise (灵录)** is a local-first Mac screen recording and editing studio, based on Cap. Record a demo, refine captions, add narration or music, create a cover, and export your video in one workspace.
 
-## Contributing
+### Install
 
-Cap is built in public. Issues, pull requests, design feedback, bug reports, docs fixes, and bounties are welcome.
+Download the Apple Silicon DMG from [Releases](https://github.com/joeseesun/capwise/releases/latest), drag Capwise to Applications, and follow the recording permission guide. This release targets macOS 13+ on Apple Silicon. Intel, Windows, and Linux packages have not been verified for this fork.
 
-- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-- Join the community on [Discord](https://cap.link/discord).
-- Check open bounties on [Algora](https://console.algora.io/org/CapSoftware/bounties?status=open).
+Core recording and editing do not require a Cap Cloud account. Optional AI features use your own model providers or installed ACP agents. Configure speech recognition, text generation, and image generation separately in Settings → AI Models.
 
-## License
+### Highlights
 
-Portions of this software are licensed as follows:
+- Native Rust + GPUI editor with a timeline, zooms, captions, music, narration, and annotations.
+- Separate content, translation, and style workspaces; independent original/translated subtitle styling.
+- An editing assistant that proposes changes for review before applying them, with undo support.
+- In-assistant cover generation, editable titles and cover duration (1 second for a new cover).
+- Searchable model selection and local ACP connections.
 
-- Code in the `cap-camera*` and `scap-*` crate families is licensed under the MIT License. See [licenses/LICENSE-MIT](https://github.com/CapSoftware/Cap/blob/main/licenses/LICENSE-MIT).
-- Third-party components are licensed under the original license provided by their owner.
-- All other content not mentioned above is available under the AGPLv3 license as defined in [LICENSE](https://github.com/CapSoftware/Cap/blob/main/LICENSE).
+### Privacy, costs, and limits
+
+Projects remain local. Cloud transcription sends audio to the selected service; AI text features send relevant text and editing context. Cover generation sends the image description. API keys are stored in the macOS login Keychain. Provider charges may apply.
+
+The assistant reads at most 80 captions per request. Filler removal changes subtitle text only, not the recording's speech. Always review AI output. ACP integrations require their own installation and login; the in-app agent does not receive filesystem or terminal permissions.
+
+See the [desktop development guide](apps/desktop-gpui/README.md), [release notes](https://github.com/joeseesun/capwise/releases), and [license](LICENSE). Capwise retains Cap's upstream licensing: primarily AGPLv3, with MIT and third-party exceptions as documented. [Report a bug](https://github.com/joeseesun/capwise/issues) without including credentials or private recordings.

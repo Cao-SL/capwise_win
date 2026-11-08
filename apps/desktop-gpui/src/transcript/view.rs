@@ -596,6 +596,8 @@ fn byte_at(layout: &TextLayout, position: Point<Pixels>) -> usize {
 impl EditorWindow {
     /// Opens the transcript panel with its find-and-replace bar focused.
     pub(crate) fn open_transcript_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.transcript.caption_only = true;
+        self.transcript.cleanup.open = false;
         if !self.transcript.open {
             self.toggle_transcript(window, cx);
         }
@@ -603,6 +605,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn open_transcript_cleanup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.transcript.caption_only = false;
         if !self.transcript.open {
             self.toggle_transcript(window, cx);
         }
@@ -650,6 +653,7 @@ impl EditorWindow {
             if self.clips.open {
                 self.close_clips(window, cx);
             }
+            self.dismiss_sidebar_panels(cx);
             self.transcript.open = true;
             self.transcript.dirty = true;
             let started = Instant::now();
@@ -937,6 +941,15 @@ impl EditorWindow {
         if ui::text_input_has_focus(window, cx) {
             return;
         }
+        if event.keystroke.key == "escape"
+            && self.transcript.search.is_none()
+            && self.transcript.selection.is_none()
+            && !self.transcript.cleanup.open
+        {
+            self.open_captions_settings(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         let Some((doc, edl)) = self.transcript_doc() else {
             return;
         };
@@ -998,7 +1011,8 @@ impl EditorWindow {
                     self.transcript.cleanup.open = false;
                     true
                 } else {
-                    false
+                    self.open_captions_settings(window, cx);
+                    true
                 }
             }
             "left" | "right" | "up" | "down" | "home" | "end" if !modifiers.alt => {
@@ -1183,7 +1197,7 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> CutReport {
-        if cuts.is_empty() {
+        if self.transcript.caption_only || cuts.is_empty() {
             return CutReport::default();
         }
         let started = Instant::now();
@@ -1281,6 +1295,9 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.transcript.caption_only {
+            return;
+        }
         let Some(doc) = self.transcript.doc.clone() else {
             return;
         };
@@ -1366,9 +1383,10 @@ impl EditorWindow {
             &replace,
             window,
             |this: &mut Self, _, event: &ui::TextInputEvent, window, cx| match event {
+                ui::TextInputEvent::Changed => this.invalidate_transcript(cx),
                 ui::TextInputEvent::Confirmed => this.transcript_replace(false, window, cx),
                 ui::TextInputEvent::Cancelled => this.transcript_close_search(window, cx),
-                _ => {}
+                ui::TextInputEvent::Blurred => {}
             },
         );
         self.push_text_subscription(subscription);
@@ -1922,10 +1940,24 @@ impl EditorWindow {
                 }
             }))
             .child(self.render_transcript_header(cx))
+            .child(
+                div()
+                    .px(px(12.))
+                    .py(px(6.))
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(if self.transcript.caption_only {
+                        tr::editor::workbench::search_safe_hint()
+                    } else {
+                        tr::editor::workbench::video_edit_hint()
+                    }),
+            )
             .children(self.render_transcript_search(cx))
             .children(self.render_transcript_cleanup(cx))
             .child(body)
-            .child(self.render_transcript_footer())
+            .when(!self.transcript.caption_only, |panel| {
+                panel.child(self.render_transcript_footer())
+            })
             .into_any_element()
     }
 
@@ -1956,15 +1988,16 @@ impl EditorWindow {
                 div()
                     .flex()
                     .flex_row()
-                    .items_baseline()
+                    .items_center()
                     .gap(px(8.))
                     .min_w_0()
                     .child(
-                        div()
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.editor.text_1))
-                            .child(tr::editor::transcript::title()),
+                        ui::EditorButton::plain(&theme, "transcript-back-to-captions")
+                            .left_icon("icons/chevron-left.svg")
+                            .label(tr::editor::transcript::back_to_captions())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_captions_settings(window, cx);
+                            })),
                     )
                     .children(words.filter(|_| has_doc).map(|count| {
                         div()
@@ -1994,18 +2027,20 @@ impl EditorWindow {
                                 }
                             })),
                     )
-                    .child(
-                        ui::EditorButton::plain(&theme, "transcript-cleanup")
-                            .left_icon("icons/scissors.svg")
-                            .label(tr::editor::transcript::cleanup())
-                            .tooltip(&theme, tr::editor::transcript::cleanup_tooltip())
-                            .disabled(!has_doc)
-                            .pressed(self.transcript.cleanup.open)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.transcript.cleanup.open = !this.transcript.cleanup.open;
-                                this.invalidate_transcript(cx);
-                            })),
-                    ),
+                    .when(!self.transcript.caption_only, |row| {
+                        row.child(
+                            ui::EditorButton::plain(&theme, "transcript-cleanup")
+                                .left_icon("icons/scissors.svg")
+                                .label(tr::editor::transcript::cleanup())
+                                .tooltip(&theme, tr::editor::transcript::cleanup_tooltip())
+                                .disabled(!has_doc)
+                                .pressed(self.transcript.cleanup.open)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.transcript.cleanup.open = !this.transcript.cleanup.open;
+                                    this.invalidate_transcript(cx);
+                                })),
+                        )
+                    }),
             )
     }
 
@@ -2059,16 +2094,18 @@ impl EditorWindow {
                     .disabled(count == 0)
                     .on_click(cx.listener(|this, _, _, cx| this.transcript_step_match(1, cx))),
             )
-            .child(
-                ui::EditorButton::plain(&theme, "transcript-search-delete")
-                    .left_icon("icons/trash.svg")
-                    .label(tr::editor::transcript::delete_matches())
-                    .tooltip(&theme, tr::editor::transcript::delete_matches_tooltip())
-                    .disabled(count == 0)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.transcript_delete_matches(window, cx);
-                    })),
-            );
+            .when(!self.transcript.caption_only, |row| {
+                row.child(
+                    ui::EditorButton::plain(&theme, "transcript-search-delete")
+                        .left_icon("icons/trash.svg")
+                        .label(tr::editor::transcript::delete_matches())
+                        .tooltip(&theme, tr::editor::transcript::delete_matches_tooltip())
+                        .disabled(count == 0)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.transcript_delete_matches(window, cx);
+                        })),
+                )
+            });
         let replace_row = div()
             .flex()
             .flex_row()
@@ -2122,7 +2159,7 @@ impl EditorWindow {
     }
 
     fn render_transcript_cleanup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.transcript.cleanup.open {
+        if self.transcript.caption_only || !self.transcript.cleanup.open {
             return None;
         }
         let doc = self.transcript.doc.clone()?;

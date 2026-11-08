@@ -27,6 +27,17 @@ async fn recording(
     watch::Sender<bool>,
     tokio::task::JoinHandle<()>,
 ) {
+    recording_with_amplitude(project, 0.3).await
+}
+
+async fn recording_with_amplitude(
+    project: &Path,
+    amplitude: f64,
+) -> (
+    VoiceoverSession,
+    watch::Sender<bool>,
+    tokio::task::JoinHandle<()>,
+) {
     let microphone = Arc::new(SyntheticMicrophone::spawn(
         "Voiceover synthetic test",
         48_000,
@@ -47,7 +58,7 @@ async fn recording(
                 _ = tick.tick() => {
                     let samples = (0..480).map(|index| {
                         let phase = (position + index) as f64 * 440.0 * std::f64::consts::TAU / 48_000.0;
-                        (phase.sin() * 0.3) as f32
+                        (phase.sin() * amplitude) as f32
                     }).collect::<Vec<_>>();
                     microphone.push(&samples, Timestamp::Instant(Instant::now())).await;
                     position += 480;
@@ -120,6 +131,9 @@ async fn voiceover_pause_stop_decodes_at_output_speed_without_changing_project()
         / decoded.samples().len() as f64)
         .sqrt();
     assert!(rms > 0.1);
+    let measured = ready.audio().rms_db.unwrap();
+    assert!((f64::from(measured) - 20.0 * rms.log10()).abs() < 0.2);
+    assert!((-14.0..-7.0).contains(&ready.audio().peak_db.unwrap()));
     assert_eq!(
         fs::read(project.path().join("project-config.json")).unwrap(),
         before
@@ -367,6 +381,8 @@ fn voiceover_manifest_path_escape_and_duplicate_identity_are_rejected() {
         sample_rate: 48_000,
         channels: 1,
         recovered: false,
+        peak_db: None,
+        rms_db: None,
     });
     manifest.state = TakeState::Ready;
     assert!(lease.write(&manifest).is_err());
@@ -602,6 +618,8 @@ fn voiceover_manifest_accepts_long_recordings_without_a_product_duration_cap() {
         sample_rate: 48_000,
         channels: 1,
         recovered: false,
+        peak_db: None,
+        rms_db: None,
     });
     manifest.state = TakeState::Ready;
     lease.write(&manifest).unwrap();
@@ -609,4 +627,46 @@ fn voiceover_manifest_accepts_long_recordings_without_a_product_duration_cap() {
         lease.read().unwrap().audio.unwrap().duration,
         8. * 60. * 60.
     );
+}
+
+#[test]
+fn voiceover_levels_reject_silence_and_limit_gain() {
+    let mut levels = AudioLevels::default();
+    levels.push(&[0.0, f32::NAN, f32::INFINITY]);
+    let (peak_db, rms_db) = levels.db();
+    assert_eq!((peak_db, rms_db), (-120.0, -120.0));
+    let mut audio = TakeAudio {
+        file: "capture.m4a".into(),
+        duration: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+        recovered: false,
+        peak_db: Some(peak_db),
+        rms_db: Some(rms_db),
+    };
+    assert_eq!(audio.suggested_gain_db(), None);
+    audio.peak_db = Some(-26.6);
+    audio.rms_db = Some(-42.8);
+    assert!((audio.suggested_gain_db().unwrap() - 20.6).abs() < 0.01);
+    audio.peak_db = Some(-55.0);
+    assert_eq!(audio.suggested_gain_db(), Some(24.0));
+    audio.peak_db = Some(-1.0);
+    assert_eq!(audio.suggested_gain_db(), Some(-5.0));
+    audio.peak_db = Some(f32::NAN);
+    assert_eq!(audio.suggested_gain_db(), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn voiceover_quiet_input_is_measured_without_extra_attenuation() {
+    let project = project();
+    let (session, end, task) = recording_with_amplitude(project.path(), 0.01).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let take = session.stop().await.unwrap();
+    end_source(end, task).await;
+    let rms = take.audio().rms_db.unwrap();
+    assert!((-46.0..-41.0).contains(&rms), "rms={rms}");
+    assert_eq!(take.audio().suggested_gain_db(), Some(24.0));
+    let before = fs::read(take.path()).unwrap();
+    let _ = take.audio().suggested_gain_db();
+    assert_eq!(fs::read(take.path()).unwrap(), before);
 }

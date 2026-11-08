@@ -13,7 +13,6 @@ use serde_json::{Value, json};
 use tokio::sync::{Semaphore, watch};
 use uuid::Uuid;
 
-const ENDPOINT: &str = "https://ark.cn-beijing.volces.com/api/v3/images/generations";
 pub(crate) const BASE_URL: &str = "https://ark.cn-beijing.volces.com/api/v3";
 pub(crate) const DEFAULT_MODEL: &str = "doubao-seedream-5-0-flash-260915";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
@@ -157,6 +156,27 @@ pub(crate) struct BackgroundRequest {
     pub text_area: TextArea,
 }
 
+fn compatible_image_dimensions(target: Dimensions, model: &str) -> Dimensions {
+    if model == "dall-e-2" || target.width == target.height {
+        return Dimensions {
+            width: 1024,
+            height: 1024,
+        };
+    }
+    let long = if model == "dall-e-3" { 1792 } else { 1536 };
+    if target.width > target.height {
+        Dimensions {
+            width: long,
+            height: 1024,
+        }
+    } else {
+        Dimensions {
+            width: 1024,
+            height: long,
+        }
+    }
+}
+
 pub(crate) fn model_valid(model: &str) -> bool {
     !model.is_empty()
         && model.len() <= 160
@@ -198,6 +218,33 @@ impl BackgroundRequest {
             body["stream"] = json!(false);
         }
         Ok((size, body))
+    }
+    fn prepare_compatible(&self) -> Result<(SizePlan, Value), GenerationError> {
+        let (_, mut body) = self.prepare()?;
+        let request = compatible_image_dimensions(self.target, &self.model);
+        let object = body
+            .as_object_mut()
+            .ok_or(GenerationError::InvalidResponse)?;
+        for key in [
+            "response_format",
+            "watermark",
+            "stream",
+            "sequential_image_generation",
+        ] {
+            object.remove(key);
+        }
+        object.insert("n".into(), json!(1));
+        object.insert(
+            "size".into(),
+            json!(format!("{}x{}", request.width, request.height)),
+        );
+        Ok((
+            SizePlan {
+                target: self.target,
+                request,
+            },
+            body,
+        ))
     }
 }
 
@@ -306,7 +353,7 @@ pub(crate) struct GeneratedOrigin {
 impl GeneratedOrigin {
     pub(crate) fn is_valid(&self) -> bool {
         self.version == 1
-            && self.provider == "volcengineArk"
+            && matches!(self.provider.as_str(), "volcengineArk" | "openaiCompatible")
             && model_valid(&self.requested_model)
             && self
                 .reported_model
@@ -315,7 +362,7 @@ impl GeneratedOrigin {
             && self.target.bounded(40_000_000)
             && self.requested.bounded(MAX_IMAGE_PIXELS)
             && self.actual.bounded(MAX_IMAGE_PIXELS)
-            && self.requested.same_ratio(self.target)
+            && (self.provider == "openaiCompatible" || self.requested.same_ratio(self.target))
             && self.dimension_status
                 == if self.actual == self.requested {
                     DimensionStatus::RequestedSize
@@ -354,6 +401,7 @@ pub(crate) enum GenerationError {
     Permission,
     RateLimited { retry_after_seconds: Option<u64> },
     HttpStatus(u16),
+    ModelNotActivated,
     Rejected,
     InvalidResponse,
     ResponseTooLarge,
@@ -365,11 +413,18 @@ pub(crate) enum GenerationError {
 
 pub(crate) struct ArkBackgroundClient {
     http: Client,
+    base_url: String,
+    ark: bool,
     decode_slots: Arc<Semaphore>,
 }
 
 impl ArkBackgroundClient {
     pub fn new() -> Result<Self, GenerationError> {
+        Self::for_endpoint(BASE_URL, true)
+    }
+
+    pub(crate) fn for_endpoint(base_url: &str, ark: bool) -> Result<Self, GenerationError> {
+        let base_url = normalize_image_base_url(base_url)?;
         let http = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
@@ -379,6 +434,8 @@ impl ArkBackgroundClient {
             .map_err(|_| GenerationError::Network)?;
         Ok(Self {
             http,
+            base_url,
+            ark,
             decode_slots: DECODE_SLOTS.clone(),
         })
     }
@@ -388,13 +445,17 @@ impl ArkBackgroundClient {
         tokio::time::timeout(Duration::from_secs(25), async {
             let response = self
                 .http
-                .get(format!("{BASE_URL}/models"))
+                .get(format!("{}/models", self.base_url))
                 .header(header::AUTHORIZATION, authorization)
                 .send()
                 .await
                 .map_err(network_error)?;
             let bytes = bounded_response_bytes(response, 1024 * 1024).await?;
-            image_models(&bytes)
+            if self.ark {
+                image_models(&bytes)
+            } else {
+                compatible_image_models(&bytes)
+            }
         })
         .await
         .unwrap_or(Err(GenerationError::Timeout))
@@ -407,12 +468,17 @@ impl ArkBackgroundClient {
         ticket: GenerationTicket,
     ) -> Result<GeneratedBackground, GenerationError> {
         ticket.check()?;
-        let (size, body) = request.prepare()?;
+        let (size, body) = if self.ark {
+            request.prepare()?
+        } else {
+            request.prepare_compatible()?
+        };
         let authorization = authorization(api_key)?;
+        let ark = self.ark;
         let send = async {
             let response = self
                 .http
-                .post(ENDPOINT)
+                .post(format!("{}/images/generations", self.base_url))
                 .header(header::AUTHORIZATION, authorization)
                 .header(header::ACCEPT, "application/json")
                 .json(&body)
@@ -420,6 +486,7 @@ impl ArkBackgroundClient {
                 .await
                 .map_err(network_error)?;
             let bytes = response_bytes(response).await?;
+            let bytes = self.resolve_image_response(bytes).await?;
             let slot = self
                 .decode_slots
                 .clone()
@@ -428,13 +495,111 @@ impl ArkBackgroundClient {
                 .map_err(|_| GenerationError::Cancelled)?;
             tokio::task::spawn_blocking(move || {
                 let _slot = slot;
-                decode_response(&bytes, size, &request.model)
+                let mut decoded = decode_response(&bytes, size, &request.model)?;
+                if !ark {
+                    decoded.origin.provider = "openaiCompatible".into();
+                }
+                Ok(decoded)
             })
             .await
             .map_err(|_| GenerationError::InvalidImage)?
         };
         run_guarded(ticket, REQUEST_TIMEOUT, send).await
     }
+    async fn resolve_image_response(&self, bytes: Vec<u8>) -> Result<Vec<u8>, GenerationError> {
+        let mut value: Value =
+            serde_json::from_slice(&bytes).map_err(|_| GenerationError::InvalidResponse)?;
+        if value
+            .pointer("/data/0/b64_json")
+            .and_then(Value::as_str)
+            .is_some()
+        {
+            return Ok(bytes);
+        }
+        let Some(url) = value.pointer("/data/0/url").and_then(Value::as_str) else {
+            return Ok(bytes);
+        };
+        let url = reqwest::Url::parse(url).map_err(|_| GenerationError::InvalidResponse)?;
+        if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+            return Err(GenerationError::InvalidResponse);
+        }
+        let response = self.http.get(url).send().await.map_err(network_error)?;
+        let image = bounded_response_bytes(response, MAX_IMAGE_BYTES).await?;
+        value["data"][0]["b64_json"] = Value::String(STANDARD.encode(image));
+        serde_json::to_vec(&value).map_err(|_| GenerationError::InvalidResponse)
+    }
+}
+
+pub(crate) fn normalize_image_base_url(raw: &str) -> Result<String, GenerationError> {
+    let raw = raw.trim().trim_end_matches('/');
+    let raw = raw
+        .strip_suffix("/images/generations")
+        .or_else(|| raw.strip_suffix("/models"))
+        .unwrap_or(raw);
+    let url = reqwest::Url::parse(raw).map_err(|_| GenerationError::InvalidCredential)?;
+    let local = url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host == "[::1]"
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if (url.scheme() != "https" && !(url.scheme() == "http" && local))
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(GenerationError::InvalidCredential);
+    }
+    Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+fn compatible_image_models(bytes: &[u8]) -> Result<Vec<String>, GenerationError> {
+    if bytes.len() > 1024 * 1024 {
+        return Err(GenerationError::ResponseTooLarge);
+    }
+    let value: Value =
+        serde_json::from_slice(bytes).map_err(|_| GenerationError::InvalidResponse)?;
+    let rows = value
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or(GenerationError::InvalidResponse)?;
+    if rows.len() > 4096 {
+        return Err(GenerationError::ResponseTooLarge);
+    }
+    let explicit = image_models(bytes)?;
+    let mut all = Vec::new();
+    let mut image = explicit;
+    for row in rows {
+        if let Some(id) = row
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| model_valid(id))
+        {
+            if !all.iter().any(|value| value == id) {
+                all.push(id.to_string());
+            }
+            let lower = id.to_ascii_lowercase();
+            if [
+                "image",
+                "flux",
+                "diffusion",
+                "dall-e",
+                "cogview",
+                "seedream",
+                "imagen",
+            ]
+            .iter()
+            .any(|hint| lower.contains(hint))
+                && !image.iter().any(|value| value == id)
+            {
+                image.push(id.to_string());
+            }
+        }
+    }
+    Ok(if image.is_empty() { all } else { image })
 }
 
 fn authorization(api_key: &str) -> Result<header::HeaderValue, GenerationError> {
@@ -488,13 +653,22 @@ async fn bounded_response_bytes(
     mut response: Response,
     limit: usize,
 ) -> Result<Vec<u8>, GenerationError> {
-    check_http_status(
-        response.status().as_u16(),
+    let status = response.status().as_u16();
+    let status_result = check_http_status(
+        status,
         response
             .headers()
             .get(header::RETRY_AFTER)
             .and_then(|value| value.to_str().ok()),
-    )?;
+    );
+    if !matches!(status, 400 | 403 | 404) {
+        status_result?;
+    }
+    let limit = if status_result.is_err() {
+        limit.min(64 * 1024)
+    } else {
+        limit
+    };
     if response
         .content_length()
         .is_some_and(|length| length > limit as u64)
@@ -508,7 +682,22 @@ async fn bounded_response_bytes(
         }
         append_response(&mut bytes, &chunk)?;
     }
+    if let Err(error) = status_result {
+        return Err(classify_provider_error(error, &bytes));
+    }
     Ok(bytes)
+}
+
+fn classify_provider_error(fallback: GenerationError, bytes: &[u8]) -> GenerationError {
+    let value = serde_json::from_slice::<Value>(bytes).ok();
+    match value
+        .as_ref()
+        .and_then(|value| value.pointer("/error/code"))
+        .and_then(Value::as_str)
+    {
+        Some("ModelNotOpen") => GenerationError::ModelNotActivated,
+        _ => fallback,
+    }
 }
 
 fn image_models(bytes: &[u8]) -> Result<Vec<String>, GenerationError> {

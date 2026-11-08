@@ -371,7 +371,7 @@ pub(crate) struct LibraryAudition {
 }
 
 impl LibraryAudition {
-    fn start(id: &'static str, path: PathBuf) -> Result<Self, String> {
+    fn start(id: &'static str, path: PathBuf, gain_db: f32) -> Result<Self, String> {
         let (stop, stop_requested) = std::sync::mpsc::channel();
         let finished = Arc::new(AtomicBool::new(false));
         let finished_flag = finished.clone();
@@ -380,7 +380,8 @@ impl LibraryAudition {
         std::thread::Builder::new()
             .name("library-audition".into())
             .spawn(move || {
-                let result = std::panic::catch_unwind(|| play_audition(&path, &stop_requested));
+                let result =
+                    std::panic::catch_unwind(|| play_audition(&path, &stop_requested, gain_db));
                 match result {
                     Ok(Ok(())) => {}
                     Ok(Err(error)) => {
@@ -431,13 +432,18 @@ pub(crate) fn prepare_audition(
     }
 }
 
-fn play_audition(path: &Path, stop: &std::sync::mpsc::Receiver<()>) -> anyhow::Result<()> {
+fn play_audition(
+    path: &Path,
+    stop: &std::sync::mpsc::Receiver<()>,
+    gain_db: f32,
+) -> anyhow::Result<()> {
     let (_temporary, path) = prepare_audition(path)?;
     if !matches!(stop.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)) {
         return Ok(());
     }
     let (_stream, handle) = rodio::OutputStream::try_default()?;
     let sink = rodio::Sink::try_new(&handle)?;
+    sink.set_volume(10.0_f32.powf(gain_db.clamp(-12.0, 24.0) / 20.0));
     let file = std::io::BufReader::new(std::fs::File::open(path)?);
     sink.append(rodio::Decoder::new(file)?);
     while !sink.empty() {
@@ -751,6 +757,16 @@ impl EditorWindow {
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
+        self.toggle_audio_audition_with_gain(id, path, 0.0, cx);
+    }
+
+    pub(crate) fn toggle_audio_audition_with_gain(
+        &mut self,
+        id: &'static str,
+        path: PathBuf,
+        gain_db: f32,
+        cx: &mut Context<Self>,
+    ) {
         self.audio_library.audition_failed = false;
         let was_playing = self
             .library_audition
@@ -760,7 +776,7 @@ impl EditorWindow {
             if self.playing {
                 self.stop_playback(cx);
             }
-            match LibraryAudition::start(id, path) {
+            match LibraryAudition::start(id, path, gain_db) {
                 Ok(audition) => {
                     let started = audition.started;
                     self.library_audition = Some(audition);
@@ -818,8 +834,10 @@ impl EditorWindow {
             .padding_x(px(12.))
             .text_size(px(12.))
             .label(tr::editor::audio::library::done())
-            .on_click(cx.listener(|this, _, _, cx| {
+            .on_click(cx.listener(|this, _, window, cx| {
                 this.audio_picker = None;
+                this.library_audition = None;
+                this.focus_root(window, cx);
                 cx.notify();
             }))
             .into_any_element();

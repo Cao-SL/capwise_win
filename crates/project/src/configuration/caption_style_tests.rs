@@ -169,3 +169,91 @@ fn invalid_translation_field_types_are_rejected_without_mutating_the_input() {
         assert!(serde_json::from_slice::<CaptionSettings>(&bytes).is_err());
     }
 }
+
+#[test]
+fn caption_appearance_edits_are_independent_and_old_projects_keep_their_look() {
+    let mut settings: CaptionSettings = serde_json::from_value(serde_json::json!({
+        "color":"#FFFF00", "outline":true, "outlineColor":"#223344", "outlineWidth":4.0,
+        "shadow":true, "shadowColor":"#332211", "shadowOpacity":60, "shadowSize":8.0
+    }))
+    .unwrap();
+    assert!(settings.translation_appearance.is_none());
+    let inherited = settings.source_appearance();
+    assert_eq!(settings.resolved_translation_appearance(), inherited);
+    assert!(
+        serde_json::to_value(&settings)
+            .unwrap()
+            .get("translationAppearance")
+            .is_none()
+    );
+    settings.edit_source_appearance(|appearance| {
+        appearance.color = "#FF0000".into();
+        appearance.outline = false;
+        appearance.shadow = false;
+        appearance.uppercase = true;
+    });
+    assert_eq!(settings.resolved_translation_appearance(), inherited);
+    let source = settings.source_appearance();
+    settings.edit_translation_appearance(|appearance| {
+        appearance.color = "#0000FF".into();
+        appearance.outline_color = "#00FF00".into();
+        appearance.outline_width = 10.;
+        appearance.shadow_color = "#FFFFFF".into();
+        appearance.shadow_opacity = 80;
+        appearance.shadow_size = 12.;
+        appearance.font_weight = 400;
+    });
+    assert_eq!(settings.source_appearance(), source);
+    let restored: CaptionSettings =
+        serde_json::from_slice(&serde_json::to_vec(&settings).unwrap()).unwrap();
+    assert_eq!(restored.source_appearance(), source);
+    assert_eq!(
+        restored.translation_appearance,
+        settings.translation_appearance
+    );
+    let applied = project(restored.clone()).with_preset(project(CaptionSettings::default()));
+    assert_eq!(
+        applied.captions.unwrap().settings.translation_appearance,
+        restored.translation_appearance
+    );
+}
+
+#[test]
+fn subtitle_text_export_respects_independent_capitalization() {
+    let mut settings = source();
+    settings.display_mode = crate::CaptionDisplayMode::Bilingual;
+    settings.set_translation("appearance", "Source", "Translation".into(), "en".into());
+    let segment: CaptionTrackSegment = serde_json::from_value(
+        serde_json::json!({"id":"appearance", "text":"Source", "start":0., "end":1.}),
+    )
+    .unwrap();
+    settings.edit_source_appearance(|a| a.uppercase = true);
+    assert_eq!(
+        crate::caption_presentation_text(&segment, &settings),
+        "SOURCE\nTranslation"
+    );
+    settings.edit_translation_appearance(|a| a.uppercase = true);
+    settings.edit_source_appearance(|a| a.uppercase = false);
+    assert_eq!(
+        crate::caption_presentation_text(&segment, &settings),
+        "Source\nTRANSLATION"
+    );
+}
+
+#[test]
+fn source_size_changes_preserve_translation_outline_size() {
+    let mut settings = source();
+    settings.size = 72;
+    settings.outline = true;
+    settings.outline_width = 5.;
+    settings.translation_style = Some(style("Inter", 40));
+    settings.set_source_font_size(96);
+    let appearance = settings.resolved_translation_appearance();
+    assert_eq!(appearance.outline_width, 9.);
+    assert_eq!(
+        appearance.outline_width * settings.resolved_translation_style().size as f32 / 100.,
+        3.6
+    );
+    settings.edit_source_appearance(|a| a.outline_width = 2.);
+    assert_eq!(settings.resolved_translation_appearance(), appearance);
+}

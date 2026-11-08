@@ -491,6 +491,24 @@ mod generation_recovery_tests {
     use super::*;
 
     #[test]
+    fn new_captions_start_manual_and_existing_positions_stay_unchanged() {
+        let mut project = ProjectConfiguration::default();
+        apply_caption_result(&mut project, Vec::new(), "zh", &[5.], 5.);
+        let settings = &project.captions.as_ref().unwrap().settings;
+        assert_eq!(settings.position, "manual");
+        assert_eq!(
+            settings.manual_position.map(|point| (point.x, point.y)),
+            Some((0.5, 0.85))
+        );
+        project.captions.as_mut().unwrap().settings.position = "top-right".into();
+        apply_caption_result(&mut project, Vec::new(), "zh", &[5.], 5.);
+        assert_eq!(
+            project.captions.as_ref().unwrap().settings.position,
+            "top-right"
+        );
+    }
+
+    #[test]
     fn clearing_a_saved_generation_error_does_not_finish_an_active_task() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path();
@@ -2673,7 +2691,7 @@ pub fn apply_caption_result(
             .captions
             .as_ref()
             .map(|captions| captions.settings.clone())
-            .unwrap_or_default()
+            .unwrap_or_else(crate::style_presets::new_caption_settings)
     };
 
     if project.timeline.is_none() {

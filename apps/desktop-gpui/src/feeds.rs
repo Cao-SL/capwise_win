@@ -922,6 +922,13 @@ impl Feeds {
         }
     }
 
+    pub(crate) fn acquire_mic_preview(&mut self, label: Option<String>, cx: &mut Context<Self>) {
+        let release_after = self.mic_input_released || self.microphone.is_none();
+        self.acquire_mic_tap(cx);
+        self.set_microphone(label, cx);
+        self.mic_release_deferred |= release_after;
+    }
+
     pub(crate) fn release_mic_tap(&mut self, cx: &mut Context<Self>) {
         self.mic_tap_leases = self.mic_tap_leases.saturating_sub(1);
         if self.mic_tap_leases == 0 && self.mic_release_deferred {
@@ -1224,7 +1231,9 @@ impl Feeds {
         settings: Option<microphone::MicrophoneDeviceSettings>,
         cx: &mut Context<Self>,
     ) -> u64 {
-        self.mic_release_deferred = false;
+        if self.mic_tap_leases == 0 {
+            self.mic_release_deferred = false;
+        }
         if self.microphone == label
             && self.microphone_settings == settings
             && !self.mic_input_released

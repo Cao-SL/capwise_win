@@ -654,6 +654,9 @@ pub fn set_dock_icon(_png: &[u8]) {}
 
 pub fn save_file_panel(suggested: &str, extensions: &[&str]) -> Option<PathBuf> {
     let mut dialog = rfd::FileDialog::new().set_file_name(suggested);
+    if let Some(directory) = crate::store::export_directory() {
+        dialog = dialog.set_directory(directory);
+    }
     if !extensions.is_empty() {
         dialog = dialog.add_filter(crate::i18n::tr::dialog::file::export_filter(), extensions);
     }

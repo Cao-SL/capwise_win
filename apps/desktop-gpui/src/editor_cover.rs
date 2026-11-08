@@ -33,6 +33,7 @@ pub(crate) struct CoverUi {
     open: bool,
     target: Option<String>,
     input: Option<Entity<ui::TextInputState>>,
+    _input_observer: Option<gpui::Subscription>,
     scope: GenerationScope,
     generation: u64,
     context: Option<GenerationContext>,
@@ -83,6 +84,7 @@ fn error_message(error: GenerationError) -> String {
         GenerationError::Cancelled => tr::editor::cover::changed().into(),
         GenerationError::Timeout => tr::editor::cover::timeout().into(),
         GenerationError::RateLimited { .. } => tr::editor::cover::rate_limited().into(),
+        GenerationError::ModelNotActivated => tr::editor::cover::model_not_activated().into(),
         GenerationError::HttpStatus(status) => tr::editor::cover::http_error(status),
         GenerationError::Rejected => tr::editor::cover::rejected().into(),
         GenerationError::Network => tr::editor::cover::network_error().into(),
@@ -207,6 +209,12 @@ impl Drop for PreparedBackground {
 
 impl EditorWindow {
     fn cover_context(&self, target: &str) -> Option<GenerationContext> {
+        if self.assistant.open
+            && self.assistant.cover_active
+            && self.sidebar.title_cards.cover.target.as_deref() == Some(target)
+        {
+            return context_for(&self.project_path, &self.project, target);
+        }
         let index = self
             .selection
             .as_ref()
@@ -227,6 +235,30 @@ impl EditorWindow {
         context_for(&self.project_path, &self.project, target)
     }
 
+    pub(crate) fn open_assistant_cover(
+        &mut self,
+        description: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.project.timeline.as_ref().and_then(|timeline| {
+            timeline.text_segments.iter().position(|segment| {
+                segment
+                    .title_card
+                    .as_ref()
+                    .is_some_and(|card| card.role == cap_project::TitleCardRole::Intro)
+            })
+        }) else {
+            return;
+        };
+        self.focus_title_card(cap_project::TitleCardRole::Intro, cx);
+        self.open_cover_generator(index, window, cx);
+        if let Some(input) = &self.sidebar.title_cards.cover.input {
+            input.update(cx, |input, cx| input.set_text(description, cx));
+        }
+        cx.notify();
+    }
+
     fn open_cover_generator(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(card) = self
             .project
@@ -237,6 +269,8 @@ impl EditorWindow {
         else {
             return;
         };
+        self.open_assistant(window, cx);
+        self.assistant.cover_active = true;
         self.end_field_edit(cx);
         self.close_color_picker(cx);
         if self.sidebar.title_cards.cover.target.as_deref() != Some(&card.id) {
@@ -247,6 +281,8 @@ impl EditorWindow {
             input.update(cx, |input, _| {
                 input.set_placeholder(tr::editor::cover::description_hint())
             });
+            self.sidebar.title_cards.cover._input_observer =
+                Some(cx.observe(&input, |_, _, cx| cx.notify()));
             self.sidebar.title_cards.cover.input = Some(input);
         }
         let state = &mut self.sidebar.title_cards.cover;
@@ -258,7 +294,7 @@ impl EditorWindow {
         cx.notify();
     }
 
-    fn cancel_cover_generation(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn cancel_cover_generation(&mut self, cx: &mut Context<Self>) {
         let state = &mut self.sidebar.title_cards.cover;
         if state.applying {
             return;
@@ -285,11 +321,12 @@ impl EditorWindow {
         {
             return;
         }
-        let Some(model) = settings_cover::configured_model() else {
+        let Some((provider, endpoint)) = settings_cover::configured_endpoint() else {
             self.sidebar.title_cards.cover.error = Some(tr::editor::cover::configure().into());
             cx.notify();
             return;
         };
+        let model = endpoint.model;
         let Some(target) = self.sidebar.title_cards.cover.target.clone() else {
             return;
         };
@@ -334,11 +371,8 @@ impl EditorWindow {
             _ => TextArea::Left,
         };
         let state = &mut self.sidebar.title_cards.cover;
-        let client = match state
-            .client
-            .clone()
-            .map(Ok)
-            .unwrap_or_else(|| ArkBackgroundClient::new().map(Arc::new))
+        let client = match ArkBackgroundClient::for_endpoint(&endpoint.base_url, provider.is_ark())
+            .map(Arc::new)
         {
             Ok(client) => client,
             Err(error) => {
@@ -370,8 +404,8 @@ impl EditorWindow {
         state.task = Some(cx.spawn_in(window, async move |this, cx| {
             let Ok(task) = cx.update(|_, cx| {
                 gpui_tokio::Tokio::spawn(cx, async move {
-                    let key = tokio::task::spawn_blocking(|| {
-                        ai_store::key(Kind::Image, settings_cover::SERVICE)
+                    let key = tokio::task::spawn_blocking(move || {
+                        ai_store::key(Kind::Image, provider.id())
                     })
                     .await
                     .map_err(|_| GenerationError::InvalidCredential)?
@@ -561,6 +595,76 @@ impl EditorWindow {
         cx.notify();
     }
 
+    pub(crate) fn assistant_cover_busy(&self) -> bool {
+        let state = &self.sidebar.title_cards.cover;
+        state.busy || state.applying || state.save_pending.is_some()
+    }
+
+    pub(crate) fn render_assistant_cover(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let state = &self.sidebar.title_cards.cover;
+        if !state.open {
+            return None;
+        }
+        let index = self
+            .project
+            .timeline
+            .as_ref()?
+            .text_segments
+            .iter()
+            .position(|segment| {
+                segment
+                    .title_card
+                    .as_ref()
+                    .is_some_and(|card| Some(card.id.as_str()) == state.target.as_deref())
+            })?;
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .p(px(12.))
+                .border_1()
+                .border_color(Hsla::from(self.theme.editor.line))
+                .rounded(px(12.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(
+                            gpui::svg()
+                                .path("icons/image.svg")
+                                .size(px(16.))
+                                .text_color(Hsla::from(self.theme.editor.text_2)),
+                        )
+                        .child(
+                            div()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .child(tr::editor::assistant::cover()),
+                        ),
+                )
+                .child(
+                    ui::Field::stacked(&self.theme, tr::editor::title_cards::title()).child(
+                        self.render_field_input(
+                            crate::editor_panels::FieldKey::TextContent(index),
+                            Some(56.),
+                        ),
+                    ),
+                )
+                .child(
+                    ui::Field::inline(&self.theme, tr::editor::title_cards::duration()).child(
+                        self.render_number_field(
+                            crate::editor_panels::FieldKey::TitleCardDuration(index),
+                            tr::editor::title_cards::seconds(),
+                            64.,
+                        ),
+                    ),
+                )
+                .child(self.render_cover_generator(index, cx))
+                .into_any_element(),
+        )
+    }
+
     pub(crate) fn render_cover_generator(
         &self,
         index: usize,
@@ -575,8 +679,9 @@ impl EditorWindow {
             .and_then(|timeline| timeline.text_segments.get(index))
             .and_then(|segment| segment.title_card.as_ref())
             .map(|card| card.id.as_str());
-        let mut body =
-            div().flex().flex_col().gap(px(8.)).child(
+        let mut body = div().flex().flex_col().gap(px(10.));
+        if !self.assistant.cover_active {
+            body = body.child(
                 ui::Button::plain(
                     &theme,
                     "cover-ai-open",
@@ -589,6 +694,7 @@ impl EditorWindow {
                     this.open_cover_generator(index, window, cx)
                 })),
             );
+        }
         if !state.open || state.target.as_deref() != target {
             return body.into_any_element();
         }

@@ -678,7 +678,7 @@ fn protected_meaning(text: &str) -> bool {
         )
 }
 
-fn safe_to_hide(segment: &CaptionSegment, index: usize) -> bool {
+pub(crate) fn safe_to_hide(segment: &CaptionSegment, index: usize) -> bool {
     let word = &segment.words[index];
     let term = cap_project::disfluency::normalize_word(&word.text);
     if !matches!(
@@ -1237,6 +1237,8 @@ impl EditorWindow {
             )
             .label(if state.running {
                 tr::editor::review::running()
+            } else if crate::llm::default_provider().is_none() {
+                tr::editor::workbench::setup_ai()
             } else {
                 tr::editor::review::action()
             })
@@ -1251,6 +1253,12 @@ impl EditorWindow {
                     || !has_words,
             )
             .on_click(cx.listener(|this, _, window, cx| {
+                if crate::llm::default_provider().is_none() {
+                    cx.defer(|cx| {
+                        crate::app_windows::open_ai_settings(crate::settings_ai::AiTab::Content, cx)
+                    });
+                    return;
+                }
                 this.cancel_caption_export_wait(cx);
                 this.start_caption_review(window, cx);
             })),
@@ -1403,12 +1411,13 @@ impl EditorWindow {
             let task_path = path.clone();
             let task = gpui_tokio::Tokio::spawn(cx, async move {
                 let work = async {
+                    let session = uuid::Uuid::new_v4();
                     let mut changes = Vec::new();
                     for (index, batch) in task_original.chunks(16).enumerate() {
                         let start = index * 16;
                         let context = task_original[start.saturating_sub(1)..(start + batch.len() + 1).min(task_original.len())].iter().map(|segment| &segment.text).collect::<Vec<_>>();
                         let message = serde_json::json!({"terms": terms, "context": context, "segments": batch}).to_string();
-                        let reply = llm::chat(provider_id, &prompt, &message).await?;
+                        let reply = llm::chat_in_session(session, provider_id, &prompt, &message).await?;
                         changes.extend(parse_changes(&reply, batch)?);
                     }
                     let evidence = Evidence { original: task_original, changes: changes.clone(), provider: provider_id.into(), model, prompt };

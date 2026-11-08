@@ -53,19 +53,23 @@ pub fn caption_presentation_text(
     };
     let original = caption_display_text(&display.text);
     let translation = settings.translation_for(&segment.id, &original);
-    let text = match (settings.display_mode, translation) {
-        (CaptionDisplayMode::Translated, Some(translation)) => {
-            caption_display_text(&translation.text)
-        }
-        (CaptionDisplayMode::Bilingual, Some(translation)) => {
-            format!("{original}\n{}", caption_display_text(&translation.text))
-        }
-        _ => original,
-    };
-    if settings.uppercase {
-        text.to_uppercase()
+    let original = if settings.uppercase {
+        original.to_uppercase()
     } else {
-        text
+        original
+    };
+    let translated = translation.map(|translation| {
+        let text = caption_display_text(&translation.text);
+        if settings.resolved_translation_appearance().uppercase {
+            text.to_uppercase()
+        } else {
+            text
+        }
+    });
+    match (settings.display_mode, translated) {
+        (CaptionDisplayMode::Translated, Some(text)) => text,
+        (CaptionDisplayMode::Bilingual, Some(text)) => format!("{original}\n{text}"),
+        _ => original,
     }
 }
 

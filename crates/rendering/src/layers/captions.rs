@@ -898,12 +898,16 @@ impl CaptionsLayer {
             && caption_data.settings.display_mode == cap_project::CaptionDisplayMode::Translated;
         let translated_layout = has_translation
             && caption_data.settings.display_mode != cap_project::CaptionDisplayMode::Original;
-        let uppercase = caption_data.settings.uppercase;
-        let inherited_translation_style = caption_data
-            .settings
-            .translation_gap
-            .filter(|_| caption_data.settings.translation_style.is_none())
-            .map(|_| caption_data.settings.resolved_translation_style());
+        let translation_appearance = caption_data.settings.resolved_translation_appearance();
+        let primary_appearance = if translated_only {
+            translation_appearance.clone()
+        } else {
+            caption_data.settings.source_appearance()
+        };
+        let uppercase = primary_appearance.uppercase;
+        let inherited_translation_style = (caption_data.settings.translation_gap.is_some()
+            || caption_data.settings.translation_appearance.is_some())
+        .then(|| caption_data.settings.resolved_translation_style());
         let independent_style = caption_data
             .settings
             .translation_style
@@ -918,10 +922,24 @@ impl CaptionsLayer {
                     .translation_for(&active.segment.id, &active.segment.text)
                     .map(|translation| {
                         let text = cap_project::caption_display_text(&translation.text);
-                        (if uppercase { text.to_uppercase() } else { text }, style)
+                        (
+                            if translation_appearance.uppercase {
+                                text.to_uppercase()
+                            } else {
+                                text
+                            },
+                            style,
+                        )
                     })
             });
-        let caption_text = if secondary.is_some() {
+        let caption_text = if translated_only {
+            let translation = caption_data
+                .settings
+                .translation_for(&active.segment.id, &active.segment.text)
+                .expect("translated layout requires a translation");
+            let text = cap_project::caption_display_text(&translation.text);
+            if uppercase { text.to_uppercase() } else { text }
+        } else if secondary.is_some() {
             let text = cap_project::caption_display_text(&active.segment.text);
             if uppercase { text.to_uppercase() } else { text }
         } else {
@@ -995,9 +1013,9 @@ impl CaptionsLayer {
         let margin = width as f32 * 0.05;
 
         let base_color = [
-            parse_color_component(&caption_data.settings.color, 0),
-            parse_color_component(&caption_data.settings.color, 1),
-            parse_color_component(&caption_data.settings.color, 2),
+            parse_color_component(&primary_appearance.color, 0),
+            parse_color_component(&primary_appearance.color, 1),
+            parse_color_component(&primary_appearance.color, 2),
         ];
 
         let highlight_color_rgb = [
@@ -1007,9 +1025,9 @@ impl CaptionsLayer {
         ];
 
         let outline_color_rgb = [
-            parse_color_component(&caption_data.settings.outline_color, 0),
-            parse_color_component(&caption_data.settings.outline_color, 1),
-            parse_color_component(&caption_data.settings.outline_color, 2),
+            parse_color_component(&primary_appearance.outline_color, 0),
+            parse_color_component(&primary_appearance.outline_color, 1),
+            parse_color_component(&primary_appearance.outline_color, 2),
         ];
 
         let background_color_rgb = [
@@ -1026,15 +1044,20 @@ impl CaptionsLayer {
         let font_size = primary_style.map_or(caption_data.settings.size, |style| style.size.max(1))
             as f32
             * (height as f32 / 1080.0);
-        let outline_width = caption_data.settings.normalized_outline_width() / 100.0;
-        let shadow_size = caption_data.settings.normalized_shadow_size() / 100.0;
-        let shadow_strength = caption_data.settings.shadow_opacity.min(100) as f32 / 100.0;
-        let show_outline = caption_data.settings.outline && outline_width > 0.0;
-        let show_shadow = caption_data.settings.shadow && shadow_strength > 0.0;
+        let outline_width =
+            if translated_only && caption_data.settings.translation_appearance.is_none() {
+                caption_data.settings.normalized_outline_width()
+            } else {
+                primary_appearance.normalized_outline_width()
+            } / 100.0;
+        let shadow_size = primary_appearance.normalized_shadow_size() / 100.0;
+        let shadow_strength = primary_appearance.shadow_opacity.min(100) as f32 / 100.0;
+        let show_outline = primary_appearance.outline && outline_width > 0.0;
+        let show_shadow = primary_appearance.shadow && shadow_strength > 0.0;
         let shadow_rgb = [
-            parse_color_component(&caption_data.settings.shadow_color, 0),
-            parse_color_component(&caption_data.settings.shadow_color, 1),
-            parse_color_component(&caption_data.settings.shadow_color, 2),
+            parse_color_component(&primary_appearance.shadow_color, 0),
+            parse_color_component(&primary_appearance.shadow_color, 1),
+            parse_color_component(&primary_appearance.shadow_color, 2),
         ];
         let wrap_width = (width as f32 - margin * 2.0).max(font_size);
         let font_family = resolve_caption_family(
@@ -1046,9 +1069,9 @@ impl CaptionsLayer {
             &caption_text,
         );
 
-        let weight = if caption_data.settings.font_weight >= 700 {
+        let weight = if primary_appearance.font_weight >= 700 {
             Weight::BOLD
-        } else if caption_data.settings.font_weight >= 500 {
+        } else if primary_appearance.font_weight >= 500 {
             Weight::MEDIUM
         } else {
             Weight::NORMAL
@@ -1104,6 +1127,31 @@ impl CaptionsLayer {
             );
         }
 
+        let translation_color =
+            [0, 1, 2].map(|index| parse_color_component(&translation_appearance.color, index));
+        let translation_outline_color = [0, 1, 2]
+            .map(|index| parse_color_component(&translation_appearance.outline_color, index));
+        let translation_shadow_color = [0, 1, 2]
+            .map(|index| parse_color_component(&translation_appearance.shadow_color, index));
+        let translation_outline_width = if caption_data.settings.translation_appearance.is_some() {
+            translation_appearance.normalized_outline_width()
+        } else {
+            caption_data.settings.normalized_outline_width()
+        } / 100.;
+        let translation_shadow_size = translation_appearance.normalized_shadow_size() / 100.;
+        let translation_shadow_strength =
+            translation_appearance.shadow_opacity.min(100) as f32 / 100.;
+        let translation_has_outline =
+            translation_appearance.outline && translation_outline_width > 0.;
+        let translation_has_shadow =
+            translation_appearance.shadow && translation_shadow_strength > 0.;
+        let translation_weight = if translation_appearance.font_weight >= 700 {
+            Weight::BOLD
+        } else if translation_appearance.font_weight >= 500 {
+            Weight::MEDIUM
+        } else {
+            Weight::NORMAL
+        };
         let secondary_layout = secondary.as_ref().map(|(text, style)| {
             let secondary_size = style.size.max(1) as f32 * (height as f32 / 1080.0);
             let family = resolve_caption_family(
@@ -1117,27 +1165,27 @@ impl CaptionsLayer {
                 font_size: secondary_size.to_bits(),
                 wrap_width: (width as f32 - margin * 2.0).max(secondary_size).to_bits(),
                 family,
-                weight,
+                weight: translation_weight,
                 colors: CaptionTextColors::Uniform(color),
                 wrap: true,
                 balance: caption_data.settings.translation_gap.is_some(),
             };
             self.translation_text.update(
                 &mut self.font_system,
-                shaped(caption_rgba(base_color, highlight_alpha)),
+                shaped(caption_rgba(translation_color, highlight_alpha)),
             );
-            if show_outline {
+            if translation_has_outline {
                 self.translation_outline_text.update(
                     &mut self.font_system,
-                    shaped(caption_rgba(outline_color_rgb, fade_opacity)),
+                    shaped(caption_rgba(translation_outline_color, fade_opacity)),
                 );
             }
-            if show_shadow {
+            if translation_has_shadow {
                 self.translation_shadow_text.update(
                     &mut self.font_system,
                     shaped(caption_rgba(
-                        shadow_rgb,
-                        fade_opacity * SHADOW_LAYER_ALPHA * shadow_strength,
+                        translation_shadow_color,
+                        fade_opacity * SHADOW_LAYER_ALPHA * translation_shadow_strength,
                     )),
                 );
             }
@@ -1273,7 +1321,17 @@ impl CaptionsLayer {
 
         let effect_extent = 0.16_f32
             .max(if show_outline { outline_width } else { 0.0 })
-            .max(if show_shadow { shadow_size * 2.2 } else { 0.0 });
+            .max(if show_shadow { shadow_size * 2.2 } else { 0.0 })
+            .max(if secondary_layout.is_some() && translation_has_outline {
+                translation_outline_width
+            } else {
+                0.
+            })
+            .max(if secondary_layout.is_some() && translation_has_shadow {
+                translation_shadow_size * 2.2
+            } else {
+                0.
+            });
         let effect_margin = (group_font_size * effect_extent * render_scale).max(2.0);
         let bounds = TextBounds {
             left: (group_text_left - effect_margin).floor() as i32,
@@ -1302,10 +1360,12 @@ impl CaptionsLayer {
         }
 
         if show_outline {
-            let thickness = caption_data.settings.size as f32
-                * (height as f32 / 1080.0)
-                * outline_width
-                * render_scale;
+            let outline_size = if caption_data.settings.translation_appearance.is_some() {
+                font_size
+            } else {
+                caption_data.settings.size as f32 * height as f32 / 1080.
+            };
+            let thickness = outline_size * outline_width * render_scale;
             for (offset_x, offset_y) in outline_offsets(thickness) {
                 text_areas.push(TextArea {
                     buffer: &self.outline_text.buffer,
@@ -1340,9 +1400,9 @@ impl CaptionsLayer {
             let left =
                 group_text_left + (layout_width - secondary_width).max(0.0) * render_scale * 0.5;
             let top = text_top + (source_height + translation_gap) * render_scale;
-            if show_shadow {
+            if translation_has_shadow {
                 for (offset_x, offset_y) in
-                    shadow_offsets(secondary_size * shadow_size * render_scale)
+                    shadow_offsets(secondary_size * translation_shadow_size * render_scale)
                 {
                     text_areas.push(TextArea {
                         buffer: &self.translation_shadow_text.buffer,
@@ -1355,11 +1415,13 @@ impl CaptionsLayer {
                     });
                 }
             }
-            if show_outline {
+            if translation_has_outline {
                 for (offset_x, offset_y) in outline_offsets(
-                    caption_data.settings.size as f32
-                        * (height as f32 / 1080.0)
-                        * outline_width
+                    (if caption_data.settings.translation_appearance.is_some() {
+                        secondary_size
+                    } else {
+                        caption_data.settings.size as f32 * height as f32 / 1080.
+                    }) * translation_outline_width
                         * render_scale,
                 ) {
                     text_areas.push(TextArea {
@@ -1379,7 +1441,7 @@ impl CaptionsLayer {
                 top,
                 scale: render_scale,
                 bounds,
-                default_color,
+                default_color: caption_rgba(translation_color, highlight_alpha),
                 custom_glyphs: &[],
             });
         }

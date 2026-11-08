@@ -286,6 +286,7 @@ impl RenderOnce for SegmentedControl {
 
         div()
             .id(id)
+            .role(gpui::Role::TabList)
             .flex()
             .flex_row()
             .p(container_padding)
@@ -302,6 +303,13 @@ impl RenderOnce for SegmentedControl {
 
                 div()
                     .id(SharedString::from(format!("{prefix}-{index}")))
+                    .when_some(option.label.clone(), |this, label| {
+                        this.role(gpui::Role::Tab)
+                            .aria_label(label)
+                            .aria_selected(selected)
+                    })
+                    .tab_index(0)
+                    .tab_stop(!disabled)
                     .flex()
                     .flex_row()
                     .items_center()

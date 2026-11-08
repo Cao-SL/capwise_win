@@ -205,8 +205,8 @@ impl Page {
             Self::Experimental => "icons/settings-2.svg",
             Self::Shortcuts => "icons/hotkeys.svg",
             Self::Cli => "icons/terminal.svg",
-            Self::Quality => "icons/gauge.svg",
-            Self::Recordings => "icons/square-play.svg",
+            Self::Quality => "icons/sliders-horizontal.svg",
+            Self::Recordings => "icons/folder-open.svg",
             Self::Screenshots => "icons/image.svg",
             Self::Automations => "icons/zap.svg",
             Self::Transcription => "icons/sparkles.svg",
@@ -260,6 +260,8 @@ pub(crate) enum MenuKind {
     AutomationPreset(usize, usize),
     AiRecognizer,
     AiModel,
+    CoverProvider,
+    CoverModel,
     AiLlmAdd,
     AiLlmDefault,
 }
@@ -769,6 +771,7 @@ pub struct SettingsWindow {
     pub(crate) plan_refresh_failed: bool,
     instant_quality_notice: Option<InstantQualityNotice>,
     studio_quality_save_failed: bool,
+    export_folder_save_failed: bool,
     /// Everything the pages in `settings_pages.rs` own -- their fetch state,
     /// drafts and text-input entities.
     pub(crate) pages: crate::settings_pages::PagesState,
@@ -931,6 +934,7 @@ impl SettingsWindow {
             plan_refresh_failed: false,
             instant_quality_notice: None,
             studio_quality_save_failed: false,
+            export_folder_save_failed: false,
             project_name_input,
             server_url_input,
             workflow_name_input,
@@ -977,6 +981,13 @@ impl SettingsWindow {
 
     /// Re-target an already-open window, the way `showWindow({ Settings: {
     /// page } })` navigates a live one.
+    pub(crate) fn reset_ai_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.page_scroll = ScrollHandle::new();
+        self.menu = None;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
     pub fn set_page(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         if self.page != page {
             self.page_scroll = ScrollHandle::new();
@@ -1542,7 +1553,7 @@ impl SettingsWindow {
             .flatten();
         let focus = self.focus.clone();
         window.focus(&focus, cx);
-        let items = self.menu_items(kind);
+        let items = self.menu_items(kind, cx);
         self.menu = Some(OpenMenu {
             kind,
             return_focus,
@@ -1587,8 +1598,9 @@ impl SettingsWindow {
     }
 
     /// One row per option, check-marked when it is the value in force.
-    fn menu_items(&self, kind: MenuKind) -> Vec<ui::MenuItem> {
+    fn menu_items(&self, kind: MenuKind, cx: &gpui::App) -> Vec<ui::MenuItem> {
         match kind {
+            MenuKind::CoverProvider | MenuKind::CoverModel => self.cover_menu_items(kind, cx),
             MenuKind::WorkflowPreset => {
                 let catalog = crate::workflow_presets::WorkflowPresets::load();
                 catalog
@@ -2436,6 +2448,15 @@ impl SettingsWindow {
             // `var(--macos-settings-border)` under Liquid Glass.
             .border_l_1()
             .border_color(theme.settings_divider())
+            .when(self.page == Page::Transcription, |pane| {
+                pane.child(
+                    div()
+                        .px(px(CONTENT_PADDING_X))
+                        .pt(px(18.))
+                        .pb(px(8.))
+                        .child(self.render_ai_tabs(cx)),
+                )
+            })
             .child(
                 div()
                     .id("settings-page")
@@ -3258,10 +3279,7 @@ impl SettingsWindow {
         let mut sections = Vec::with_capacity(10);
         sections.push(self.render_appearance(cx).into_any_element());
         sections.push(self.render_language(cx).into_any_element());
-        sections.extend([
-            self.render_recording(cx).into_any_element(),
-            self.render_storage(cx).into_any_element(),
-        ]);
+        sections.extend([self.render_recording(cx).into_any_element()]);
         if self.settings.show_advanced_settings {
             sections.extend([
                 self.render_recording_advanced(cx).into_any_element(),
@@ -3680,7 +3698,11 @@ impl SettingsWindow {
     }
 
     fn render_recording_quality(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
-        vec![self.render_studio_quality(cx).into_any_element()]
+        vec![
+            self.render_studio_quality(cx).into_any_element(),
+            self.render_storage(cx).into_any_element(),
+            self.render_export_storage(cx).into_any_element(),
+        ]
     }
 
     fn effective_instant_resolution(&self) -> u32 {
@@ -4287,6 +4309,111 @@ impl SettingsWindow {
                                     ),
                             )
                             .child(actions),
+                    )
+                    .into_any_element(),
+            ],
+        )
+    }
+
+    fn render_export_storage(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let path = self.settings.export_path.clone();
+        let is_custom = path.is_some();
+        let display =
+            path.unwrap_or_else(|| tr::settings::export_folder::default_location().to_string());
+
+        let mut actions = div().flex().flex_row().justify_end().gap(px(8.));
+        if is_custom {
+            actions = actions.child(self.button(
+                "export-folder-reset",
+                (ui::ButtonVariant::Gray, None),
+                tr::common::reset_to_default(),
+                false,
+                cx,
+                |this, _window, cx| {
+                    this.export_folder_save_failed = !store::set_export_path(None);
+                    if !this.export_folder_save_failed {
+                        this.settings = GeneralSettings::load();
+                    }
+                    cx.notify();
+                },
+            ));
+        }
+        actions = actions.child(self.button(
+            "export-folder-pick",
+            (ui::ButtonVariant::Dark, None),
+            tr::settings::general::storage::choose_folder(),
+            false,
+            cx,
+            |_, window, cx| {
+                let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+                    files: false,
+                    directories: true,
+                    multiple: false,
+                    prompt: None,
+                });
+                cx.spawn_in(window, async move |this, cx| {
+                    let Ok(Ok(Some(paths))) = paths.await else {
+                        return;
+                    };
+                    let Some(path) = paths.into_iter().next() else {
+                        return;
+                    };
+                    this.update(cx, |this, cx| {
+                        let path = path.to_string_lossy().to_string();
+                        this.export_folder_save_failed = !store::set_export_path(Some(&path));
+                        if !this.export_folder_save_failed {
+                            this.settings = GeneralSettings::load();
+                        }
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .detach();
+            },
+        ));
+
+        self.section(
+            tr::settings::export_folder::title(),
+            Some(tr::settings::export_folder::description()),
+            None,
+            vec![
+                self.card(true)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(12.))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .px(px(12.))
+                                    .py(px(8.))
+                                    .min_w_0()
+                                    .rounded(px(8.))
+                                    .bg(theme.settings_fill())
+                                    .border_1()
+                                    .border_color(theme.settings_border())
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(px(12.))
+                                            .child(display),
+                                    ),
+                            )
+                            .child(actions)
+                            .when(self.export_folder_save_failed, |column| {
+                                column.child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .child(tr::settings::export_folder::save_failed()),
+                                )
+                            }),
                     )
                     .into_any_element(),
             ],
@@ -5257,7 +5384,7 @@ impl SettingsWindow {
     fn render_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let menu = self.menu.as_ref()?;
         let kind = menu.kind;
-        let items = self.menu_items(kind);
+        let items = self.menu_items(kind, cx);
 
         Some(
             ui::Menu::settings(&self.theme, "settings-menu", items, &menu.state)

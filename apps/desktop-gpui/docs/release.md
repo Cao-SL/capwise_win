@@ -107,11 +107,11 @@ DMG 用 `dmgbuild 1.6.5`，脚本第一次运行时会自动装到 `apps/desktop
 
 4. **检查 DMG**：打开 DMG 看窗口布局，把 App 拖到"应用程序"后启动一次；`spctl -a -vv /Applications/Capwise.app` 应显示 `Notarized Developer ID`。
 
-5. **提交版本号**并打 tag：
+5. **通过 PR 合并发布源码**：在 `codex/` 功能分支提交版本号、公钥、源码和说明，推送该分支后向 `joeseesun/capwise` 的 `main` 创建 PR。验证通过后合并，再在合并提交上创建版本 tag。不要直接推送 `main`。打包源码必须与合并后的源码一致。
 
    ```bash
-   git commit -am "chore: release 0.2.0"
-   git tag v0.2.0 && git push origin main v0.2.0
+   git push -u origin HEAD
+   gh pr create --repo joeseesun/capwise --base main --body-file /tmp/release-pr.md
    ```
 
 6. **发布 Release**（脚本最后会打印同样的命令）：
@@ -120,6 +120,7 @@ DMG 用 `dmgbuild 1.6.5`，脚本第一次运行时会自动装到 `apps/desktop
    gh release create v0.2.0 --repo joeseesun/capwise --title "灵录 Capwise 0.2.0" \
      --notes-file apps/desktop-gpui/release-notes/0.2.0.md \
      apps/desktop-gpui/dist/0.2.0/Capwise_0.2.0_aarch64.dmg \
+     apps/desktop-gpui/dist/0.2.0/Capwise.dmg \
      apps/desktop-gpui/dist/0.2.0/Capwise_0.2.0_aarch64.app.tar.gz \
      apps/desktop-gpui/dist/0.2.0/latest.json \
      apps/desktop-gpui/dist/0.2.0/SHA256SUMS.txt

@@ -1029,6 +1029,7 @@ pub struct GeneralSettings {
     pub recording_marker_sound: bool,
     pub max_fps: u32,
     pub recordings_path: Option<String>,
+    pub export_path: Option<String>,
     /// Custom folders the library has been pointed at before. Not rendered by
     /// any page -- the recordings scan reads it, because
     /// `known_recordings_dirs` keeps listing recordings that were left behind
@@ -1107,6 +1108,21 @@ impl PostInstantBehaviour {
 /// The section names, so the write calls read as the store keys they are.
 pub const GENERAL_SETTINGS: &str = "general_settings";
 pub const RECORDING_START_SAFETY: &str = "recording_start_safety";
+
+pub fn set_export_path(path: Option<&str>) -> bool {
+    set_store_setting(
+        GENERAL_SETTINGS,
+        "exportPath",
+        path.map_or(Value::Null, Value::from),
+    )
+}
+
+pub fn export_directory() -> Option<std::path::PathBuf> {
+    GeneralSettings::load()
+        .export_path
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_dir())
+}
 
 /// Changes the recordings folder and remembers the old one, like Tauri's
 /// `remember_previous_recordings_path`, so the library keeps listing projects
@@ -1474,6 +1490,7 @@ impl GeneralSettings {
             recording_marker_sound: bool_at(general, RECORDING_MARKER_SOUND_KEY, false),
             max_fps: u32_at(general, "maxFps", 60),
             recordings_path: opt_string_at(general, "recordingsPath"),
+            export_path: opt_string_at(general, "exportPath"),
             previous_recordings_paths: strings_at(general, "previousRecordingsPaths"),
             default_project_name_template: opt_string_at(general, "defaultProjectNameTemplate"),
             // Key absent -> the default exclusion list, matching the Rust
@@ -2605,6 +2622,30 @@ mod tests {
             false
         }));
         assert_eq!(store.read()["auth"]["user_id"], "a");
+    }
+
+    #[test]
+    fn export_folder_round_trips_without_changing_project_storage() {
+        let _store = TempStore::new(
+            "export-folder",
+            Some(r#"{"general_settings":{"recordingsPath":"projects"}}"#),
+        );
+        assert!(GeneralSettings::load().export_path.is_none());
+        assert!(set_export_path(Some("/missing-export-directory")));
+        assert_eq!(
+            GeneralSettings::load().export_path.as_deref(),
+            Some("/missing-export-directory")
+        );
+        assert!(export_directory().is_none());
+        assert_eq!(
+            GeneralSettings::load().recordings_path.as_deref(),
+            Some("projects")
+        );
+        let directory = std::env::temp_dir();
+        assert!(set_export_path(Some(&directory.to_string_lossy())));
+        assert_eq!(export_directory(), Some(directory));
+        assert!(set_export_path(None));
+        assert!(GeneralSettings::load().export_path.is_none());
     }
 
     #[test]

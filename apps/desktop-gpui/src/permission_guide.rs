@@ -337,7 +337,18 @@ impl Render for PermissionGuide {
             .locale_font()
             .child(
                 div()
+                    .id("permission-guide-drag-row")
                     .size_full()
+                    .cursor_grab()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            cx.stop_propagation();
+                            if !platform::begin_file_drag(window, &this.app) {
+                                tracing::warn!("permission guide: drag did not start");
+                            }
+                        }),
+                    )
                     .flex()
                     .flex_row()
                     .items_center()
@@ -354,15 +365,6 @@ impl Render for PermissionGuide {
                             .relative()
                             .flex_none()
                             .size(px(80.))
-                            .cursor_grab()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, window, _| {
-                                    if !platform::begin_file_drag(window, &this.app) {
-                                        tracing::warn!("permission guide: drag did not start");
-                                    }
-                                }),
-                            )
                             .child(div().absolute().inset_0().child(doodle::doodle(
                                 &art::DRAG_FRAME,
                                 palette,

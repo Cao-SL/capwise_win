@@ -128,7 +128,15 @@ impl Drop for ModelDiscovery {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AiTab {
+    Recognition,
+    Content,
+    Cover,
+}
+
 pub(crate) struct AiState {
+    pub(crate) tab: AiTab,
     key: Entity<ui::TextInputState>,
     address: Entity<ui::TextInputState>,
     model: Entity<ui::TextInputState>,
@@ -172,6 +180,7 @@ impl AiState {
             }
         }));
         Self {
+            tab: AiTab::Recognition,
             key,
             address,
             model,
@@ -1304,20 +1313,6 @@ impl SettingsWindow {
                     MenuKind::AiModel,
                     cx,
                 ))
-            })
-            .when(target.kind == ModelKind::Llm, |row| {
-                row.child(self.button(
-                    "ai-discover-models",
-                    (ui::ButtonVariant::Gray, None),
-                    if state.discovery.loading {
-                        tr::common::cancel()
-                    } else {
-                        tr::ai::discovery_fetch()
-                    },
-                    busy,
-                    cx,
-                    |this, window, cx| this.ai_discover_models(window, cx),
-                ))
             });
 
         let discovery_note = if state.discovery.loading {
@@ -1367,19 +1362,6 @@ impl SettingsWindow {
                         .child(tr::settings::ai::signing_in()),
                 )
             })
-            .child(self.ai_field(
-                tr::settings::ai::field_model(),
-                model_input.into_any_element(),
-            ))
-            .when_some(discovery_note, |editor, note| {
-                editor.child(
-                    div()
-                        .text_size(px(12.))
-                        .line_height(px(18.))
-                        .text_color(theme.settings_muted())
-                        .child(note),
-                )
-            })
             .when(show_address, |editor| {
                 editor.child(
                     self.ai_field(
@@ -1393,6 +1375,37 @@ impl SettingsWindow {
                 can_fold && (!show_address || state.advanced_open),
                 |editor| editor.child(self.ai_disclosure(state.advanced_open, cx)),
             )
+            .when(target.kind == ModelKind::Llm, |editor| {
+                editor.child(self.button(
+                    "ai-discover-models",
+                    (ui::ButtonVariant::Gray, None),
+                    if state.discovery.loading {
+                        tr::common::cancel()
+                    } else {
+                        tr::ai::discovery_fetch()
+                    },
+                    busy || (!state.discovery.loading
+                        && needs_key
+                        && state.key.read(cx).text().trim().is_empty()
+                        && !saved
+                        && signed_in.is_none()),
+                    cx,
+                    |this, window, cx| this.ai_discover_models(window, cx),
+                ))
+            })
+            .child(self.ai_field(
+                tr::settings::ai::field_model(),
+                model_input.into_any_element(),
+            ))
+            .when_some(discovery_note, |editor, note| {
+                editor.child(
+                    div()
+                        .text_size(px(12.))
+                        .line_height(px(18.))
+                        .text_color(theme.settings_muted())
+                        .child(note),
+                )
+            })
             .when_some(feedback, |editor, (ok, text)| {
                 editor.child(self.ai_feedback(ok, text.into()))
             })
@@ -1949,17 +1962,61 @@ impl SettingsWindow {
         .into_any_element()
     }
 
-    pub(crate) fn render_ai_models(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
-        let mut sections = vec![
-            self.ai_recognizer_section(cx),
-            self.ai_local_section(cx),
-            self.ai_cloud_section(cx),
-            self.ai_llm_section(cx),
-            self.render_cover_settings(cx),
-            self.ai_review_section(cx),
+    pub(crate) fn render_ai_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let tabs = [
+            (
+                AiTab::Recognition,
+                tr::settings::ai_tabs::recognition(),
+                "icons/captions.svg",
+            ),
+            (
+                AiTab::Content,
+                tr::settings::ai_tabs::content(),
+                "icons/sparkles.svg",
+            ),
+            (
+                AiTab::Cover,
+                tr::settings::ai_tabs::cover(),
+                "icons/image.svg",
+            ),
         ];
-        sections.extend(self.render_transcription(cx));
-        sections
+        let options = tabs
+            .iter()
+            .map(|(tab, label, icon)| ui::SegmentOption {
+                label: Some((*label).into()),
+                icon: Some((*icon).into()),
+                selected: self.pages.ai.tab == *tab,
+                disabled: false,
+            })
+            .collect();
+        ui::SegmentedControl::settings(&self.theme, "ai-settings-tabs", options)
+            .stretch()
+            .on_select(cx.listener(move |this, index: &usize, window, cx| {
+                if let Some((tab, _, _)) = tabs.get(*index) {
+                    this.pages.ai.tab = *tab;
+                    this.reset_ai_tab(window, cx);
+                }
+            }))
+    }
+
+    pub(crate) fn render_ai_models(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        match self.pages.ai.tab {
+            AiTab::Recognition => {
+                let mut sections = vec![
+                    self.ai_recognizer_section(cx),
+                    self.ai_local_section(cx),
+                    self.ai_cloud_section(cx),
+                ];
+                sections.extend(self.render_transcription(cx));
+                sections
+            }
+            AiTab::Content => vec![
+                self.ai_llm_section(cx),
+                self.render_agent_settings(cx),
+                self.ai_review_section(cx),
+            ],
+            AiTab::Cover => vec![self.render_cover_settings(cx)],
+        }
     }
 
     fn ai_review_section(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -1975,6 +2032,7 @@ impl SettingsWindow {
                     .flex()
                     .items_center()
                     .justify_between()
+                    .text_size(px(13.))
                     .child(tr::settings::review::enabled())
                     .child(self.toggle(
                         "ai-review-enabled",

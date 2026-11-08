@@ -220,16 +220,10 @@ pub const KEYBOARD_POSITIONS: [(&str, Label); 6] = [
     ("bottom-right", tr::editor::tabs::position::bottom_right),
 ];
 
-/// `CAPTION_POSITION_OPTIONS` (`text-style.tsx:18-26`) -- the keyboard's six
-/// with `manual` in front.
-pub const CAPTION_POSITIONS: [(&str, Label); 7] = [
+pub const CAPTION_POSITIONS: [(&str, Label); 3] = [
     ("manual", tr::editor::tabs::position::manual),
-    ("top-left", tr::editor::tabs::position::top_left),
     ("top-center", tr::editor::tabs::position::top_center),
-    ("top-right", tr::editor::tabs::position::top_right),
-    ("bottom-left", tr::editor::tabs::position::bottom_left),
     ("bottom-center", tr::editor::tabs::position::bottom_center),
-    ("bottom-right", tr::editor::tabs::position::bottom_right),
 ];
 
 /// `CAPTION_ANIMATION_OPTIONS` (`text-style.tsx:64-68`).
@@ -660,6 +654,7 @@ impl QuickCaptionPreset {
 struct CaptionPreviewLine {
     translation: bool,
     style: CaptionTextStyle,
+    appearance: cap_project::CaptionAppearance,
     size: f32,
 }
 
@@ -684,11 +679,62 @@ fn caption_preview_lines(settings: &CaptionSettings) -> Vec<CaptionPreviewLine> 
     styles
         .into_iter()
         .map(|(translation, style)| CaptionPreviewLine {
+            appearance: if translation {
+                settings.resolved_translation_appearance()
+            } else {
+                settings.source_appearance()
+            },
             translation,
             size: 18. * style.size as f32 / largest,
             style,
         })
         .collect()
+}
+
+struct CaptionPreviewLayout {
+    scale: f32,
+    width: f32,
+    height: f32,
+    padding: f32,
+    radius: f32,
+    gap: f32,
+}
+
+fn caption_preview_layout(
+    settings: &CaptionSettings,
+    lines: &[CaptionPreviewLine],
+    widths: &[f32],
+    width: f32,
+    height: f32,
+) -> CaptionPreviewLayout {
+    let largest = lines
+        .iter()
+        .map(|line| line.style.size)
+        .max()
+        .unwrap_or(1)
+        .max(1) as f32;
+    let preview_size = lines.iter().map(|line| line.size).fold(0., f32::max);
+    let padding = preview_size * 0.5;
+    let gap = if lines.len() > 1 {
+        settings.translation_gap.unwrap_or(0).min(200) as f32 * preview_size / largest
+    } else {
+        0.
+    };
+    let natural_width = widths.iter().copied().fold(0., f32::max) + padding * 2.;
+    let natural_height = lines.iter().map(|line| line.size * 1.2).sum::<f32>()
+        + gap * lines.len().saturating_sub(1) as f32
+        + padding * 2.;
+    let scale = ((width - 16.).max(1.) / natural_width.max(1.))
+        .min((height - 12.).max(1.) / natural_height.max(1.))
+        .min(1.);
+    CaptionPreviewLayout {
+        scale,
+        width: natural_width * scale,
+        height: natural_height * scale,
+        padding: padding * scale,
+        radius: preview_size * 0.55 * scale,
+        gap: gap * scale,
+    }
 }
 
 /// `DEFAULT_CAMERA_SCALE_DURING_ZOOM` (`projectConfig.ts:27`).
@@ -863,6 +909,9 @@ impl CursorSlider {
 pub enum CaptionSlider {
     Size,
     TranslationSize,
+    TranslationOutlineWidth,
+    TranslationShadowOpacity,
+    TranslationShadowSize,
     TranslationGap,
     BottomMargin,
     BackgroundOpacity,
@@ -988,6 +1037,9 @@ impl CaptionSlider {
         match self {
             Self::Size
             | Self::TranslationSize
+            | Self::TranslationOutlineWidth
+            | Self::TranslationShadowOpacity
+            | Self::TranslationShadowSize
             | Self::TranslationGap
             | Self::BottomMargin
             | Self::BackgroundOpacity
@@ -1005,9 +1057,9 @@ impl CaptionSlider {
             Self::TranslationGap => (0., 200., 1.),
             Self::BottomMargin => (0., 400., 1.),
             Self::BackgroundOpacity => (0., 100., 1.),
-            Self::OutlineWidth => (0., 20., 0.5),
-            Self::ShadowOpacity => (0., 100., 1.),
-            Self::ShadowSize => (0., 30., 0.5),
+            Self::OutlineWidth | Self::TranslationOutlineWidth => (0., 20., 0.5),
+            Self::ShadowOpacity | Self::TranslationShadowOpacity => (0., 100., 1.),
+            Self::ShadowSize | Self::TranslationShadowSize => (0., 30., 0.5),
             // `value={[getSetting("fadeDuration") * 100]}` over 0..50.
             Self::FadeDuration => (0., 50., 1.),
             Self::ManualX | Self::ManualY => (0., 100., 1.),
@@ -1019,6 +1071,16 @@ impl CaptionSlider {
         match self {
             Self::Size => settings.size as f32,
             Self::TranslationSize => settings.resolved_translation_style().size as f32,
+            Self::TranslationOutlineWidth => settings
+                .resolved_translation_appearance()
+                .normalized_outline_width(),
+            Self::TranslationShadowOpacity => settings
+                .resolved_translation_appearance()
+                .shadow_opacity
+                .min(100) as f32,
+            Self::TranslationShadowSize => settings
+                .resolved_translation_appearance()
+                .normalized_shadow_size(),
             Self::TranslationGap => settings.translation_gap.unwrap_or(0).min(200) as f32,
             Self::BottomMargin => settings.bottom_margin.unwrap_or(60).min(400) as f32,
             Self::BackgroundOpacity => settings.background_opacity as f32,
@@ -1042,9 +1104,24 @@ impl CaptionSlider {
                 settings.bottom_margin = Some(value.clamp(0., 400.).round() as u32)
             }
             Self::BackgroundOpacity => settings.background_opacity = value.round() as u32,
-            Self::OutlineWidth => settings.outline_width = value.clamp(0., 20.),
-            Self::ShadowOpacity => settings.shadow_opacity = value.clamp(0., 100.).round() as u32,
-            Self::ShadowSize => settings.shadow_size = value.clamp(0., 30.),
+            Self::OutlineWidth => {
+                settings.edit_source_appearance(|a| a.outline_width = value.clamp(0., 20.))
+            }
+            Self::TranslationOutlineWidth => {
+                settings.edit_translation_appearance(|a| a.outline_width = value.clamp(0., 20.))
+            }
+            Self::ShadowOpacity => settings.edit_source_appearance(|a| {
+                a.shadow_opacity = value.clamp(0., 100.).round() as u32
+            }),
+            Self::TranslationShadowOpacity => settings.edit_translation_appearance(|a| {
+                a.shadow_opacity = value.clamp(0., 100.).round() as u32
+            }),
+            Self::ShadowSize => {
+                settings.edit_source_appearance(|a| a.shadow_size = value.clamp(0., 30.))
+            }
+            Self::TranslationShadowSize => {
+                settings.edit_translation_appearance(|a| a.shadow_size = value.clamp(0., 30.))
+            }
             Self::FadeDuration => settings.fade_duration = value / 100.,
             Self::ManualX => set_caption_manual_center(settings, Some(value), None),
             Self::ManualY => set_caption_manual_center(settings, None, Some(value)),
@@ -1107,7 +1184,7 @@ pub fn caption_settings(project: &ProjectConfiguration) -> CaptionSettings {
         .captions
         .as_ref()
         .map(|captions| captions.settings.clone())
-        .unwrap_or_default()
+        .unwrap_or_else(crate::style_presets::new_caption_settings)
 }
 
 /// `project?.keyboard?.settings ?? defaultKeyboardSettings`
@@ -1167,12 +1244,14 @@ pub enum SidebarMenu {
     AudioStereo,
     CaptionModel,
     CaptionLanguage,
+    TranslationLanguage,
     CaptionFont,
     CaptionTranslationFont,
     CaptionHighlightStyle,
     CaptionPosition,
     CaptionAnimation,
     CaptionWeight,
+    CaptionTranslationWeight,
     KeyboardFont,
     KeyboardPosition,
     KeyboardWeight,
@@ -1200,6 +1279,7 @@ impl EditorWindow {
         let captions = caption_settings(project);
         let keyboard = keyboard_settings(project);
         match kind {
+            SidebarMenu::TranslationLanguage => self.translation_language_items(),
             SidebarMenu::BackgroundCornerStyle => CORNER_STYLES
                 .iter()
                 .map(|(style, label)| {
@@ -1281,9 +1361,19 @@ impl EditorWindow {
                 .iter()
                 .map(|(value, label)| ui::MenuItem::new(label(), *value == captions.animation))
                 .collect(),
-            SidebarMenu::CaptionWeight => TEXT_WEIGHTS
+            SidebarMenu::CaptionWeight | SidebarMenu::CaptionTranslationWeight => TEXT_WEIGHTS
                 .iter()
-                .map(|(weight, label)| ui::MenuItem::new(label(), *weight == captions.font_weight))
+                .map(|(weight, label)| {
+                    ui::MenuItem::new(
+                        label(),
+                        *weight
+                            == if kind == SidebarMenu::CaptionTranslationWeight {
+                                captions.resolved_translation_appearance().font_weight
+                            } else {
+                                captions.font_weight
+                            },
+                    )
+                })
                 .collect(),
             SidebarMenu::KeyboardFont => FONT_OPTIONS
                 .iter()
@@ -1381,6 +1471,7 @@ impl EditorWindow {
     ) {
         self.sidebar.menu = None;
         match kind {
+            SidebarMenu::TranslationLanguage => self.choose_translation_language(index, window, cx),
             SidebarMenu::BackgroundCornerStyle => {
                 let Some((style, _)) = CORNER_STYLES.get(index) else {
                     return;
@@ -1451,8 +1542,8 @@ impl EditorWindow {
                 let models = available_caption_models();
                 if index == models.len() {
                     cx.defer(|cx| {
-                        crate::app_windows::open_settings(
-                            crate::settings_window::Page::Transcription,
+                        crate::app_windows::open_ai_settings(
+                            crate::settings_ai::AiTab::Recognition,
                             cx,
                         )
                     });
@@ -1528,13 +1619,17 @@ impl EditorWindow {
                     settings.animation = value
                 });
             }
-            SidebarMenu::CaptionWeight => {
+            SidebarMenu::CaptionWeight | SidebarMenu::CaptionTranslationWeight => {
                 let Some((weight, _)) = TEXT_WEIGHTS.get(index) else {
                     return;
                 };
                 let weight = *weight;
                 self.set_caption_setting("caption-weight", window, cx, move |settings| {
-                    settings.font_weight = weight
+                    if kind == SidebarMenu::CaptionTranslationWeight {
+                        settings.edit_translation_appearance(|a| a.font_weight = weight);
+                    } else {
+                        settings.edit_source_appearance(|a| a.font_weight = weight);
+                    }
                 });
             }
             SidebarMenu::KeyboardFont => {
@@ -1762,6 +1857,9 @@ impl EditorWindow {
             CaptionSlider::ManualX | CaptionSlider::ManualY => "caption-placement",
             CaptionSlider::Size
             | CaptionSlider::TranslationSize
+            | CaptionSlider::TranslationOutlineWidth
+            | CaptionSlider::TranslationShadowOpacity
+            | CaptionSlider::TranslationShadowSize
             | CaptionSlider::TranslationGap
             | CaptionSlider::BottomMargin
             | CaptionSlider::BackgroundOpacity
@@ -2006,6 +2104,12 @@ impl EditorWindow {
                     )
                     .into_any_element()
             }))
+            .children(
+                self.sidebar
+                    .style_target
+                    .is_none()
+                    .then(|| self.render_color_correction(GradeTarget::Camera, cx)),
+            )
             .child(self.more_settings("camera", cx, move |this, cx| {
                 div()
                     .flex()
@@ -2104,12 +2208,6 @@ impl EditorWindow {
                             cx,
                         ))
                     })
-                    .children(
-                        this.sidebar
-                            .style_target
-                            .is_none()
-                            .then(|| this.render_color_correction(GradeTarget::Camera, cx)),
-                    )
                     .into_any_element()
             }))
             .into_any_element()
@@ -2301,7 +2399,7 @@ impl EditorWindow {
             .gap(px(16.))
             .child(crate::editor_sidebar::tab_header(
                 &theme,
-                crate::editor_sidebar::SidebarTab::Audio.title(),
+                tr::editor::workbench::original_audio(),
                 Some(
                     div()
                         .id("audio-mute-row")
@@ -2323,10 +2421,23 @@ impl EditorWindow {
             ))
             .children(has_microphone.then(|| self.render_studio_sound_row(cx)))
             .children(has_microphone.then(|| {
+                div()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(tr::editor::tabs::audio::studio_sound_description())
+            }))
+            .children(has_microphone.then(|| self.render_studio_sound_options(cx)))
+            .children((!has_microphone).then(|| {
+                div()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(tr::editor::workbench::no_microphone())
+            }))
+            .children(has_microphone.then(|| {
                 self.slider_field_disabled(
                     tr::editor::tabs::audio::mic_volume(),
                     SliderKey::Audio(AudioSlider::MicVolume),
-                    "db",
+                    "volume",
                     muted,
                     cx,
                 )
@@ -2336,7 +2447,7 @@ impl EditorWindow {
                 self.slider_field_disabled(
                     tr::editor::tabs::audio::system_volume(),
                     SliderKey::Audio(AudioSlider::SystemVolume),
-                    "db",
+                    "volume",
                     muted,
                     cx,
                 )
@@ -2349,12 +2460,12 @@ impl EditorWindow {
                     .child(error.clone())
                     .into_any_element()
             }))
+            .child(self.render_added_audio(cx))
             .child(self.more_settings("audio", cx, move |this, cx| {
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(16.))
-                    .children(has_microphone.then(|| this.render_studio_sound_options(cx)))
                     .children(stereo_mic.then(|| {
                         ui::Field::inline(&theme, tr::editor::tabs::audio::stereo_mode())
                             .child(div().w(px(150.)).child(this.menu_select(
@@ -2415,7 +2526,7 @@ impl EditorWindow {
                     .text_size(px(13.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(Hsla::from(theme.editor.text_1))
-                    .child("Studio Sound"),
+                    .child(tr::editor::workbench::voice_enhance()),
             )
             .child(
                 ui::Toggle::plain(&theme, "audio-improve", enabled).on_click(cx.listener(
@@ -2902,9 +3013,17 @@ impl EditorWindow {
         let position_label = KEYBOARD_POSITIONS
             .iter()
             .find(|(value, _)| *value == settings.position)
-            .map_or(tr::editor::tabs::position::bottom_center(), |(_, label)| {
-                label()
-            });
+            .map_or_else(
+                || match settings.position.as_str() {
+                    "top-left" => tr::editor::tabs::position::top_left(),
+                    "top-right" => tr::editor::tabs::position::top_right(),
+                    "bottom-left" => tr::editor::tabs::position::bottom_left(),
+                    "bottom-right" => tr::editor::tabs::position::bottom_right(),
+                    "top" => tr::editor::tabs::position::top_center(),
+                    _ => tr::editor::tabs::position::bottom_center(),
+                },
+                |(_, label)| label(),
+            );
         let weight_label = TEXT_WEIGHTS
             .iter()
             .find(|(weight, _)| *weight == settings.font_weight)
@@ -3208,31 +3327,20 @@ impl EditorWindow {
                 tr::editor::tabs::captions::language::auto(),
                 |(_, label)| label(),
             );
-        let font_label = font_option_label(&settings.font);
         let position_label = CAPTION_POSITIONS
             .iter()
             .find(|(value, _)| *value == settings.position)
-            .map_or(tr::editor::tabs::position::bottom_center(), |(_, label)| {
-                label()
-            });
-        let animation_label = CAPTION_ANIMATIONS
-            .iter()
-            .find(|(value, _)| *value == settings.animation)
-            .map_or(
-                tr::editor::tabs::captions::animation::bounce(),
+            .map_or_else(
+                || match settings.position.as_str() {
+                    "top-left" => tr::editor::tabs::position::top_left(),
+                    "top-right" => tr::editor::tabs::position::top_right(),
+                    "bottom-left" => tr::editor::tabs::position::bottom_left(),
+                    "bottom-right" => tr::editor::tabs::position::bottom_right(),
+                    "top" => tr::editor::tabs::position::top_center(),
+                    _ => tr::editor::tabs::position::bottom_center(),
+                },
                 |(_, label)| label(),
             );
-        let highlight_label = CAPTION_HIGHLIGHT_STYLES
-            .iter()
-            .find(|(value, _)| *value == settings.highlight_style)
-            .map_or(
-                tr::editor::tabs::captions::highlight::color(),
-                |(_, label)| label(),
-            );
-        let weight_label = TEXT_WEIGHTS
-            .iter()
-            .find(|(weight, _)| *weight == settings.font_weight)
-            .map_or(tr::editor::tabs::weight::bold(), |(_, label)| label());
 
         let model_downloaded = snapshot.downloaded.contains(model.name);
         let cloud = crate::asr_cloud::is_cloud_model(model.name);
@@ -3391,8 +3499,8 @@ impl EditorWindow {
                     .label(tr::editor::tabs::captions::cloud_setup())
                     .on_click(|_, _, cx| {
                         cx.defer(|cx| {
-                            crate::app_windows::open_settings(
-                                crate::settings_window::Page::Transcription,
+                            crate::app_windows::open_ai_settings(
+                                crate::settings_ai::AiTab::Recognition,
                                 cx,
                             )
                         });
@@ -3465,68 +3573,80 @@ impl EditorWindow {
         let quick_actions = has_captions.then(|| {
             div()
                 .flex()
-                .flex_col()
                 .gap(px(8.))
                 .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .gap(px(8.))
-                        .child(
-                            ui::EditorButton::plain(&theme, "caption-find-replace")
-                                .tinted(&theme)
-                                .grow()
-                                .height(px(32.))
-                                .left_icon("icons/search.svg")
-                                .icon_size(px(14.))
-                                .text_size(px(12.))
-                                .label(tr::editor::tabs::captions::find_replace())
-                                .disabled(generating)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.open_transcript_search(window, cx);
-                                })),
-                        )
-                        .when(model_downloaded && has_audio, |row| {
-                            row.child(
-                                ui::EditorButton::plain(&theme, "caption-generate")
-                                    .tinted(&theme)
-                                    .grow()
-                                    .height(px(32.))
-                                    .left_icon("icons/refresh-cw.svg")
-                                    .icon_size(px(14.))
-                                    .text_size(px(12.))
-                                    .label(if generating {
-                                        tr::editor::tabs::captions::generating()
-                                    } else {
-                                        tr::editor::tabs::captions::regenerate()
-                                    })
-                                    .disabled(generating || any_deleting)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.generate_transcript(true, window, cx);
-                                    })),
-                            )
-                        }),
+                    ui::EditorButton::plain(&theme, "caption-edit-content")
+                        .filled(&theme)
+                        .grow()
+                        .height(px(32.))
+                        .left_icon("icons/pencil.svg")
+                        .label(tr::editor::workbench::edit_captions())
+                        .disabled(generating)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            if let Some(first) = this
+                                .project
+                                .timeline
+                                .as_ref()
+                                .and_then(|t| t.caption_segments.first())
+                            {
+                                let time = first.start;
+                                this.set_selection(
+                                    Some(crate::editor_edits::Selection::single(
+                                        crate::editor_timeline::TrackKind::Caption,
+                                        0,
+                                    )),
+                                    cx,
+                                );
+                                this.seek_to_time(time, cx);
+                                this.focus_root(window, cx);
+                            }
+                        })),
                 )
-                .when(wants_resplit, |column| {
-                    column.child(
-                        ui::EditorButton::plain(&theme, "caption-resplit")
-                            .tinted(&theme)
-                            .height(px(32.))
-                            .text_size(px(12.))
-                            .label(if resplitting {
-                                tr::editor::tabs::captions::resplitting()
-                            } else {
-                                tr::editor::tabs::captions::resplit()
-                            })
-                            .disabled(generating || resplitting)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.resplit_captions(false, window, cx);
-                            })),
-                    )
-                })
+                .child(
+                    ui::EditorButton::plain(&theme, "caption-find-replace")
+                        .tinted(&theme)
+                        .grow()
+                        .height(px(32.))
+                        .left_icon("icons/search.svg")
+                        .label(tr::editor::tabs::captions::find_replace())
+                        .disabled(generating)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.open_transcript_search(window, cx)
+                        })),
+                )
                 .into_any_element()
         });
-
+        let regenerate = (has_captions && model_downloaded && has_audio).then(|| {
+            ui::EditorButton::plain(&theme, "caption-generate")
+                .tinted(&theme)
+                .height(px(32.))
+                .left_icon("icons/refresh-cw.svg")
+                .label(if generating {
+                    tr::editor::tabs::captions::generating()
+                } else {
+                    tr::editor::workbench::recognize_again()
+                })
+                .disabled(generating || any_deleting)
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.generate_transcript(true, window, cx)),
+                )
+                .into_any_element()
+        });
+        let resplit = wants_resplit.then(|| {
+            ui::EditorButton::plain(&theme, "caption-resplit")
+                .tinted(&theme)
+                .height(px(32.))
+                .label(if resplitting {
+                    tr::editor::tabs::captions::resplitting()
+                } else {
+                    tr::editor::tabs::captions::resplit()
+                })
+                .disabled(generating || resplitting)
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.resplit_captions(false, window, cx)),
+                )
+                .into_any_element()
+        });
         let model_status = model_downloaded.then(|| {
             div()
                 .flex()
@@ -3570,8 +3690,8 @@ impl EditorWindow {
                         .label(tr::editor::tabs::captions::cloud_settings())
                         .on_click(|_, _, cx| {
                             cx.defer(|cx| {
-                                crate::app_windows::open_settings(
-                                    crate::settings_window::Page::Transcription,
+                                crate::app_windows::open_ai_settings(
+                                    crate::settings_ai::AiTab::Recognition,
                                     cx,
                                 )
                             });
@@ -3631,7 +3751,110 @@ impl EditorWindow {
             .children(model_status)
             .children(setup_more);
 
-        let style = div()
+        let position = has_captions.then(|| {
+            ui::Field::inline(&theme, tr::editor::tabs::captions::position())
+                .child(div().w(px(150.)).child(self.menu_select(
+                    SidebarMenu::CaptionPosition,
+                    "caption-position",
+                    position_label,
+                    cx,
+                )))
+                .into_any_element()
+        });
+        if has_captions && self.sidebar.caption_tab == crate::editor_workbench::CaptionTab::Style {
+            return div()
+                .flex()
+                .flex_col()
+                .gap(px(16.))
+                .child(self.render_caption_style_choices(&settings, cx))
+                .children(position)
+                .into_any_element();
+        }
+        if has_captions
+            && self.sidebar.caption_tab == crate::editor_workbench::CaptionTab::Translation
+        {
+            return self.render_caption_translation(cx).into_any_element();
+        }
+        let body = if has_captions {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(14.))
+                .children(quick_actions)
+                .child(self.render_caption_review(cx))
+                .child(self.more_settings("captions", cx, move |_, cx| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(12.))
+                        .children(regenerate)
+                        .children(resplit)
+                        .child(
+                            ui::EditorButton::plain(&theme, "caption-text-video-editor")
+                                .tinted(&theme)
+                                .left_icon("icons/scissors.svg")
+                                .label(tr::editor::workbench::text_video_edit())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.open_text_video_editor(window, cx)
+                                })),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(Hsla::from(theme.editor.text_2))
+                                .child(tr::editor::workbench::video_edit_hint()),
+                        )
+                        .child(transcription)
+                        .into_any_element()
+                }))
+                .child(self.render_caption_content_list(cx))
+                .into_any_element()
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(Hsla::from(theme.editor.text_2))
+                        .child(tr::editor::workbench::caption_empty()),
+                )
+                .child(transcription)
+                .into_any_element()
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .children(self.render_recording_setup(cx))
+            .children(self.render_recording_captions(cx))
+            .children(setup_core)
+            .children(status_line)
+            .child(body)
+            .into_any_element()
+    }
+
+    pub(crate) fn render_caption_style_controls(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme;
+        let settings = caption_settings(&self.project);
+        let font_label = font_option_label(&settings.font);
+        let animation_label = CAPTION_ANIMATIONS
+            .iter()
+            .find(|(value, _)| *value == settings.animation)
+            .map_or(
+                tr::editor::tabs::captions::animation::bounce(),
+                |(_, label)| label(),
+            );
+        let highlight_label = CAPTION_HIGHLIGHT_STYLES
+            .iter()
+            .find(|(value, _)| *value == settings.highlight_style)
+            .map_or(
+                tr::editor::tabs::captions::highlight::color(),
+                |(_, label)| label(),
+            );
+
+        div()
             .flex()
             .flex_col()
             .gap(px(16.))
@@ -3666,27 +3889,6 @@ impl EditorWindow {
                                     cx,
                                 )
                             }),
-                        )
-                        .child(
-                            ui::Subfield::plain(&theme, tr::editor::tabs::captions::uppercase())
-                                .child(
-                                    ui::Toggle::plain(
-                                        &theme,
-                                        "caption-uppercase",
-                                        settings.uppercase,
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _, window, cx| {
-                                            let next = !caption_settings(&this.project).uppercase;
-                                            this.set_caption_setting(
-                                                "caption-uppercase",
-                                                window,
-                                                cx,
-                                                move |settings| settings.uppercase = next,
-                                            );
-                                        },
-                                    )),
-                                ),
                         )
                         .child(
                             div()
@@ -3737,15 +3939,7 @@ impl EditorWindow {
                                     cx,
                                 ),
                             )
-                        }))
-                        .child(self.labelled(
-                            tr::editor::tabs::captions::text_color(),
-                            self.render_hex_field(
-                                crate::editor_panels::FieldKey::CaptionColor,
-                                &settings.color,
-                                cx,
-                            ),
-                        )),
+                        })),
                 ),
             )
             .child(
@@ -3788,49 +3982,7 @@ impl EditorWindow {
                                     )
                                     .into_any_element(),
                                 )
-                            })
-                            .child(caption_toggle(
-                                &theme,
-                                tr::editor::tabs::captions::outline(),
-                                "caption-outline",
-                                settings.outline,
-                                cx,
-                                |settings| settings.outline = !settings.outline,
-                            ))
-                            .children(settings.outline.then(|| {
-                                self.slider_field(
-                                    tr::editor::tabs::captions::outline_width(),
-                                    SliderKey::Caption(CaptionSlider::OutlineWidth),
-                                    "%",
-                                    cx,
-                                )
-                            }))
-                            .child(caption_toggle(
-                                &theme,
-                                tr::editor::tabs::captions::shadow(),
-                                "caption-shadow",
-                                settings.shadow,
-                                cx,
-                                |settings| settings.shadow = !settings.shadow,
-                            ))
-                            .children(settings.shadow.then(|| {
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(12.))
-                                    .child(self.slider_field(
-                                        tr::editor::tabs::captions::shadow_opacity(),
-                                        SliderKey::Caption(CaptionSlider::ShadowOpacity),
-                                        "%",
-                                        cx,
-                                    ))
-                                    .child(self.slider_field(
-                                        tr::editor::tabs::captions::shadow_size(),
-                                        SliderKey::Caption(CaptionSlider::ShadowSize),
-                                        "%",
-                                        cx,
-                                    ))
-                            })),
+                            }),
                     ),
             )
             .children(
@@ -3946,69 +4098,6 @@ impl EditorWindow {
                         )),
                 ),
             )
-            .child(
-                ui::Field::inline(&theme, tr::editor::tabs::captions::font_weight()).child(
-                    self.menu_select(
-                        SidebarMenu::CaptionWeight,
-                        "caption-weight",
-                        weight_label,
-                        cx,
-                    ),
-                ),
-            );
-
-        let position = has_captions.then(|| {
-            ui::Field::inline(&theme, tr::editor::tabs::captions::position())
-                .child(div().w(px(150.)).child(self.menu_select(
-                    SidebarMenu::CaptionPosition,
-                    "caption-position",
-                    position_label,
-                    cx,
-                )))
-                .into_any_element()
-        });
-        let style_choices = has_captions.then(|| self.render_caption_style_choices(&settings, cx));
-        let translation =
-            has_captions.then(|| self.render_caption_translation(cx).into_any_element());
-        let style = has_captions.then(|| style.into_any_element());
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(16.))
-            .child(crate::editor_sidebar::tab_header(
-                &theme,
-                crate::editor_sidebar::SidebarTab::Captions.title(),
-                None,
-            ))
-            .children(self.render_recording_setup(cx))
-            .children(self.render_recording_captions(cx))
-            .children(setup_core)
-            .children(style_choices)
-            .children(position)
-            .children(quick_actions)
-            .children(status_line)
-            .child(self.render_caption_review(cx))
-            .child(self.more_settings("captions", cx, move |_, _| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(20.))
-                    .children(style)
-                    .children(translation)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(12.))
-                            .child(crate::editor_sidebar::section_title(
-                                &theme,
-                                tr::editor::tabs::captions::model_label(),
-                            ))
-                            .child(transcription),
-                    )
-                    .into_any_element()
-            }))
             .into_any_element()
     }
 
@@ -4036,8 +4125,163 @@ impl EditorWindow {
                         SliderKey::Caption(size),
                         "",
                         cx,
+                    ))
+                    .child(self.caption_appearance_controls(
+                        menu == SidebarMenu::CaptionTranslationFont,
+                        cx,
                     )),
             )
+            .into_any_element()
+    }
+
+    fn caption_appearance_controls(&self, translation: bool, cx: &mut Context<Self>) -> AnyElement {
+        use crate::editor_panels::FieldKey;
+        let settings = caption_settings(&self.project);
+        let appearance = if translation {
+            settings.resolved_translation_appearance()
+        } else {
+            settings.source_appearance()
+        };
+        let (color, outline, shadow) = if translation {
+            (
+                FieldKey::CaptionTranslationColor,
+                FieldKey::CaptionTranslationOutline,
+                FieldKey::CaptionTranslationShadow,
+            )
+        } else {
+            (
+                FieldKey::CaptionColor,
+                FieldKey::CaptionOutline,
+                FieldKey::CaptionShadow,
+            )
+        };
+        let weight = TEXT_WEIGHTS
+            .iter()
+            .find(|(value, _)| *value == appearance.font_weight)
+            .map_or(tr::editor::tabs::weight::bold(), |(_, label)| label());
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(self.labelled_inline(
+                tr::editor::tabs::captions::font_weight(),
+                self.menu_select(
+                    if translation {
+                        SidebarMenu::CaptionTranslationWeight
+                    } else {
+                        SidebarMenu::CaptionWeight
+                    },
+                    if translation {
+                        "caption-translation-weight"
+                    } else {
+                        "caption-weight"
+                    },
+                    weight,
+                    cx,
+                ),
+            ))
+            .child(self.labelled(
+                tr::editor::tabs::captions::text_color(),
+                self.render_hex_field(color, &appearance.color, cx),
+            ))
+            .child(caption_toggle(
+                &self.theme,
+                tr::editor::tabs::captions::uppercase(),
+                if translation {
+                    "caption-translation-uppercase"
+                } else {
+                    "caption-uppercase"
+                },
+                appearance.uppercase,
+                cx,
+                if translation {
+                    |s| s.edit_translation_appearance(|a| a.uppercase = !a.uppercase)
+                } else {
+                    |s| s.edit_source_appearance(|a| a.uppercase = !a.uppercase)
+                },
+            ))
+            .child(caption_toggle(
+                &self.theme,
+                tr::editor::tabs::captions::outline(),
+                if translation {
+                    "caption-translation-outline"
+                } else {
+                    "caption-outline"
+                },
+                appearance.outline,
+                cx,
+                if translation {
+                    |s| s.edit_translation_appearance(|a| a.outline = !a.outline)
+                } else {
+                    |s| s.edit_source_appearance(|a| a.outline = !a.outline)
+                },
+            ))
+            .children(appearance.outline.then(|| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child(self.labelled(
+                        tr::editor::tabs::captions::outline_color(),
+                        self.render_hex_field(outline, &appearance.outline_color, cx),
+                    ))
+                    .child(self.slider_field(
+                        tr::editor::tabs::captions::outline_width(),
+                        SliderKey::Caption(if translation {
+                            CaptionSlider::TranslationOutlineWidth
+                        } else {
+                            CaptionSlider::OutlineWidth
+                        }),
+                        "%",
+                        cx,
+                    ))
+            }))
+            .child(caption_toggle(
+                &self.theme,
+                tr::editor::tabs::captions::shadow(),
+                if translation {
+                    "caption-translation-shadow"
+                } else {
+                    "caption-shadow"
+                },
+                appearance.shadow,
+                cx,
+                if translation {
+                    |s| s.edit_translation_appearance(|a| a.shadow = !a.shadow)
+                } else {
+                    |s| s.edit_source_appearance(|a| a.shadow = !a.shadow)
+                },
+            ))
+            .children(appearance.shadow.then(|| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child(self.labelled(
+                        tr::editor::tabs::captions::shadow_color(),
+                        self.render_hex_field(shadow, &appearance.shadow_color, cx),
+                    ))
+                    .child(self.slider_field(
+                        tr::editor::tabs::captions::shadow_opacity(),
+                        SliderKey::Caption(if translation {
+                            CaptionSlider::TranslationShadowOpacity
+                        } else {
+                            CaptionSlider::ShadowOpacity
+                        }),
+                        "%",
+                        cx,
+                    ))
+                    .child(self.slider_field(
+                        tr::editor::tabs::captions::shadow_size(),
+                        SliderKey::Caption(if translation {
+                            CaptionSlider::TranslationShadowSize
+                        } else {
+                            CaptionSlider::ShadowSize
+                        }),
+                        "%",
+                        cx,
+                    ))
+            }))
             .into_any_element()
     }
 
@@ -4094,7 +4338,7 @@ impl EditorWindow {
                                 .gap(px(4.))
                                 .text_size(px(12.))
                                 .font_weight(FontWeight::MEDIUM)
-                                .child((preset.label)())
+                                .child(div().flex_1().child((preset.label)()))
                                 .children(selected.then(|| {
                                     svg()
                                         .path("icons/check.svg")
@@ -4119,54 +4363,76 @@ impl EditorWindow {
                         }))
                 }),
         );
-        ui::Field::section(&theme, tr::editor::tabs::captions::style())
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(choices)
+            .child(crate::editor_sidebar::disclosure_row(
+                &theme,
+                "caption-more-styles",
+                tr::editor::tabs::captions::more_styles(),
+                self.sidebar.caption_more_styles,
+                cx.listener(|this, _, _, cx| {
+                    this.sidebar.caption_more_styles = !this.sidebar.caption_more_styles;
+                    this.invalidate_sidebar(cx);
+                }),
+            ))
+            .children(
+                self.sidebar
+                    .caption_more_styles
+                    .then(|| self.render_caption_presets(settings, cx)),
+            )
             .child(
                 div()
                     .flex()
-                    .flex_col()
-                    .gap(px(10.))
-                    .child(choices)
-                    .child(self.render_style_presets_bar(
-                        crate::style_presets::PresetKind::Captions,
-                        &[0],
-                        cx,
-                    ))
+                    .items_center()
+                    .gap(px(6.))
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(crate::editor_sidebar::disclosure_row(
-                                &theme,
-                                "caption-more-styles",
-                                tr::editor::tabs::captions::more_styles(),
-                                self.sidebar.caption_more_styles,
-                                cx.listener(|this, _, _, cx| {
-                                    this.sidebar.caption_more_styles =
-                                        !this.sidebar.caption_more_styles;
-                                    this.invalidate_sidebar(cx);
-                                }),
-                            ))
-                            .child(
-                                ui::Button::plain(
-                                    &theme,
-                                    "caption-style-undo",
-                                    ui::ButtonVariant::Gray,
-                                    ui::ButtonSize::Sm,
-                                )
-                                .label(tr::editor::tabs::captions::undo_style())
-                                .icon("icons/undo.svg")
-                                .disabled(!self.history.can_undo())
-                                .on_click(cx.listener(|this, _, window, cx| this.undo(window, cx))),
-                            ),
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.render_style_presets_bar(
+                                crate::style_presets::PresetKind::Captions,
+                                &[0],
+                                cx,
+                            )),
                     )
-                    .children(
-                        self.sidebar
-                            .caption_more_styles
-                            .then(|| self.render_caption_presets(settings, cx)),
+                    .child(
+                        ui::EditorButton::plain(&theme, "caption-style-edit")
+                            .tinted(&theme)
+                            .height(px(32.))
+                            .left_icon("icons/pencil.svg")
+                            .label(tr::editor::workbench::adjust_style())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_caption_style_editor(None, window, cx)
+                            })),
                     ),
             )
             .into_any_element()
+    }
+
+    pub(crate) fn apply_quick_caption_preset(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preset) = QUICK_CAPTION_PRESETS.get(index) else {
+            return;
+        };
+        if caption_settings(&self.project).preset == preset.id {
+            return;
+        }
+        self.edit_project_global("caption-outline-preset", window, cx, move |project| {
+            preset.apply(
+                &mut project
+                    .captions
+                    .get_or_insert_with(Default::default)
+                    .settings,
+            );
+            true
+        });
     }
 
     fn caption_outline_preview(&self, preset: &QuickCaptionPreset) -> AnyElement {
@@ -4175,95 +4441,176 @@ impl EditorWindow {
         self.caption_style_preview(&settings)
     }
 
-    fn caption_style_preview(&self, settings: &CaptionSettings) -> AnyElement {
-        let parse_color = |value: &str, fallback: Hsla| {
-            crate::editor_sidebar::hex_to_rgb(value)
-                .map(|rgba| Hsla::from(gpui::rgba(u32::from_be_bytes(rgba))))
-                .unwrap_or(fallback)
-        };
-        let color = parse_color(&settings.color, gpui::white());
-        let outline = parse_color(&settings.outline_color, gpui::black());
-        let highlight = parse_color(&settings.highlight_color, color);
-        let mut background = parse_color(&settings.background_color, gpui::black());
-        background.a = settings.background_opacity.min(100) as f32 / 100.;
+    pub(crate) fn caption_style_preview(&self, settings: &CaptionSettings) -> AnyElement {
+        let settings = settings.clone();
         div()
-            .h(px(92.))
+            .h(px(64.))
             .w_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap(px(5.))
             .rounded(px(5.))
             .overflow_hidden()
             .bg(gpui::rgb(0x9299a2))
-            .children(caption_preview_lines(settings).into_iter().map(|line| {
-                let sample = if line.translation {
-                    tr::editor::tabs::captions::preview_translation()
-                } else {
-                    tr::editor::tabs::captions::preview_original()
-                };
-                let text = if settings.uppercase {
-                    sample.to_uppercase()
-                } else {
-                    sample.into()
-                };
-                let font = SharedString::from(line.style.font);
-                let words = text.split_whitespace().collect::<Vec<_>>();
-                let glyphs = |x: f32, y: f32, stroke: bool| {
-                    div()
-                        .absolute()
-                        .left(px(x))
-                        .top(px(y))
-                        .w_full()
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .gap(px(3.))
-                        .font_family(font.clone())
-                        .text_size(px(line.size))
-                        .font_weight(FontWeight(settings.font_weight as f32))
-                        .text_color(if stroke { outline } else { color })
-                        .children(words.iter().enumerate().map(|(index, word)| {
-                            let active = !stroke
-                                && !line.translation
-                                && settings.active_word_highlight
-                                && index + 1 == words.len();
-                            div()
-                                .when(active && settings.highlight_style == "color", |word| {
-                                    word.text_color(highlight)
-                                })
-                                .when(active && settings.highlight_style == "pill", |word| {
-                                    word.bg(highlight).rounded(px(3.))
-                                })
-                                .child((*word).to_string())
-                        }))
-                };
-                let stroke = line.size * settings.normalized_outline_width() / 100.;
-                div()
-                    .relative()
-                    .w_full()
-                    .h(px(line.size * 1.5))
-                    .bg(background)
-                    .children(settings.outline.then(|| {
-                        div().absolute().size_full().children(
-                            [
-                                (-1., -1.),
-                                (0., -1.),
-                                (1., -1.),
-                                (-1., 0.),
-                                (1., 0.),
-                                (-1., 1.),
-                                (0., 1.),
-                                (1., 1.),
-                            ]
-                            .into_iter()
-                            .map(|(x, y)| glyphs(x * stroke, y * stroke, true)),
-                        )
-                    }))
-                    .child(glyphs(0., 0., false))
-            }))
+            .child(
+                gpui::canvas(
+                    |_, _, _| {},
+                    move |bounds, _, window, cx| {
+                        let parse_color = |value: &str, fallback: Hsla| {
+                            crate::editor_sidebar::hex_to_rgb(value)
+                                .map(|rgba| Hsla::from(gpui::rgba(u32::from_be_bytes(rgba))))
+                                .unwrap_or(fallback)
+                        };
+                        let color = parse_color(&settings.color, gpui::white());
+                        let mut background = parse_color(&settings.background_color, gpui::black());
+                        background.a = settings.background_opacity.min(100) as f32 / 100.;
+                        let lines = caption_preview_lines(&settings);
+                        let samples = lines
+                            .iter()
+                            .map(|line| {
+                                let sample = if line.translation {
+                                    tr::editor::tabs::captions::preview_translation()
+                                } else {
+                                    tr::editor::tabs::captions::preview_original()
+                                };
+                                if line.appearance.uppercase {
+                                    sample.to_uppercase()
+                                } else {
+                                    sample.to_string()
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        let shape = |index: usize,
+                                     scale: f32,
+                                     color: Hsla,
+                                     effects: bool,
+                                     window: &Window| {
+                            let line = &lines[index];
+                            let text = &samples[index];
+                            let mut font = gpui::font(SharedString::from(line.style.font.clone()));
+                            font.weight = FontWeight(line.appearance.font_weight as f32);
+                            let mut runs = vec![gpui::TextRun {
+                                len: text.len(),
+                                font,
+                                color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            }];
+                            if effects && !line.translation && settings.active_word_highlight {
+                                let start =
+                                    text.rfind(char::is_whitespace).map_or(0, |index| index + 1);
+                                let mut active = runs[0].clone();
+                                active.len -= start;
+                                let highlight = parse_color(&settings.highlight_color, color);
+                                if settings.highlight_style == "pill" {
+                                    active.background_color = Some(highlight);
+                                } else {
+                                    active.color = highlight;
+                                }
+                                runs[0].len = start;
+                                if start == 0 {
+                                    runs.clear();
+                                }
+                                runs.push(active);
+                            }
+                            window.text_system().shape_line(
+                                text.clone().into(),
+                                px(line.size * scale),
+                                &runs,
+                                None,
+                            )
+                        };
+                        let widths = (0..lines.len())
+                            .map(|index| f32::from(shape(index, 1., color, false, window).width))
+                            .collect::<Vec<_>>();
+                        let layout = caption_preview_layout(
+                            &settings,
+                            &lines,
+                            &widths,
+                            f32::from(bounds.size.width),
+                            f32::from(bounds.size.height),
+                        );
+                        let origin = bounds.origin
+                            + gpui::point(
+                                px((f32::from(bounds.size.width) - layout.width) / 2.),
+                                px((f32::from(bounds.size.height) - layout.height) / 2.),
+                            );
+                        window.paint_quad(
+                            gpui::fill(
+                                Bounds::new(
+                                    origin,
+                                    gpui::size(px(layout.width), px(layout.height)),
+                                ),
+                                background,
+                            )
+                            .corner_radii(px(layout.radius)),
+                        );
+                        let mut top = origin.y + px(layout.padding);
+                        for (index, line) in lines.iter().enumerate() {
+                            let appearance = &line.appearance;
+                            let color = parse_color(&appearance.color, gpui::white());
+                            let outline = parse_color(&appearance.outline_color, gpui::black());
+                            let glyphs = shape(index, layout.scale, color, true, window);
+                            let line_height = px(line.size * 1.2 * layout.scale);
+                            let position =
+                                gpui::point(origin.x + (px(layout.width) - glyphs.width) / 2., top);
+                            if appearance.shadow {
+                                let mut shadow_color =
+                                    parse_color(&appearance.shadow_color, gpui::black());
+                                shadow_color.a *= appearance.shadow_opacity.min(100) as f32 / 100.;
+                                let shadow =
+                                    shape(index, layout.scale, shadow_color, false, window);
+                                let offset = px(line.size
+                                    * layout.scale
+                                    * appearance.normalized_shadow_size()
+                                    / 100.);
+                                let _ = shadow.paint(
+                                    position + gpui::point(offset, offset),
+                                    line_height,
+                                    gpui::TextAlign::Left,
+                                    None,
+                                    window,
+                                    cx,
+                                );
+                            }
+                            if appearance.outline {
+                                let stroke = line.size
+                                    * layout.scale
+                                    * appearance.normalized_outline_width()
+                                    / 100.;
+                                let stroked = shape(index, layout.scale, outline, false, window);
+                                for (x, y) in [
+                                    (-1., -1.),
+                                    (0., -1.),
+                                    (1., -1.),
+                                    (-1., 0.),
+                                    (1., 0.),
+                                    (-1., 1.),
+                                    (0., 1.),
+                                    (1., 1.),
+                                ] {
+                                    let _ = stroked.paint(
+                                        position + gpui::point(px(x * stroke), px(y * stroke)),
+                                        line_height,
+                                        gpui::TextAlign::Left,
+                                        None,
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            }
+                            let _ = glyphs.paint(
+                                position,
+                                line_height,
+                                gpui::TextAlign::Left,
+                                None,
+                                window,
+                                cx,
+                            );
+                            top += line_height + px(layout.gap);
+                        }
+                    },
+                )
+                .size_full(),
+            )
             .into_any_element()
     }
 
@@ -5407,6 +5754,44 @@ mod tests {
     }
 
     #[test]
+    fn caption_preview_uses_one_fitted_box_for_both_languages() {
+        let settings = CaptionSettings {
+            size: 48,
+            translation_style: Some(CaptionTextStyle {
+                font: "Inter".into(),
+                size: 32,
+            }),
+            display_mode: CaptionDisplayMode::Bilingual,
+            translation_gap: Some(12),
+            ..Default::default()
+        };
+        let lines = caption_preview_lines(&settings);
+        let wide = caption_preview_layout(&settings, &lines, &[120., 180.], 300., 92.);
+        assert_eq!(wide.width, 198.);
+        assert_eq!(wide.padding, 9.);
+        assert!((wide.height - 58.5).abs() < 0.001);
+        assert!((wide.gap - 4.5).abs() < 0.001);
+        assert!(wide.radius > 0.);
+        let narrow = caption_preview_layout(&settings, &lines, &[120., 180.], 140., 92.);
+        assert!(narrow.width <= 124.001);
+        assert!(narrow.height < wide.height);
+        assert!((narrow.gap / narrow.scale - wide.gap).abs() < 0.001);
+    }
+
+    #[test]
+    fn caption_preview_single_language_has_no_bilingual_gap() {
+        let settings = CaptionSettings {
+            display_mode: CaptionDisplayMode::Translated,
+            translation_gap: Some(200),
+            ..Default::default()
+        };
+        let lines = caption_preview_lines(&settings);
+        let layout = caption_preview_layout(&settings, &lines, &[100.], 200., 92.);
+        assert_eq!(layout.gap, 0.);
+        assert!((layout.height - 39.6).abs() < 0.001);
+    }
+
+    #[test]
     fn every_tab_slider_has_the_range_its_call_site_declares() {
         assert_eq!(CaptionSlider::OutlineWidth.limits(), (0., 20., 0.5));
         assert_eq!(CaptionSlider::ShadowOpacity.limits(), (0., 100., 1.));
@@ -6240,5 +6625,35 @@ mod tests {
             "slider_edit timeline_segments=2000 samples=10 iterations_per_sample=10 \
              skipped_rebuild_us={skipped:.3}"
         );
+    }
+    #[test]
+    fn caption_preview_and_sliders_keep_each_language_appearance_independent() {
+        let mut settings = CaptionSettings {
+            display_mode: CaptionDisplayMode::Bilingual,
+            ..Default::default()
+        };
+        settings.edit_source_appearance(|a| {
+            a.color = "#FF0000".into();
+            a.outline = true;
+        });
+        settings.edit_translation_appearance(|a| {
+            a.color = "#0000FF".into();
+            a.shadow = true;
+        });
+        let source = settings.source_appearance();
+        CaptionSlider::TranslationOutlineWidth.write(&mut settings, 12.);
+        CaptionSlider::TranslationShadowOpacity.write(&mut settings, 50.);
+        CaptionSlider::TranslationShadowSize.write(&mut settings, 14.);
+        assert_eq!(settings.source_appearance(), source);
+        let translated = settings.resolved_translation_appearance();
+        CaptionSlider::OutlineWidth.write(&mut settings, 3.);
+        CaptionSlider::ShadowOpacity.write(&mut settings, 25.);
+        assert_eq!(settings.resolved_translation_appearance(), translated);
+        let lines = caption_preview_lines(&settings);
+        assert_eq!(lines[0].appearance.color, "#FF0000");
+        assert_eq!(lines[1].appearance.color, "#0000FF");
+        assert_eq!(lines[1].appearance.outline_width, 12.);
+        assert_eq!(lines[1].appearance.shadow_opacity, 50);
+        assert_eq!(lines[1].appearance.shadow_size, 14.);
     }
 }

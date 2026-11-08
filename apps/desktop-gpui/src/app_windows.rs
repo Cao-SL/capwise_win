@@ -1242,6 +1242,16 @@ pub(crate) fn refresh_settings(cx: &mut App) {
 /// getCurrentWindow().hide();` -- both halves, in that order. Must be reached
 /// through `cx.defer` from anything inside an entity update: opening a window
 /// paints it synchronously and would double-lease the caller.
+pub(crate) fn open_ai_settings(tab: crate::settings_ai::AiTab, cx: &mut App) {
+    open_settings(Page::Transcription, cx);
+    if let Some(handle) = cx.global::<AppWindows>().settings {
+        let _ = handle.update(cx, |view, window, cx| {
+            view.pages.ai.tab = tab;
+            view.reset_ai_tab(window, cx);
+        });
+    }
+}
+
 pub fn open_settings(page: Page, cx: &mut App) {
     #[cfg(target_os = "linux")]
     if defer_window_until_capture_safe(cx) {
