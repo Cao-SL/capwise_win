@@ -287,7 +287,7 @@ fn transcript_row_width(viewport_width: f32) -> f32 {
 // ---------------------------------------------------------------------------
 
 use crate::editor_timeline::{
-    self as timeline, ADD_TRACK_MORE, ADD_TRACK_OPTIONS, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT,
+    self as timeline, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT,
     START_SNAP_PX, TIMELINE_BOTTOM_PADDING, TIMELINE_CARD_BORDER, TIMELINE_HEADER_HEIGHT,
     TIMELINE_PADDING, TIMELINE_SLOT_PADDING, TIMELINE_TOP_PADDING, TRACK_GUTTER, TRACK_ICON_WIDTH,
     TRACK_ROW_GAP, TimelineModel, TimelineView, TrackKind, TrackLanes, TrackRow, Transform,
@@ -1792,8 +1792,31 @@ struct AddTrackMenu {
     top: Option<Pixels>,
     /// Bumped per open so the entrance animation replays each time.
     generation: usize,
-    hovered: Option<TrackKind>,
+    hovered: Option<CanvasTool>,
 }
+
+/// One tile in the toolbar's "more" tray: a track to add, or one of the two
+/// canvas tools that used to sit on the toolbar itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CanvasTool {
+    Track(TrackKind),
+    Crop,
+    Frame,
+}
+
+/// The tray in the order people are likely to reach for things: zoom and
+/// images on most videos, crop and blur masks often, frames, keystrokes and
+/// per-range style overrides less, 3D rarely.
+const CANVAS_TOOLS: [CanvasTool; 8] = [
+    CanvasTool::Track(TrackKind::Zoom),
+    CanvasTool::Track(TrackKind::Image),
+    CanvasTool::Crop,
+    CanvasTool::Track(TrackKind::Mask),
+    CanvasTool::Frame,
+    CanvasTool::Track(TrackKind::Keyboard),
+    CanvasTool::Track(TrackKind::Style),
+    CanvasTool::Track(TrackKind::ThreeD),
+];
 
 const ADD_TRACK_TRAY_ANIMATION: Duration = Duration::from_millis(620);
 const ADD_TRACK_TRAY_IN_MS: f32 = 220.;
@@ -8289,7 +8312,9 @@ impl EditorWindow {
 
     fn aspect_ratio_label(aspect: Option<&cap_project::AspectRatio>) -> &'static str {
         match aspect {
-            None => tr::editor::window::aspect::auto(),
+            // "Auto" alone did not say what it set; the button names the
+            // control until a ratio is picked.
+            None => tr::editor::window::aspect::button(),
             Some(cap_project::AspectRatio::Wide) => tr::editor::window::aspect::wide(),
             Some(cap_project::AspectRatio::Vertical) => tr::editor::window::aspect::vertical(),
             Some(cap_project::AspectRatio::Square) => tr::editor::window::aspect::square(),
@@ -9561,6 +9586,15 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) {
         self.open_add_track(window, cx);
+        // `open` leaves the tray showing where the toolbar's "more" opens it.
+        if spec == "open" {
+            if let Some(menu) = &mut self.add_track {
+                menu.left = px(200.);
+                menu.top = Some(px(118.));
+            }
+            cx.notify();
+            return;
+        }
         let kind = match spec {
             "style" => TrackKind::Style,
             "image" => TrackKind::Image,
@@ -10978,7 +11012,9 @@ impl EditorWindow {
         let scene_available = self.scene_available();
         let hint: SharedString = match menu.hovered {
             None => tr::editor::window::add_track::hint().into(),
-            Some(kind) => {
+            Some(CanvasTool::Crop) => tr::editor::window::crop_tooltip().into(),
+            Some(CanvasTool::Frame) => tr::editor::window::frame::add_tooltip().into(),
+            Some(CanvasTool::Track(kind)) => {
                 if kind == TrackKind::Scene && !scene_available {
                     kind.picker_unavailable().into()
                 } else if kind == TrackKind::ThreeD && self.tracks.is_active(kind) {
@@ -11038,11 +11074,11 @@ impl EditorWindow {
                                 .gap(px(4.))
                                 .px(px(6.))
                                 .py(px(6.))
-                                .children(ADD_TRACK_MORE.iter().copied().enumerate().map(
-                                    |(index, kind)| {
+                                .children(CANVAS_TOOLS.iter().copied().enumerate().map(
+                                    |(index, tool)| {
                                         self.render_add_track_tile(
-                                            ADD_TRACK_OPTIONS.len() + index,
-                                            kind,
+                                            index,
+                                            tool,
                                             generation,
                                             scene_available,
                                             cx,
@@ -11080,16 +11116,34 @@ impl EditorWindow {
     fn render_add_track_tile(
         &self,
         index: usize,
-        kind: TrackKind,
+        tool: CanvasTool,
         generation: usize,
         scene_available: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = self.theme;
-        let available = kind != TrackKind::Scene || scene_available;
-        let active = !kind.supports_multiple() && self.tracks.is_active(kind);
-        let color = kind.color();
-        let group = SharedString::from(format!("add-track-tile-{kind:?}"));
+        let (available, active, color, icon, label): (bool, bool, Hsla, &'static str, &'static str) =
+            match tool {
+                CanvasTool::Track(kind) => (
+                    kind != TrackKind::Scene || scene_available,
+                    !kind.supports_multiple() && self.tracks.is_active(kind),
+                    kind.color(),
+                    kind.icon(),
+                    kind.picker_label(),
+                ),
+                CanvasTool::Crop => (
+                    true,
+                    false,
+                    TrackKind::Clip.color(),
+                    "icons/crop.svg",
+                    tr::editor::window::crop(),
+                ),
+                CanvasTool::Frame => {
+                    let (label, icon) = self.frame_tool_content();
+                    (true, false, TrackKind::Style.color(), icon, label)
+                }
+            };
+        let group = SharedString::from(format!("add-track-tile-{tool:?}"));
         let badge = |this: gpui::Div| {
             this.absolute()
                 .top(px(-4.))
@@ -11104,7 +11158,7 @@ impl EditorWindow {
                 .border_color(Hsla::from(theme.editor.card))
         };
         div()
-            .id(SharedString::from(format!("add-track-{kind:?}")))
+            .id(SharedString::from(format!("add-track-{tool:?}")))
             .group(group.clone())
             .relative()
             .flex()
@@ -11137,7 +11191,7 @@ impl EditorWindow {
                             } else {
                                 Hsla::from(theme.editor.ctl)
                             })
-                            .child(svg().path(kind.icon()).size(px(14.)).text_color(
+                            .child(svg().path(icon).size(px(14.)).text_color(
                                 if available {
                                     timeline::tile_fg(&theme, color)
                                 } else {
@@ -11174,15 +11228,15 @@ impl EditorWindow {
                             this.text_color(Hsla::from(theme.editor.text_1))
                         })
                     })
-                    .child(kind.picker_label()),
+                    .child(label),
             )
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 let Some(menu) = this.add_track.as_mut() else {
                     return;
                 };
                 let next = if *hovered {
-                    Some(kind)
-                } else if menu.hovered == Some(kind) {
+                    Some(tool)
+                } else if menu.hovered == Some(tool) {
                     None
                 } else {
                     menu.hovered
@@ -11195,10 +11249,21 @@ impl EditorWindow {
             .when(available, |this| {
                 this.on_click(cx.listener(move |this, _, window, cx| {
                     this.add_track = None;
-                    if kind.supports_multiple() {
-                        this.add_track_kind(kind, window, cx);
-                    } else {
-                        this.toggle_track(kind, !this.tracks.is_active(kind), window, cx);
+                    match tool {
+                        CanvasTool::Crop => this.open_crop(window, cx),
+                        CanvasTool::Frame => this.open_frame_controls(window, cx),
+                        CanvasTool::Track(TrackKind::Image) => {
+                            this.shape_tool = None;
+                            this.assistant.open = false;
+                            this.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+                            this.add_track_kind(TrackKind::Image, window, cx);
+                        }
+                        CanvasTool::Track(kind) if kind.supports_multiple() => {
+                            this.add_track_kind(kind, window, cx);
+                        }
+                        CanvasTool::Track(kind) => {
+                            this.toggle_track(kind, !this.tracks.is_active(kind), window, cx);
+                        }
                     }
                 }))
             })
@@ -12303,21 +12368,6 @@ impl EditorWindow {
                         this.open_toolbar_menu(ToolbarMenu::AspectRatio, *bounds, window, cx);
                     })),
             )
-            // `EditorButton tooltipText="Crop Video"` (`Player.tsx:293-299`)
-            // -> `cropDialogHandler`.
-            .child(
-                ui::EditorButton::plain(&theme, "crop")
-                    .text(&theme)
-                    .left_icon("icons/crop.svg")
-                    .when(!narrow, |button| button.label(tr::editor::window::crop()))
-                    .tooltip(&theme, tr::editor::window::crop_tooltip())
-                    .disabled(!self.project_ready())
-                    .pressed(self.crop.is_some())
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_crop(window, cx);
-                    })),
-            )
-            .child(self.render_frame_button(narrow, cx))
             .child(self.render_shape_tool_button(narrow, cx))
             .child(
                 ui::EditorButton::plain(&theme, "insert-text")
@@ -12331,27 +12381,16 @@ impl EditorWindow {
                         this.add_overlay_segment(TrackKind::Text, window, cx);
                     })),
             )
+            // Crop, frame and image live in this tray now; the frame popover
+            // hangs from it.
             .child(
-                ui::EditorButton::plain(&theme, "insert-image")
-                    .text(&theme)
-                    .left_icon("icons/image.svg")
-                    .when(!narrow, |button| button.label(TrackKind::Image.label()))
-                    .tooltip(&theme, TrackKind::Image.picker_description())
-                    .disabled(!self.project_ready())
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.shape_tool = None;
-                        this.assistant.open = false;
-                        this.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
-                        this.add_track_kind(TrackKind::Image, window, cx);
-                    })),
-            )
-            .child(
+                div().relative().flex_none().child(self.frame_anchor()).child(
                 ui::EditorButton::plain(&theme, "canvas-more-tools")
                     .text(&theme)
                     .left_icon("icons/more-horizontal.svg")
                     .tooltip(&theme, tr::editor::window::add_track::more())
                     .disabled(!self.project_ready())
-                    .pressed(self.add_track.is_some())
+                    .pressed(self.add_track.is_some() || self.frame_controls_open() || self.crop.is_some())
                     .on_open(cx.listener(|this, bounds: &Bounds<Pixels>, window, cx| {
                         this.open_add_track(window, cx);
                         if let Some(menu) = &mut this.add_track {
@@ -12363,6 +12402,7 @@ impl EditorWindow {
                             menu.top = Some(bounds.bottom() + px(6.));
                         }
                     })),
+                ),
             )
     }
 
@@ -15990,7 +16030,7 @@ mod tests {
         assert!(near(add_track_tray_progress(at(ADD_TRACK_TRAY_IN_MS)), 1.));
         assert!(near(add_track_tray_progress(1.), 1.));
 
-        let last = ADD_TRACK_OPTIONS.len() + ADD_TRACK_MORE.len() - 1;
+        let last = CANVAS_TOOLS.len() - 1;
         assert!(near(add_track_tile_progress(0., 0), 0.));
         assert!(near(
             add_track_tile_progress(at(ADD_TRACK_TILE_DELAY_MS), 0),

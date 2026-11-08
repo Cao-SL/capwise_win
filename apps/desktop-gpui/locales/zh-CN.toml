@@ -2922,6 +2922,7 @@ hint = "在播放头处添加，放在最上层，需要时自动新开一行。
 more = "更多"
 
 [editor.window.aspect]
+button = "比例"
 auto = "自动"
 classic = "经典"
 classic_ratio = "经典 ⋅4:3"

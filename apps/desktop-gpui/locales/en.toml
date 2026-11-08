@@ -2924,6 +2924,7 @@ hint = "Adds at the playhead, in front of everything there. Rows appear as neede
 more = "More"
 
 [editor.window.aspect]
+button = "Ratio"
 auto = "Auto"
 classic = "Classic"
 classic_ratio = "Classic ⋅4:3"

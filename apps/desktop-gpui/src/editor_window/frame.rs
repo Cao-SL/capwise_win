@@ -251,47 +251,37 @@ impl EditorWindow {
         FrameConfiguration::active_style(self.frame_background().frame.as_ref())
     }
 
-    pub(super) fn render_frame_button(
-        &self,
-        narrow: bool,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let (label, icon) = button_content(self.frame_style());
+    /// Opens the frame popover from the toolbar's tool tray (the frame
+    /// button moved there). It anchors to whatever [`Self::frame_anchor`]
+    /// measured -- the tray's "more" trigger.
+    pub(super) fn open_frame_controls(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus_root(window, cx);
+        self.toolbar_menu = None;
+        self.add_track = None;
+        self.frame_controls.style_target = self
+            .selected_style_index()
+            .and_then(|index| StyleFrameTarget::capture(&self.project, index));
+        self.frame_controls.open = true;
+        cx.notify();
+    }
+
+    pub(super) fn frame_controls_open(&self) -> bool {
+        self.frame_controls.open
+    }
+
+    /// A zero-cost measuring layer for the element the frame popover hangs
+    /// from.
+    pub(super) fn frame_anchor(&self) -> impl IntoElement {
         let bounds = self.frame_controls.trigger_bounds.clone();
-        div()
-            .relative()
-            .flex_none()
-            .child(
-                ui::EditorButton::plain(&self.theme, "frame-settings")
-                    .text(&self.theme)
-                    .left_icon(icon)
-                    .right_icon("icons/chevron-down.svg")
-                    .when(!narrow, |button| button.label(label))
-                    .tooltip(&self.theme, tr::editor::window::frame::add_tooltip())
-                    .pressed(self.frame_controls.open)
-                    .disabled(self.instance.is_none())
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.frame_controls.open {
-                            this.close_frame_controls(window, cx);
-                        } else {
-                            this.focus_root(window, cx);
-                            this.toolbar_menu = None;
-                            this.add_track = None;
-                            this.frame_controls.style_target = this
-                                .selected_style_index()
-                                .and_then(|index| StyleFrameTarget::capture(&this.project, index));
-                            this.frame_controls.open = true;
-                            cx.notify();
-                        }
-                    })),
-            )
-            .child(
-                gpui::canvas(move |rect, _, _| bounds.set(Some(rect)), |_, _, _, _| {})
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full(),
-            )
+        gpui::canvas(move |rect, _, _| bounds.set(Some(rect)), |_, _, _, _| {})
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+    }
+
+    pub(super) fn frame_tool_content(&self) -> (&'static str, &'static str) {
+        button_content(self.frame_style())
     }
 
     pub(super) fn prepare_frame_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
