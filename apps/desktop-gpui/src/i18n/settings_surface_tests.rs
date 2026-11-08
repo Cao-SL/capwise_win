@@ -77,18 +77,15 @@ fn settings_surfaces_match_the_literals_they_replaced() {
             tr::settings::sidebar::previous_versions(),
             "View previous versions",
         ),
-        (tr::settings::recordings::title(), "Recordings"),
+        (tr::settings::recordings::title(), "Projects"),
         (
             tr::settings::recordings::description(),
-            "Manage your recordings and perform actions.",
+            "Manage recorded and imported projects.",
         ),
         (tr::settings::recordings::import(), "Import"),
-        (
-            tr::settings::recordings::empty_library(),
-            "No recordings found",
-        ),
+        (tr::settings::recordings::empty_library(), "No projects yet"),
         (tr::settings::recordings::show_all(), "Show all"),
-        (tr::settings::recordings::empty::all(), "No recordings"),
+        (tr::settings::recordings::empty::all(), "No projects yet"),
         (
             tr::settings::recordings::empty::all_matching(),
             "No matching recordings",
@@ -233,7 +230,10 @@ fn settings_surfaces_match_the_literals_they_replaced() {
             tr::settings::options::post_studio::open_editor(),
             "Open editor",
         ),
-        (tr::settings::options::post_studio::show_cap(), "Show Capwise"),
+        (
+            tr::settings::options::post_studio::show_cap(),
+            "Show Capwise",
+        ),
         (
             tr::settings::options::post_studio::do_nothing(),
             "Do nothing",
@@ -565,7 +565,10 @@ fn settings_surfaces_match_the_literals_they_replaced() {
             "Also record your microphone and check that it hears the beeps in time. Needs speakers the mic can actually hear.",
         ),
         (tr::settings::feedback::diagnostic::sending(), "Sending..."),
-        (tr::settings::feedback::diagnostic::send(), "Send to Capwise"),
+        (
+            tr::settings::feedback::diagnostic::send(),
+            "Send to Capwise",
+        ),
         (tr::settings::feedback::diagnostic::show_file(), "Show File"),
         (tr::settings::feedback::diagnostic::run_again(), "Run Again"),
         (tr::settings::feedback::diagnostic::try_again(), "Try Again"),

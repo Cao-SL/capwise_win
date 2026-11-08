@@ -14,8 +14,7 @@ pub(super) fn is_dialogs_surface_key(key: &str) -> bool {
     ]
     .iter()
     .any(|prefix| key.starts_with(prefix))
-        // Capwise's own Qwen3-ASR messages replaced no Cap literal.
-        && !key.starts_with("transcription.qwen")
+        && !super::tests::is_capwise_key(key)
 }
 
 const FORMATTED: &[&str] = &[
@@ -405,7 +404,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
             tr::overlay::window::focus_on(),
             "Recording only this window",
         ),
-        (tr::overlay::window::focus_off(), "Record only this window"),
+        (tr::overlay::window::focus_off(), "Recording screen region"),
         (tr::overlay::window::focus_enable(), "Enable Focus mode"),
         (tr::overlay::window::focus_disable(), "Turn off Focus mode"),
         (
@@ -414,7 +413,11 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::overlay::window::focus_body_instant_camera(),
-            "With a camera, Instant still records the screen region so the camera stays in the video.",
+            "With a camera, Instant records the screen region to include the camera, along with overlapping windows and floating panels.",
+        ),
+        (
+            tr::overlay::window::region_body(),
+            "Records this fixed area of the screen, including other windows and floating panels that cover it.",
         ),
         (tr::overlay::window::center_title(), "Center on screen"),
         (
@@ -865,7 +868,7 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
         (tr::dialog::update::later(), "Later"),
         (
             tr::dialog::update::package_not_installed(),
-            "The package wasn't installed. Approve the system prompt, or install it from Capwise.so/download.",
+            "The package wasn't installed. Approve the system prompt, or install it from github.com/joeseesun/capwise/releases.",
         ),
     ];
     for (translated, literal) in pairs {
@@ -1173,7 +1176,9 @@ fn update_and_quit_messages_format_like_the_code_they_replaced() {
         ),
         (
             tr::dialog::update::failed(error),
-            format!("{error}\n\nYou can always download the latest version from Capwise.so/download."),
+            format!(
+                "{error}\n\nYou can always download the latest version from github.com/joeseesun/capwise/releases."
+            ),
         ),
     ];
     for (translated, literal) in pairs {

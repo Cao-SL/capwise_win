@@ -158,6 +158,8 @@ impl RenderOnce for Select {
         let interactive = !disabled && (on_click.is_some() || on_open.is_some());
         div()
             .id(id)
+            .role(gpui::Role::Button)
+            .aria_label(label.clone())
             .when(
                 interactive && keyboard_nav::active(window, cx),
                 keyboard_nav::stop,

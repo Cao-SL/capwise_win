@@ -390,6 +390,28 @@ fn build() -> Guide {
                 OutputMode::SingleJson,
                 &[],
             ),
+            CommandDoc {
+                notes: Some(
+                    "get returns settings, edited-output captions, translation coverage, and a revision without migrating files. export requires --output and --subtitle-format srt|vtt; --dry-run previews content and existing destinations are never replaced. style patches supplied flags only; --font/--size control original text and --translation-font/--translation-size control translated text independently. It supports --dry-run and --expected-revision, and preserves unrelated project fields. JSON runtime errors include error, code, and retryable; exit 1. These are local commands and do not start transcription or call an LLM.",
+                ),
+                ..cmd(
+                    "project captions get|export|style",
+                    "Read local captions, export SRT/VTT, or adjust caption presentation without opening the editor.",
+                    OutputMode::SingleJson,
+                    &[],
+                )
+            },
+            CommandDoc {
+                notes: Some(
+                    "get returns cards and the current revision. set patches supplied flags for --role intro|outro and requires --title for a new card; --duration uses output seconds. remove restores body overlay timing. Preview edits with --dry-run; writes require --expected-revision from get or dry-run. Changes reuse the editor's title-card timing rules and preserve unrelated/unknown fields. --background-image accepts an existing image inside the project. export renders the selected card to a new --output PNG without changing the project; --width/--height bound the resolution while preserving project aspect ratio, and the result reports actual dimensions. export --dry-run validates without loading the renderer. These commands do not upload files or call AI. Keep the project closed in the desktop editor while applying CLI edits.",
+                ),
+                ..cmd(
+                    "project title-card get|set|remove|export",
+                    "Prepare intro and outro cards with explicit previews and revision checks.",
+                    OutputMode::SingleJson,
+                    &[],
+                )
+            },
             cmd(
                 "version",
                 "CLI version + execution context (distribution, bundled binaries).",

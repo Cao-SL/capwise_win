@@ -449,6 +449,9 @@ impl RenderOnce for Button {
 
         div()
             .id(id)
+            .when_some(label.clone(), |this, label| {
+                this.role(gpui::Role::Button).aria_label(label)
+            })
             .tab_index(0)
             .tab_stop(!disabled)
             .when(keyboard_nav::active(window, cx), keyboard_nav::ring)

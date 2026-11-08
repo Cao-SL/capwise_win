@@ -99,6 +99,7 @@ pub struct DecodedAudio {
     channels: u16,
     frames: usize,
     voice_profile: Arc<OnceLock<VoiceProfile>>,
+    speech_activity: crate::speech_activity::SpeechActivityCache,
 }
 
 enum AudioStorage {
@@ -107,6 +108,9 @@ enum AudioStorage {
 }
 
 impl DecodedAudio {
+    pub fn speech_activity(&self, sample: usize) -> [crate::SpeechActivity; 2] {
+        self.speech_activity.at(self, sample)
+    }
     pub fn voice_profile(&self) -> VoiceProfile {
         *self
             .voice_profile
@@ -138,6 +142,7 @@ impl From<Arc<AudioData>> for DecodedAudio {
             channels: data.channels(),
             frames: data.sample_count(),
             voice_profile: Arc::default(),
+            speech_activity: Default::default(),
             storage: AudioStorage::Contiguous(data),
         }
     }
@@ -364,6 +369,7 @@ impl ProgressiveAudio {
                         channels: stream.channels(),
                         frames: pending.frames,
                         voice_profile: pending.voice_profile.clone(),
+                        speech_activity: Default::default(),
                         storage: AudioStorage::Blocks(std::mem::take(&mut pending.blocks)),
                     }));
                 }
@@ -696,6 +702,7 @@ mod tests {
                 channels: 2,
                 frames: pending.frames,
                 voice_profile: pending.voice_profile.clone(),
+                speech_activity: Default::default(),
                 storage: AudioStorage::Blocks(std::mem::take(&mut pending.blocks)),
             })
         };
@@ -1068,6 +1075,7 @@ mod tests {
                 channels: 2,
                 frames: pending.frames,
                 voice_profile: pending.voice_profile.clone(),
+                speech_activity: Default::default(),
                 storage: AudioStorage::Blocks(std::mem::take(&mut pending.blocks)),
             })
         };

@@ -34,9 +34,18 @@ pub struct TakeoverDisplayMorph {
 
 impl InterpolatedTakeover {
     pub fn sample(frame_time: f64, segments: &[TextSegment]) -> Option<Self> {
+        if crate::title_cards::active_title_card(frame_time, segments, &[]).is_some() {
+            return Some(Self {
+                t: 1.0,
+                layout: TextLayout::Fullscreen,
+            });
+        }
         let mut best: Option<(f32, f64, TextLayout)> = None;
         for segment in segments {
-            if !segment.enabled || segment.layout == TextLayout::Overlay {
+            if !segment.enabled
+                || segment.layout == TextLayout::Overlay
+                || segment.title_card.is_some()
+            {
                 continue;
             }
             if frame_time < segment.start || frame_time > segment.end {
@@ -186,6 +195,7 @@ mod tests {
             animation_out_duration: 0.15,
             layout,
             layout_transition: 0.5,
+            title_card: None,
         }
     }
 

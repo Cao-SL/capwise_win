@@ -53,6 +53,7 @@ fn clamp_caption_segment_words(segment: &CaptionSegment) -> CaptionSegment {
             text: word.text.clone(),
             start: word.start,
             end: word.end.min(word.start + MAX_CAPTION_WORD_DURATION),
+            hidden: word.hidden,
         })
         .collect();
 
@@ -366,6 +367,7 @@ fn map_captions_to_edited_timeline(
                         text: word.text.clone(),
                         start: start as f32,
                         end: end as f32,
+                        hidden: word.hidden,
                     });
                 }
 
@@ -510,6 +512,7 @@ pub fn synchronize_captions(project: &mut ProjectConfiguration, recording_durati
                             text: word.text.clone(),
                             start: to_source(word.start)?,
                             end: to_source(word.end)?,
+                            hidden: word.hidden,
                         })
                     })
                     .collect();
@@ -636,7 +639,7 @@ mod tests {
                 "segments":[{"start":0.0,"end":5.0,"timescale":1.0},{"start":6.0,"end":10.0,"timescale":1.0}],
                 "zoomSegments":[]
             })).unwrap()),
-            captions: Some(CaptionsData { source_timed, segments:vec![CaptionSegment { id:"spoken".into(),start,end,text:"hello".into(),words:vec![CaptionWord { text:"hello".into(),start,end }] }], ..Default::default() }),
+            captions: Some(CaptionsData { source_timed, segments:vec![CaptionSegment { id:"spoken".into(),start,end,text:"hello".into(),words:vec![CaptionWord { text:"hello".into(),start,end, hidden: false }] }], ..Default::default() }),
             ..Default::default()
         }
     }
@@ -783,16 +786,19 @@ mod tests {
                     text: "late-first".into(),
                     start: 4.0,
                     end: 4.5,
+                    hidden: false,
                 },
                 CaptionWord {
                     text: "second-clip".into(),
                     start: 7.0,
                     end: 7.5,
+                    hidden: false,
                 },
                 CaptionWord {
                     text: "early-last".into(),
                     start: 1.0,
                     end: 1.5,
+                    hidden: false,
                 },
             ],
         }];
@@ -838,11 +844,13 @@ mod tests {
                     text: "nan-start".into(),
                     start: f32::NAN,
                     end: 1.0,
+                    hidden: false,
                 },
                 CaptionWord {
                     text: "second-clip".into(),
                     start: 7.0,
                     end: 7.5,
+                    hidden: false,
                 },
             ],
         }];

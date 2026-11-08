@@ -11,6 +11,7 @@ const RECORDING_BAR_TRACK_WIDTH: f32 = 20.;
 pub(crate) enum MicrophoneLevelKind {
     CaptureButton,
     DeviceRow,
+    Voiceover,
     RecordingBar,
 }
 
@@ -21,7 +22,7 @@ impl MicrophoneLevelKind {
         }
         match self {
             Self::CaptureButton | Self::DeviceRow => (1. - feeds::picker_level(db)) as f32,
-            Self::RecordingBar => feeds::bar_level(db) as f32,
+            Self::RecordingBar | Self::Voiceover => feeds::bar_level(db) as f32,
         }
     }
 
@@ -29,7 +30,7 @@ impl MicrophoneLevelKind {
     /// window meters are never wider than the window itself.
     fn span(self, viewport_width: f32, scale: f32) -> f32 {
         match self {
-            Self::CaptureButton | Self::DeviceRow => viewport_width * scale,
+            Self::CaptureButton | Self::DeviceRow | Self::Voiceover => viewport_width * scale,
             Self::RecordingBar => RECORDING_BAR_TRACK_WIDTH * scale,
         }
     }
@@ -39,7 +40,7 @@ impl MicrophoneLevelKind {
             Self::RecordingBar => true,
             // Linux has no visibility query (`window_is_visible` is a stub),
             // and gating on focus would freeze the meter in a visible window.
-            Self::CaptureButton | Self::DeviceRow => {
+            Self::CaptureButton | Self::DeviceRow | Self::Voiceover => {
                 !cfg!(any(target_os = "macos", target_os = "windows"))
                     || crate::platform::window_is_visible(window)
             }
@@ -165,6 +166,50 @@ impl Render for MicrophoneLevel {
                         .bg(self.color)
                         .w(gpui::relative(self.fill)),
                 ),
+            MicrophoneLevelKind::Voiceover => {
+                let db = self.level_db;
+                let color = if db >= -3.0 {
+                    gpui::rgb(0xe5484d)
+                } else if db < -24.0 {
+                    gpui::rgb(0xc98a12)
+                } else {
+                    gpui::rgb(0x30a46c)
+                };
+                let label = if db >= -3.0 {
+                    crate::i18n::tr::editor::voiceover::level_high()
+                } else if db >= -24.0 {
+                    crate::i18n::tr::editor::voiceover::level_good()
+                } else {
+                    crate::i18n::tr::editor::voiceover::level_low()
+                };
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .w_full()
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(12.))
+                            .child(crate::i18n::tr::editor::voiceover::input_level())
+                            .child(if db <= -90.0 {
+                                "— dBFS".to_string()
+                            } else {
+                                format!("{db:.0} dBFS")
+                            }),
+                    )
+                    .child(
+                        div()
+                            .h(px(10.))
+                            .w_full()
+                            .rounded_full()
+                            .overflow_hidden()
+                            .bg(self.track)
+                            .child(div().h_full().w(gpui::relative(self.fill)).bg(color)),
+                    )
+                    .child(div().text_size(px(12.)).child(label))
+            }
             MicrophoneLevelKind::RecordingBar => div()
                 .absolute()
                 .bottom(px(4.))

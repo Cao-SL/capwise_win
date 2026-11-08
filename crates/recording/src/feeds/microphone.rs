@@ -163,6 +163,12 @@ pub struct MicrophoneSamples {
     pub timestamp: Timestamp,
 }
 
+impl MicrophoneSamples {
+    pub fn stream_id(&self) -> u32 {
+        self.stream_id
+    }
+}
+
 /// Debounces sample-rate changes: a freshly-inferred rate is only adopted after it is
 /// observed `SAMPLE_RATE_CHANGE_AGREEMENTS` windows in a row, so a lone divergent
 /// observation cannot flip a correctly-clocked device to the wrong standard rate.
@@ -3085,6 +3091,20 @@ pub mod synthetic {
 
     const STREAM_ID: u32 = 1;
 
+    struct SubscriberCount;
+
+    impl Message<SubscriberCount> for MicrophoneFeed {
+        type Reply = usize;
+
+        async fn handle(
+            &mut self,
+            _: SubscriberCount,
+            _: &mut Context<Self, Self::Reply>,
+        ) -> Self::Reply {
+            self.senders.len()
+        }
+    }
+
     /// cpal has no public constructor for `InputCallbackInfo`, and a
     /// synthetic device has no device callback. Consumers time samples from
     /// `MicrophoneSamples::timestamp`; this info reads as stream instant 0.
@@ -3156,6 +3176,13 @@ pub mod synthetic {
                 .ask(Lock)
                 .await
                 .map_err(|error| anyhow::anyhow!("synthetic microphone lock: {error}"))
+        }
+
+        pub async fn subscriber_count(&self) -> Result<usize, String> {
+            self.feed
+                .ask(SubscriberCount)
+                .await
+                .map_err(|error| error.to_string())
         }
 
         /// Takes the device away the way the app does when it disappears or

@@ -27,6 +27,24 @@ use super::{ClickHandler, EditorButton};
 /// eight headers build inline. Each noun is its own message so translations
 /// can inflect it with the count.
 pub fn selection_label(noun: &str, count: usize) -> String {
+    if count == 1 {
+        let single = match noun {
+            "style" => Some(tr::editor::timeline::track::style()),
+            "image" => Some(tr::editor::timeline::track::image()),
+            "text" => Some(tr::editor::timeline::track::text_track()),
+            "caption" => Some(tr::editor::timeline::track::captions()),
+            "audio" => Some(tr::editor::timeline::track::audio()),
+            "mask" => Some(tr::editor::timeline::track::mask()),
+            "shape" => Some(tr::editor::timeline::track::shape()),
+            "keyboard" => Some(tr::editor::timeline::track::keyboard()),
+            "3D" => Some("3D"),
+            "scene" => Some(tr::editor::timeline::track::scene()),
+            _ => None,
+        };
+        if let Some(single) = single {
+            return single.to_string();
+        }
+    }
     match noun {
         "style" => tr::ui::selection::style(count),
         "image" => tr::ui::selection::image(count),
@@ -78,7 +96,7 @@ impl SelectionHeader {
             id: id.into(),
             label: label.into(),
             select_all: None,
-            label_color: Hsla::from(theme.editor.text_2),
+            label_color: Hsla::from(theme.editor.text_1),
             action_color: Hsla::from(theme.editor.accent),
             theme: *theme,
             on_done: None,
@@ -129,6 +147,8 @@ impl RenderOnce for SelectionHeader {
             .flex_row()
             .justify_between()
             .items_center()
+            .gap(px(8.))
+            .min_h(px(28.))
             .child(
                 div()
                     .flex()
@@ -137,14 +157,11 @@ impl RenderOnce for SelectionHeader {
                     .items_center()
                     .min_w_0()
                     .child(
-                        EditorButton::plain(&theme, SharedString::from(format!("{id}-done")))
-                            .left_icon("icons/check.svg")
-                            .label(tr::ui::selection::done())
-                            .when_some(on_done, |button, handler| button.on_click(handler)),
-                    )
-                    .child(
                         div()
-                            .text_size(px(12.))
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::SEMIBOLD)
                             .text_color(label_color)
                             .child(label),
                     )
@@ -152,6 +169,7 @@ impl RenderOnce for SelectionHeader {
                         this.child(
                             div()
                                 .id(SharedString::from(format!("{id}-select-all")))
+                                .flex_shrink_0()
                                 .text_size(px(12.))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(action_color)
@@ -162,11 +180,30 @@ impl RenderOnce for SelectionHeader {
                     }),
             )
             .child(
-                EditorButton::plain(&theme, SharedString::from(format!("{id}-delete")))
-                    .danger(&theme)
-                    .left_icon("icons/trash.svg")
-                    .label(tr::ui::selection::delete())
-                    .when_some(on_delete, |button, handler| button.on_click(handler)),
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(4.))
+                    .flex_shrink_0()
+                    .when_some(on_delete, |this, handler| {
+                        this.child(
+                            EditorButton::plain(&theme, SharedString::from(format!("{id}-delete")))
+                                .danger(&theme)
+                                .left_icon("icons/trash.svg")
+                                .icon_size(px(15.))
+                                .tooltip(&theme, tr::ui::selection::delete())
+                                .on_click(handler),
+                        )
+                    })
+                    .child(
+                        EditorButton::plain(&theme, SharedString::from(format!("{id}-done")))
+                            .filled(&theme)
+                            .padding_x(px(12.))
+                            .text_size(px(12.))
+                            .label(tr::ui::selection::done())
+                            .when_some(on_done, |button, handler| button.on_click(handler)),
+                    ),
             )
     }
 }
@@ -177,7 +214,7 @@ mod tests {
 
     #[test]
     fn the_seven_shared_headers_pluralise_their_noun() {
-        assert_eq!(selection_label("caption", 1), "1 caption segment selected");
+        assert_eq!(selection_label("caption", 1), "Captions");
         assert_eq!(selection_label("text", 3), "3 text segments selected");
         assert_eq!(selection_label("3D", 2), "2 3D segments selected");
     }

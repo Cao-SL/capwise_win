@@ -53,7 +53,7 @@ struct TextBackgroundUniforms {
     _padding3: [f32; 2],
 }
 
-struct TextBackgroundResources {
+pub(super) struct TextBackgroundResources {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     uniform_buffers: Vec<wgpu::Buffer>,
@@ -61,7 +61,7 @@ struct TextBackgroundResources {
 }
 
 impl TextBackgroundResources {
-    fn new(device: &Device) -> Self {
+    pub(super) fn new(device: &Device) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Text Background Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -155,7 +155,38 @@ impl TextBackgroundResources {
         );
     }
 
-    fn render(&self, pass: &mut wgpu::RenderPass<'_>, index: usize) {
+    pub(super) fn prepare_rectangles(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        output: (u32, u32),
+        rectangles: &[([f32; 4], [f32; 4])],
+    ) {
+        self.ensure_capacity(device, rectangles.len());
+        for (index, (bounds, color)) in rectangles.iter().enumerate() {
+            self.write(
+                queue,
+                index,
+                &TextBackgroundUniforms {
+                    rect: [
+                        bounds[0],
+                        bounds[1],
+                        bounds[2] - bounds[0],
+                        bounds[3] - bounds[1],
+                    ],
+                    color: *color,
+                    radius: 0.0,
+                    _padding0: 0.0,
+                    _padding1: 0.0,
+                    _padding2: 0.0,
+                    output_size: [output.0 as f32, output.1 as f32],
+                    _padding3: [0.0; 2],
+                },
+            );
+        }
+    }
+
+    pub(super) fn render(&self, pass: &mut wgpu::RenderPass<'_>, index: usize) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_groups[index], &[]);
         pass.draw(0..6, 0..1);
@@ -363,6 +394,33 @@ fn run_ink(run: &glyphon::LayoutRun<'_>) -> Option<(f32, f32)> {
         })
 }
 
+fn text_attrs<'a>(fonts: &FontSystem, text: &'a PreparedText) -> Attrs<'a> {
+    let family = match text.font_family.trim() {
+        "" => Family::SansSerif,
+        name => match name.to_ascii_lowercase().as_str() {
+            "sans" | "sans-serif" | "system sans" | "system sans-serif" => Family::SansSerif,
+            "serif" | "system serif" => Family::Serif,
+            "mono" | "monospace" | "system mono" | "system monospace" => Family::Monospace,
+            _ => Family::Name(name),
+        },
+    };
+    let mut attrs = super::font::matched_font_attrs(
+        fonts,
+        Attrs::new()
+            .family(family)
+            .weight(Weight(text.font_weight.round().clamp(100.0, 900.0) as u16))
+            .style(if text.italic {
+                Style::Italic
+            } else {
+                Style::Normal
+            }),
+    );
+    if text.letter_spacing != 0.0 {
+        attrs = attrs.letter_spacing(text.letter_spacing / text.font_size.max(1.0));
+    }
+    attrs
+}
+
 impl TextLayer {
     pub fn new(device: &Device, queue: &Queue) -> Self {
         let font_system = super::new_font_system();
@@ -402,7 +460,7 @@ impl TextLayer {
         output_size: (u32, u32),
         texts: &[PreparedText],
     ) {
-        self.prepare_with_mode(device, queue, output_size, texts, false);
+        self.prepare_with_mode(device, queue, output_size, texts, false, false);
     }
 
     pub fn prepare_mixed(
@@ -412,7 +470,41 @@ impl TextLayer {
         output_size: (u32, u32),
         texts: &[PreparedText],
     ) {
-        self.prepare_with_mode(device, queue, output_size, texts, true);
+        self.prepare_with_mode(device, queue, output_size, texts, true, false);
+    }
+
+    pub(super) fn prepare_exact(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        output_size: (u32, u32),
+        texts: &[PreparedText],
+    ) {
+        self.prepare_with_mode(device, queue, output_size, texts, false, true);
+    }
+
+    pub(super) fn measure_exact(&mut self, text: &PreparedText) -> (f32, f32) {
+        let metrics = Metrics::new(text.font_size, text.font_size * text.line_height);
+        let attrs = text_attrs(&self.font_system, text);
+        let mut buffer = Buffer::new(&mut self.font_system, metrics);
+        buffer.set_size(
+            &mut self.font_system,
+            Some(text.bounds[2] - text.bounds[0]),
+            None,
+        );
+        buffer.set_wrap(&mut self.font_system, glyphon::Wrap::Word);
+        buffer.set_text(
+            &mut self.font_system,
+            &text.content,
+            &attrs,
+            Shaping::Advanced,
+        );
+        buffer.shape_until_scroll(&mut self.font_system, false);
+        buffer
+            .layout_runs()
+            .fold((0.0_f32, 0.0), |(width, height), run| {
+                (width.max(run.line_w), height + metrics.line_height)
+            })
     }
 
     fn shape(
@@ -483,6 +575,7 @@ impl TextLayer {
         output_size: (u32, u32),
         texts: &[PreparedText],
         force_segmented: bool,
+        exact_bounds: bool,
     ) {
         self.previous_buffers = std::mem::take(&mut self.buffer_keys)
             .into_iter()
@@ -506,7 +599,7 @@ impl TextLayer {
             // Boxes already spanning the frame keep their exact width — there
             // the editor genuinely wrapped too.
             let output_width = output_px[0];
-            let wrap_width = if width < output_width * 0.98 {
+            let wrap_width = if !exact_bounds && width < output_width * 0.98 {
                 (width * 1.05 + 4.0 * output_px[1] / REFERENCE_HEIGHT).min(output_width.max(width))
             } else {
                 width
@@ -518,35 +611,7 @@ impl TextLayer {
             };
 
             let metrics = Metrics::new(text.font_size, text.font_size * text.line_height);
-            let family = match text.font_family.trim() {
-                "" => Family::SansSerif,
-                name => match name.to_ascii_lowercase().as_str() {
-                    "sans" | "sans-serif" | "system sans" | "system sans-serif" => {
-                        Family::SansSerif
-                    }
-                    "serif" | "system serif" => Family::Serif,
-                    "mono" | "monospace" | "system mono" | "system monospace" => Family::Monospace,
-                    _ => Family::Name(name),
-                },
-            };
-            let weight = Weight(text.font_weight.round().clamp(100.0, 900.0) as u16);
-            // Glyph colour comes from each area's default_color (or, for a
-            // gradient / staggered reveal, from per-span attrs) so the
-            // shadow, glow and outline passes can re-tint the same layout.
-            let mut attrs = Attrs::new()
-                .family(family)
-                .weight(weight)
-                .style(if text.italic {
-                    Style::Italic
-                } else {
-                    Style::Normal
-                });
-            if text.letter_spacing != 0.0 {
-                // cosmic-text adds letter_spacing to the em-relative glyph
-                // advance and multiplies by font size at layout (shape.rs), so
-                // the attr is in em — convert from our px value.
-                attrs = attrs.letter_spacing(text.letter_spacing / text.font_size.max(1.0));
-            }
+            let attrs = text_attrs(&self.font_system, text);
             let align = match text.align {
                 TextAlign::Left => Align::Left,
                 TextAlign::Center => Align::Center,

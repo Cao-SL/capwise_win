@@ -111,11 +111,13 @@ pub struct BlurJob {
     /// ring invalidates the worker's imported-texture cache so a recycled
     /// allocation address cannot alias a stale import.
     pub ring_generation: u64,
-    pub mode: cap_camera_effects::BlurMode,
+    pub mode: Option<cap_camera_effects::BlurMode>,
+    pub skin_smoothing: bool,
 }
 
 pub struct BlurOutput {
-    pub mode: cap_camera_effects::BlurMode,
+    pub mode: Option<cap_camera_effects::BlurMode>,
+    pub skin_smoothing: bool,
     pub cutout: Option<std::sync::Arc<gpui::RenderImage>>,
     /// Blurred BGRA IOSurface pixel buffer, GPU work complete.
     pub buffer: SendPixelBuf,
@@ -220,7 +222,8 @@ struct Worker {
     device: wgpu::Device,
     queue: wgpu::Queue,
     cache: IOSurfaceTextureCache,
-    processor: cap_camera_effects::BlurProcessor,
+    processor: Option<cap_camera_effects::BlurProcessor>,
+    smoother: Option<cap_camera_effects::SkinSmoother>,
     converter: RgbaToBgraSurfaceConverter,
     /// Imported input textures keyed by pixel-buffer pointer. The converter
     /// ring is four fixed buffers, so four entries cover the steady state and
@@ -233,10 +236,6 @@ struct Worker {
 
 impl Worker {
     fn new(device: wgpu::Device, queue: wgpu::Queue) -> anyhow::Result<Self> {
-        let mut processor =
-            cap_camera_effects::BlurProcessor::new(&device, wgpu::TextureFormat::Rgba8Unorm)
-                .context("blur processor init")?;
-        processor.set_inference_interval(BLUR_INFERENCE_INTERVAL);
         let converter =
             RgbaToBgraSurfaceConverter::new(&device).map_err(|error| anyhow!("{error}"))?;
         let cache = IOSurfaceTextureCache::new().context("Metal device unavailable")?;
@@ -245,12 +244,26 @@ impl Worker {
             device,
             queue,
             cache,
-            processor,
+            processor: None,
+            smoother: None,
             converter,
             imported: Vec::new(),
             imported_generation: 0,
             frame_number: 0,
         })
+    }
+
+    fn ensure_processor(&mut self) -> anyhow::Result<&mut cap_camera_effects::BlurProcessor> {
+        if self.processor.is_none() {
+            let mut processor = cap_camera_effects::BlurProcessor::new(
+                &self.device,
+                wgpu::TextureFormat::Rgba8Unorm,
+            )
+            .context("blur processor init")?;
+            processor.set_inference_interval(BLUR_INFERENCE_INTERVAL);
+            self.processor = Some(processor);
+        }
+        Ok(self.processor.as_mut().expect("just ensured"))
     }
 
     fn process(
@@ -259,28 +272,66 @@ impl Worker {
         job: BlurJob,
     ) -> anyhow::Result<BlurOutput> {
         let mode = job.mode;
+        let skin_smoothing = job.skin_smoothing;
         let (width, height) = (job.width, job.height);
         let texture = self.input_texture(&job)?.clone();
 
-        // Vision takes the converted IOSurface directly (no GPU readback),
-        // and segmentation runs beside rendering instead of blocking it.
-        self.processor.set_segmentation_source(job.buffer.0.clone());
+        if mode.is_some() {
+            self.ensure_processor()?;
+        } else if skin_smoothing {
+            // Only brightening needs the mask, so smoothing carries on without it.
+            if let Err(error) = self.ensure_processor() {
+                tracing::warn!("camera brightening unavailable: {error:#}");
+            }
+        } else {
+            self.processor = None;
+        }
+        if !skin_smoothing {
+            self.smoother = None;
+        }
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Camera Preview Blur"),
             });
-        self.processor.process_into_encoder(
-            &self.device,
-            &self.queue,
-            &texture,
-            &mut encoder,
-            mode,
-        );
-        let output = self
-            .processor
-            .process_returning_output()
-            .context("blur output missing")?;
+        if skin_smoothing {
+            let person_mask = self.processor.as_mut().and_then(|processor| {
+                processor.set_segmentation_source(job.buffer.0.clone());
+                processor.update_person_mask(&self.device, &self.queue, &texture)
+            });
+            self.smoother
+                .get_or_insert_with(|| cap_camera_effects::SkinSmoother::new(&self.device))
+                .process_into_encoder(
+                    &self.device,
+                    &self.queue,
+                    &texture,
+                    &mut encoder,
+                    cap_camera_effects::DEFAULT_SKIN_SMOOTHING,
+                    person_mask,
+                );
+        }
+        let smoothed = self
+            .smoother
+            .as_ref()
+            .and_then(cap_camera_effects::SkinSmoother::output_texture);
+        let output = if let (Some(mode), Some(processor)) = (mode, self.processor.as_mut()) {
+            // Vision takes the converted IOSurface directly (no GPU readback),
+            // and segmentation runs beside rendering instead of blocking it.
+            processor.set_segmentation_source(job.buffer.0.clone());
+            processor.process_into_encoder(
+                &self.device,
+                &self.queue,
+                smoothed.unwrap_or(&texture),
+                &mut encoder,
+                mode,
+            );
+            processor
+                .process_returning_output()
+                .context("blur output missing")?
+        } else {
+            smoothed.context("skin smoothing output missing")?
+        };
 
         self.frame_number = self.frame_number.wrapping_add(1);
         let pending = runtime
@@ -299,7 +350,7 @@ impl Worker {
         let frame = runtime
             .block_on(pending.wait(&self.device, submission))
             .map_err(|error| anyhow!("{error}"))?;
-        let cutout = if mode == cap_camera_effects::BlurMode::Remove {
+        let cutout = if mode == Some(cap_camera_effects::BlurMode::Remove) {
             use core_foundation::base::TCFType as _;
             use core_video::pixel_buffer::{CVPixelBuffer, CVPixelBufferRef};
             let raw = &*frame.pixel_buffer as *const cv::PixelBuf as CVPixelBufferRef;
@@ -313,6 +364,7 @@ impl Worker {
         };
         Ok(BlurOutput {
             mode,
+            skin_smoothing,
             cutout,
             buffer: SendPixelBuf(frame.pixel_buffer),
             width: frame.width,
@@ -367,6 +419,96 @@ mod tests {
     use core_foundation::base::TCFType as _;
     use core_video::pixel_buffer::{CVPixelBuffer, CVPixelBufferRef};
     use std::time::Instant;
+
+    fn with_pixels<T>(
+        buffer: &cv::PixelBuf,
+        height: usize,
+        read: impl FnOnce(&mut [u8], usize) -> T,
+    ) -> T {
+        let raw = buffer as *const cv::PixelBuf as CVPixelBufferRef;
+        let wrapped = unsafe { CVPixelBuffer::wrap_under_get_rule(raw) };
+        assert_eq!(wrapped.lock_base_address(0), 0);
+        let stride = wrapped.get_bytes_per_row();
+        let pixels = unsafe {
+            std::slice::from_raw_parts_mut(wrapped.get_base_address().cast::<u8>(), stride * height)
+        };
+        let result = read(pixels, stride);
+        assert_eq!(wrapped.unlock_base_address(0), 0);
+        result
+    }
+
+    fn roughness(buffer: &cv::PixelBuf, height: usize) -> f64 {
+        with_pixels(buffer, height, |pixels, stride| {
+            let row = &pixels[stride * (height / 2)..][..stride];
+            let green: Vec<f64> = row
+                .chunks_exact(4)
+                .skip(64)
+                .take(512)
+                .map(|pixel| f64::from(pixel[1]))
+                .collect();
+            let mean = green.iter().sum::<f64>() / green.len() as f64;
+            green.iter().map(|value| (value - mean).abs()).sum::<f64>() / green.len() as f64
+        })
+    }
+
+    #[test]
+    #[ignore = "requires a working native WGPU adapter"]
+    fn segmentation_session_is_released_once_every_effect_is_off() {
+        let (width, height) = BLUR_MAX_DIMS;
+        let properties = cf::Dictionary::new();
+        let attributes = cf::Dictionary::with_keys_values(
+            &[
+                cv::pixel_buffer::keys::io_surf_props().as_ref(),
+                cv::pixel_buffer::keys::metal_compatibility().as_ref(),
+            ],
+            &[properties.as_ref(), cf::Boolean::value_true().as_ref()],
+        )
+        .unwrap();
+        let buffer =
+            cv::PixelBuf::new(width, height, cv::PixelFormat::_32_BGRA, Some(&attributes)).unwrap();
+        with_pixels(&buffer, height, |pixels, stride| {
+            for (y, row) in pixels.chunks_exact_mut(stride).enumerate() {
+                for (x, pixel) in row.chunks_exact_mut(4).take(width).enumerate() {
+                    let speck = if (x * 7 + y * 13) % 5 == 0 { 0 } else { 14 };
+                    pixel.copy_from_slice(&[121 + speck, 146 + speck, 191 + speck, 255]);
+                }
+            }
+        });
+        let before = roughness(&buffer, height);
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let (device, queue) = shared_device(&runtime).unwrap();
+        let mut worker = Worker::new(device, queue).unwrap();
+        let job = |mode, skin_smoothing| BlurJob {
+            buffer: SendPixelBuf(buffer.clone()),
+            width: width as u32,
+            height: height as u32,
+            ring_generation: 1,
+            mode,
+            skin_smoothing,
+        };
+
+        let output = worker.process(&runtime, job(None, true)).unwrap();
+        assert!(worker.processor.is_some());
+        assert!(roughness(&output.buffer.0, height) < before * 0.8);
+
+        let output = worker
+            .process(&runtime, job(Some(BlurMode::Light), true))
+            .unwrap();
+        assert!(worker.processor.is_some() && worker.smoother.is_some());
+        assert_eq!(output.mode, Some(BlurMode::Light));
+        assert!(output.skin_smoothing);
+
+        worker
+            .process(&runtime, job(Some(BlurMode::Light), false))
+            .unwrap();
+        assert!(worker.smoother.is_none());
+        worker.process(&runtime, job(None, false)).ok();
+        assert!(worker.processor.is_none());
+    }
 
     #[test]
     #[ignore = "requires CAP_CAMERA_EFFECT_TEST_FRAME containing a 1280x720 RGBA webcam frame"]
@@ -424,12 +566,13 @@ mod tests {
                             width: width as u32,
                             height: height as u32,
                             ring_generation: 1,
-                            mode,
+                            mode: Some(mode),
+                            skin_smoothing: false,
                         },
                     )
                     .unwrap();
                 timings.push(start.elapsed().as_secs_f64() * 1000.0);
-                assert_eq!(output.mode, mode);
+                assert_eq!(output.mode, Some(mode));
                 if mode == BlurMode::Remove {
                     let image = output.cutout.unwrap();
                     let bytes = image.as_bytes(0).unwrap();

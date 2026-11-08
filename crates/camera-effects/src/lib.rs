@@ -4,6 +4,7 @@ mod gpu_tests;
 mod mask_refinement;
 mod matte;
 mod segmentation;
+mod skin_smooth;
 #[cfg(target_os = "macos")]
 mod vision;
 
@@ -17,6 +18,8 @@ use mask_refinement::MaskRefiner;
 use mask_refinement::smooth_mask_value;
 use matte::{MattePipeline, MatteTextures};
 use segmentation::SegmentationModel;
+
+pub use skin_smooth::{DEFAULT_SKIN_SMOOTHING, SkinSmoother};
 
 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
 pub fn onnx_runtime_library_path() -> Option<std::path::PathBuf> {
@@ -651,20 +654,27 @@ impl BlurProcessor {
             .output_texture
     }
 
-    pub fn process_into_encoder(
+    /// Segments `input_texture` without rendering any blur. `None` until the
+    /// first mask exists, which the caller should treat as "no person".
+    pub fn update_person_mask(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         input_texture: &wgpu::Texture,
-        encoder: &mut wgpu::CommandEncoder,
-        mode: BlurMode,
+    ) -> Option<&wgpu::TextureView> {
+        self.ensure_textures(device, input_texture.width(), input_texture.height());
+        self.refresh_mask(device, queue, input_texture);
+        self.mask_initialized
+            .then(|| self.textures.as_ref().map(|textures| &textures.mask_view))
+            .flatten()
+    }
+
+    fn refresh_mask(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input_texture: &wgpu::Texture,
     ) {
-        let width = input_texture.width();
-        let height = input_texture.height();
-
-        self.ensure_textures(device, width, height);
-        let input_view = input_texture.create_view(&Default::default());
-
         let should_infer = self.inference_requested
             || !self.mask_initialized
             || (!self.frame_synchronous
@@ -692,6 +702,22 @@ impl BlurProcessor {
             self.upload_mask(device, queue);
             self.mask_dirty = false;
         }
+    }
+
+    pub fn process_into_encoder(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input_texture: &wgpu::Texture,
+        encoder: &mut wgpu::CommandEncoder,
+        mode: BlurMode,
+    ) {
+        let width = input_texture.width();
+        let height = input_texture.height();
+
+        self.ensure_textures(device, width, height);
+        let input_view = input_texture.create_view(&Default::default());
+        self.refresh_mask(device, queue, input_texture);
 
         let textures = self.textures.as_ref().expect("textures initialized above");
         // The guide is re-read every frame, so edges track the live image

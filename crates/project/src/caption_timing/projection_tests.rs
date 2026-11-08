@@ -68,16 +68,19 @@ fn borrowed_caption_projection_matches_sanitized_copy() {
                                 text: "late".into(),
                                 start: *end,
                                 end: *end + 0.5,
+                                hidden: false,
                             },
                             CaptionWord {
                                 text: "early".into(),
                                 start: *start,
                                 end: *start + 0.5,
+                                hidden: false,
                             },
                             CaptionWord {
                                 text: ",".into(),
                                 start: 4.0,
                                 end: 10.0,
+                                hidden: false,
                             },
                         ]
                     } else {
@@ -116,6 +119,7 @@ fn borrowed_projection_preserves_take_offsets_and_nonfinite_timestamps() {
                     text: "word".into(),
                     start,
                     end: start + 0.75,
+                    hidden: false,
                 }],
             }
         })
@@ -154,6 +158,7 @@ fn benchmark_caption_projection_allocations() {
                             text: "word".into(),
                             start,
                             end: start + 0.3,
+                            hidden: false,
                         }
                     })
                     .collect(),
@@ -299,6 +304,7 @@ fn baseline_projection(
                         text: word.text.clone(),
                         start: start as f32,
                         end: end as f32,
+                        hidden: false,
                     });
                 }
 
@@ -535,11 +541,13 @@ fn mapping_bounds_preserve_shared_edges_overlaps_duplicates_and_fallbacks() {
                         text: "later".into(),
                         start: start + 2.0,
                         end: start + 2.5,
+                        hidden: false,
                     },
                     CaptionWord {
                         text: "earlier".into(),
                         start,
                         end: start + 0.5,
+                        hidden: false,
                     },
                 ]
             } else {

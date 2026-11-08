@@ -95,6 +95,7 @@ fn reference_words(tokens: &[CaptionWord]) -> Vec<CaptionWord> {
                 text: text.to_string(),
                 start: token.start,
                 end: token.end,
+                hidden: false,
             }),
         }
     }
@@ -256,17 +257,20 @@ fn fake_tokens(audio_path: &Path) -> Result<Vec<CaptionWord>, String> {
             text: format!(" {text}"),
             start: time as f32,
             end: end as f32,
+            hidden: false,
         });
         if i % 3 == 2 {
             tokens.push(CaptionWord {
                 text: ",".into(),
                 start: end as f32,
                 end: (end + 0.01) as f32,
+                hidden: false,
             });
             tokens.push(CaptionWord {
                 text: " ".into(),
                 start: (end + 0.01) as f32,
                 end: (end + 0.02) as f32,
+                hidden: false,
             });
         }
     }
@@ -626,6 +630,7 @@ fn random_tokens(rng: &mut Rng, unicode: bool) -> Vec<CaptionWord> {
             text,
             start: t as f32,
             end: (t + length) as f32,
+            hidden: false,
         });
         t += length
             + match rng.range(0, 3) {
@@ -758,6 +763,7 @@ fn trimmed_transcription_extracts_only_used_audio_and_restores_source_times() {
                             text: "word".into(),
                             start,
                             end,
+                            hidden: false,
                         }],
                     }
                 })
@@ -857,6 +863,7 @@ fn transcription_keeps_speech_after_empty_ranges_and_cleans_up_on_failure() {
             text: "speech".into(),
             start: 1.1,
             end: 1.2,
+            hidden: false,
         }]))
     })
     .unwrap();
@@ -903,11 +910,13 @@ fn source_timestamps_restore_words_in_two_ranges() {
                 text: "first".into(),
                 start: 0.25,
                 end: 0.5,
+                hidden: false,
             },
             CaptionWord {
                 text: "second".into(),
                 start: 2.25,
                 end: 2.5,
+                hidden: false,
             },
         ]),
         &offsets,
@@ -944,11 +953,13 @@ fn source_timestamps_clamp_words_and_wordless_segments_at_junctions() {
             text: "across".into(),
             start: 1.75,
             end: 2.25,
+            hidden: false,
         },
         CaptionWord {
             text: "junction".into(),
             start: 2.0,
             end: 2.25,
+            hidden: false,
         },
     ]);
     segments.push(CaptionSegment {
@@ -982,6 +993,7 @@ fn source_timestamps_for_one_range_match_a_source_offset() {
         text: "word".into(),
         start: 0.25,
         end: 0.5,
+        hidden: false,
     }]);
     let mut reference = segments.clone();
     for segment in &mut reference {
@@ -1002,6 +1014,7 @@ fn source_timestamps_with_empty_ranges_produce_no_captions() {
         text: "word".into(),
         start: 0.25,
         end: 0.5,
+        hidden: false,
     }]);
     segments.push(CaptionSegment {
         start: 0.25,

@@ -13,6 +13,9 @@ use wgpu::{Device, Queue, include_wgsl, util::DeviceExt};
 
 use crate::{DecodedSegmentFrames, ProjectUniforms, RenderVideoConstants, parse_color_component};
 
+#[cfg(test)]
+mod typography_tests;
+
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct CaptionSettings {
@@ -290,6 +293,7 @@ fn word_byte_range(
     target_idx: usize,
     uppercase: bool,
 ) -> Option<(usize, usize)> {
+    let full_text = full_text.split('\n').next().unwrap_or(full_text);
     let mut last_end = 0usize;
     for (idx, word) in words.iter().enumerate() {
         let needle = if uppercase {
@@ -358,6 +362,75 @@ fn calculate_word_highlight(
     0.0
 }
 
+const SHADOW_LAYER_ALPHA: f32 = 0.16;
+const OUTLINE_STEPS: usize = 16;
+
+fn outline_offsets(thickness: f32) -> [(f32, f32); OUTLINE_STEPS] {
+    std::array::from_fn(|step| {
+        let angle = step as f32 / OUTLINE_STEPS as f32 * std::f32::consts::TAU;
+        (angle.cos() * thickness, angle.sin() * thickness)
+    })
+}
+
+/// Stacked faint copies below and to the right, which read as a soft shadow
+/// without a blur pass over the frame.
+fn shadow_offsets(reach: f32) -> [(f32, f32); 6] {
+    [
+        (reach, reach * 1.4),
+        (reach * 0.5, reach),
+        (reach * 1.5, reach),
+        (reach * 0.5, reach * 1.9),
+        (reach * 1.5, reach * 1.9),
+        (reach, reach * 2.2),
+    ]
+}
+
+/// Cosmic-text picks a fallback per glyph when a font has no Han, and on macOS
+/// the fallback lacks simplified-only characters like "说", so one line mixes
+/// several weights. Text with Chinese in such a font uses one full Simplified
+/// Chinese font for the whole line instead.
+fn resolve_caption_family(
+    font_system: &mut FontSystem,
+    has_han: &mut std::collections::HashMap<String, bool>,
+    font: &str,
+    text: &str,
+) -> Family<'static> {
+    let chosen = match font {
+        "LXGW WenKai Lite Medium" => Family::Name("LXGW WenKai Lite"),
+        "System Serif" => Family::Serif,
+        "System Monospace" => Family::Monospace,
+        "" | "System Sans-Serif" => Family::SansSerif,
+        name => Family::Name(interned_family_name(name)),
+    };
+    if !text.chars().any(cap_project::is_unspaced_script) {
+        return chosen;
+    }
+    let mut covers = |family: Family<'static>, key: &str| -> bool {
+        if let Some(known) = has_han.get(key) {
+            return *known;
+        }
+        let id = font_system.db().query(&glyphon::fontdb::Query {
+            families: &[family],
+            weight: glyphon::fontdb::Weight::BOLD,
+            ..Default::default()
+        });
+        let covered = id
+            .and_then(|id| font_system.get_font(id))
+            .is_some_and(|face| face.as_swash().charmap().map('说') != 0);
+        has_han.insert(key.to_string(), covered);
+        covered
+    };
+    if covers(chosen, font) {
+        return chosen;
+    }
+    for name in ["Noto Sans SC", "PingFang SC", "Hiragino Sans GB"] {
+        if covers(Family::Name(name), name) {
+            return Family::Name(name);
+        }
+    }
+    chosen
+}
+
 fn caption_rgba(rgb: [f32; 3], alpha: f32) -> Color {
     Color::rgba(
         (rgb[0] * 255.0) as u8,
@@ -385,6 +458,7 @@ fn word_highlight_spans(
     let base = caption_rgba(highlight.base_rgb, highlight.base_alpha);
     let mut spans = Vec::with_capacity(words.len() * 2 + 1);
     let mut last_end = 0usize;
+    let original_text = text.split('\n').next().unwrap_or(text);
 
     for (idx, word) in words.iter().enumerate() {
         let needle = if uppercase {
@@ -392,7 +466,10 @@ fn word_highlight_spans(
         } else {
             Cow::Borrowed(word.text.as_str())
         };
-        let Some(start_pos) = text.get(last_end..).and_then(|s| s.find(needle.as_ref())) else {
+        let Some(start_pos) = original_text
+            .get(last_end..)
+            .and_then(|s| s.find(needle.as_ref()))
+        else {
             continue;
         };
         let abs_start = last_end + start_pos;
@@ -443,13 +520,17 @@ struct ShapedCaptionText {
     family: Family<'static>,
     weight: Weight,
     colors: CaptionTextColors,
+    wrap: bool,
+    balance: bool,
 }
 
 /// A font family name that lives as long as the text cache keyed on it. The
 /// names are the fonts a user picks, so the set stays small.
 fn interned_family_name(name: &str) -> &'static str {
     static NAMES: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
-    let mut names = NAMES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut names = NAMES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(found) = names.iter().find(|known| **known == name) {
         return found;
     }
@@ -462,8 +543,18 @@ fn shape_caption_text(font_system: &mut FontSystem, shaped: &ShapedCaptionText) 
     let font_size = f32::from_bits(shaped.font_size);
     let mut buffer = Buffer::new(font_system, Metrics::new(font_size, font_size * 1.2));
     buffer.set_size(font_system, Some(f32::from_bits(shaped.wrap_width)), None);
-    buffer.set_wrap(font_system, glyphon::Wrap::None);
-    let attrs = Attrs::new().family(shaped.family).weight(shaped.weight);
+    buffer.set_wrap(
+        font_system,
+        if shaped.wrap {
+            glyphon::Wrap::WordOrGlyph
+        } else {
+            glyphon::Wrap::None
+        },
+    );
+    let attrs = super::font::matched_font_attrs(
+        font_system,
+        Attrs::new().family(shaped.family).weight(shaped.weight),
+    );
     match &shaped.colors {
         CaptionTextColors::Uniform(color) => buffer.set_text(
             font_system,
@@ -480,6 +571,42 @@ fn shape_caption_text(font_system: &mut FontSystem, shaped: &ShapedCaptionText) 
             Shaping::Advanced,
             None,
         ),
+    }
+    if shaped.wrap {
+        buffer.shape_until_scroll(font_system, false);
+        if shaped.balance {
+            let widths = buffer
+                .layout_runs()
+                .map(|run| run.line_w)
+                .collect::<Vec<_>>();
+            let widest = widths.iter().copied().fold(0.0_f32, f32::max);
+            if (2..=4).contains(&widths.len())
+                && widths.last().is_some_and(|last| *last < widest * 0.4)
+            {
+                let mut low = widest * 0.5;
+                let mut high = f32::from_bits(shaped.wrap_width);
+                for _ in 0..6 {
+                    let candidate = (low + high) * 0.5;
+                    buffer.set_size(font_system, Some(candidate), None);
+                    buffer.shape_until_scroll(font_system, false);
+                    if buffer.layout_runs().count() <= widths.len() {
+                        high = candidate;
+                    } else {
+                        low = candidate;
+                    }
+                }
+                buffer.set_size(font_system, Some(high), None);
+                buffer.shape_until_scroll(font_system, false);
+            }
+        }
+        let width = buffer
+            .layout_runs()
+            .fold(1.0_f32, |width, run| width.max(run.line_w));
+        buffer.set_size(font_system, Some(width), None);
+        for line in &mut buffer.lines {
+            line.set_align(Some(glyphon::cosmic_text::Align::Center));
+        }
+        buffer.shape_until_scroll(font_system, false);
     }
     buffer
 }
@@ -514,6 +641,12 @@ pub struct CaptionsLayer {
     text_atlas: TextAtlas,
     text_renderer: TextRenderer,
     text: CaptionText,
+    outline_text: CaptionText,
+    shadow_text: CaptionText,
+    translation_text: CaptionText,
+    translation_outline_text: CaptionText,
+    translation_shadow_text: CaptionText,
+    family_has_simplified_han: std::collections::HashMap<String, bool>,
     current_text: Option<String>,
     current_segment_start: f32,
     current_segment_end: f32,
@@ -656,6 +789,12 @@ impl CaptionsLayer {
             text_atlas,
             text_renderer,
             text: CaptionText::new(),
+            outline_text: CaptionText::new(),
+            shadow_text: CaptionText::new(),
+            translation_text: CaptionText::new(),
+            translation_outline_text: CaptionText::new(),
+            translation_shadow_text: CaptionText::new(),
+            family_has_simplified_han: std::collections::HashMap::new(),
             current_text: None,
             current_segment_start: 0.0,
             current_segment_end: 0.0,
@@ -751,15 +890,66 @@ impl CaptionsLayer {
             effective_end as f32,
         );
 
-        let raw_caption_text = self.current_text.clone().unwrap_or_default();
-        let joined_caption_text = cap_project::caption_display_text(&raw_caption_text);
-        let uppercase = caption_data.settings.uppercase;
-        let caption_text = if uppercase {
-            joined_caption_text.to_uppercase()
+        let has_translation = caption_data
+            .settings
+            .translation_for(&active.segment.id, &active.segment.text)
+            .is_some();
+        let translated_only = has_translation
+            && caption_data.settings.display_mode == cap_project::CaptionDisplayMode::Translated;
+        let translated_layout = has_translation
+            && caption_data.settings.display_mode != cap_project::CaptionDisplayMode::Original;
+        let translation_appearance = caption_data.settings.resolved_translation_appearance();
+        let primary_appearance = if translated_only {
+            translation_appearance.clone()
         } else {
-            joined_caption_text
+            caption_data.settings.source_appearance()
         };
-        let caption_words = &active.segment.words;
+        let uppercase = primary_appearance.uppercase;
+        let inherited_translation_style = (caption_data.settings.translation_gap.is_some()
+            || caption_data.settings.translation_appearance.is_some())
+        .then(|| caption_data.settings.resolved_translation_style());
+        let independent_style = caption_data
+            .settings
+            .translation_style
+            .as_ref()
+            .or(inherited_translation_style.as_ref())
+            .filter(|_| translated_layout);
+        let secondary = independent_style
+            .filter(|_| !translated_only)
+            .and_then(|style| {
+                caption_data
+                    .settings
+                    .translation_for(&active.segment.id, &active.segment.text)
+                    .map(|translation| {
+                        let text = cap_project::caption_display_text(&translation.text);
+                        (
+                            if translation_appearance.uppercase {
+                                text.to_uppercase()
+                            } else {
+                                text
+                            },
+                            style,
+                        )
+                    })
+            });
+        let caption_text = if translated_only {
+            let translation = caption_data
+                .settings
+                .translation_for(&active.segment.id, &active.segment.text)
+                .expect("translated layout requires a translation");
+            let text = cap_project::caption_display_text(&translation.text);
+            if uppercase { text.to_uppercase() } else { text }
+        } else if secondary.is_some() {
+            let text = cap_project::caption_display_text(&active.segment.text);
+            if uppercase { text.to_uppercase() } else { text }
+        } else {
+            cap_project::caption_presentation_text(&active.segment, &caption_data.settings)
+        };
+        let caption_words: &[CaptionWord] = if translated_only {
+            &[]
+        } else {
+            &active.segment.words
+        };
 
         let fade_opacity = calculate_caption_fade(
             current_time,
@@ -823,9 +1013,9 @@ impl CaptionsLayer {
         let margin = width as f32 * 0.05;
 
         let base_color = [
-            parse_color_component(&caption_data.settings.color, 0),
-            parse_color_component(&caption_data.settings.color, 1),
-            parse_color_component(&caption_data.settings.color, 2),
+            parse_color_component(&primary_appearance.color, 0),
+            parse_color_component(&primary_appearance.color, 1),
+            parse_color_component(&primary_appearance.color, 2),
         ];
 
         let highlight_color_rgb = [
@@ -835,9 +1025,9 @@ impl CaptionsLayer {
         ];
 
         let outline_color_rgb = [
-            parse_color_component(&caption_data.settings.outline_color, 0),
-            parse_color_component(&caption_data.settings.outline_color, 1),
-            parse_color_component(&caption_data.settings.outline_color, 2),
+            parse_color_component(&primary_appearance.outline_color, 0),
+            parse_color_component(&primary_appearance.outline_color, 1),
+            parse_color_component(&primary_appearance.outline_color, 2),
         ];
 
         let background_color_rgb = [
@@ -850,18 +1040,38 @@ impl CaptionsLayer {
             * fade_opacity)
             .clamp(0.0, 1.0);
 
-        let font_size = caption_data.settings.size as f32 * (height as f32 / 1080.0);
+        let primary_style = independent_style.filter(|_| translated_only);
+        let font_size = primary_style.map_or(caption_data.settings.size, |style| style.size.max(1))
+            as f32
+            * (height as f32 / 1080.0);
+        let outline_width =
+            if translated_only && caption_data.settings.translation_appearance.is_none() {
+                caption_data.settings.normalized_outline_width()
+            } else {
+                primary_appearance.normalized_outline_width()
+            } / 100.0;
+        let shadow_size = primary_appearance.normalized_shadow_size() / 100.0;
+        let shadow_strength = primary_appearance.shadow_opacity.min(100) as f32 / 100.0;
+        let show_outline = primary_appearance.outline && outline_width > 0.0;
+        let show_shadow = primary_appearance.shadow && shadow_strength > 0.0;
+        let shadow_rgb = [
+            parse_color_component(&primary_appearance.shadow_color, 0),
+            parse_color_component(&primary_appearance.shadow_color, 1),
+            parse_color_component(&primary_appearance.shadow_color, 2),
+        ];
         let wrap_width = (width as f32 - margin * 2.0).max(font_size);
-        let font_family = match caption_data.settings.font.as_str() {
-            "System Serif" => Family::Serif,
-            "System Monospace" => Family::Monospace,
-            "" | "System Sans-Serif" => Family::SansSerif,
-            name => Family::Name(interned_family_name(name)),
-        };
+        let font_family = resolve_caption_family(
+            &mut self.font_system,
+            &mut self.family_has_simplified_han,
+            primary_style.map_or(caption_data.settings.font.as_str(), |style| {
+                style.font.as_str()
+            }),
+            &caption_text,
+        );
 
-        let weight = if caption_data.settings.font_weight >= 700 {
+        let weight = if primary_appearance.font_weight >= 700 {
             Weight::BOLD
-        } else if caption_data.settings.font_weight >= 500 {
+        } else if primary_appearance.font_weight >= 500 {
             Weight::MEDIUM
         } else {
             Weight::NORMAL
@@ -887,17 +1097,109 @@ impl CaptionsLayer {
         } else {
             CaptionTextColors::Uniform(caption_rgba(base_color, highlight_alpha))
         };
-        self.text.update(
-            &mut self.font_system,
-            ShapedCaptionText {
-                text: caption_text,
-                font_size: font_size.to_bits(),
-                wrap_width: wrap_width.to_bits(),
-                family: font_family,
-                weight,
-                colors,
-            },
-        );
+        let shaped_with = |colors: CaptionTextColors| ShapedCaptionText {
+            text: caption_text.clone(),
+            font_size: font_size.to_bits(),
+            wrap_width: wrap_width.to_bits(),
+            family: font_family,
+            weight,
+            colors,
+            wrap: translated_layout,
+            balance: caption_data.settings.translation_gap.is_some(),
+        };
+        self.text.update(&mut self.font_system, shaped_with(colors));
+        if show_outline {
+            self.outline_text.update(
+                &mut self.font_system,
+                shaped_with(CaptionTextColors::Uniform(caption_rgba(
+                    outline_color_rgb,
+                    fade_opacity,
+                ))),
+            );
+        }
+        if show_shadow {
+            self.shadow_text.update(
+                &mut self.font_system,
+                shaped_with(CaptionTextColors::Uniform(caption_rgba(
+                    shadow_rgb,
+                    fade_opacity * SHADOW_LAYER_ALPHA * shadow_strength,
+                ))),
+            );
+        }
+
+        let translation_color =
+            [0, 1, 2].map(|index| parse_color_component(&translation_appearance.color, index));
+        let translation_outline_color = [0, 1, 2]
+            .map(|index| parse_color_component(&translation_appearance.outline_color, index));
+        let translation_shadow_color = [0, 1, 2]
+            .map(|index| parse_color_component(&translation_appearance.shadow_color, index));
+        let translation_outline_width = if caption_data.settings.translation_appearance.is_some() {
+            translation_appearance.normalized_outline_width()
+        } else {
+            caption_data.settings.normalized_outline_width()
+        } / 100.;
+        let translation_shadow_size = translation_appearance.normalized_shadow_size() / 100.;
+        let translation_shadow_strength =
+            translation_appearance.shadow_opacity.min(100) as f32 / 100.;
+        let translation_has_outline =
+            translation_appearance.outline && translation_outline_width > 0.;
+        let translation_has_shadow =
+            translation_appearance.shadow && translation_shadow_strength > 0.;
+        let translation_weight = if translation_appearance.font_weight >= 700 {
+            Weight::BOLD
+        } else if translation_appearance.font_weight >= 500 {
+            Weight::MEDIUM
+        } else {
+            Weight::NORMAL
+        };
+        let secondary_layout = secondary.as_ref().map(|(text, style)| {
+            let secondary_size = style.size.max(1) as f32 * (height as f32 / 1080.0);
+            let family = resolve_caption_family(
+                &mut self.font_system,
+                &mut self.family_has_simplified_han,
+                &style.font,
+                text,
+            );
+            let shaped = |color| ShapedCaptionText {
+                text: text.clone(),
+                font_size: secondary_size.to_bits(),
+                wrap_width: (width as f32 - margin * 2.0).max(secondary_size).to_bits(),
+                family,
+                weight: translation_weight,
+                colors: CaptionTextColors::Uniform(color),
+                wrap: true,
+                balance: caption_data.settings.translation_gap.is_some(),
+            };
+            self.translation_text.update(
+                &mut self.font_system,
+                shaped(caption_rgba(translation_color, highlight_alpha)),
+            );
+            if translation_has_outline {
+                self.translation_outline_text.update(
+                    &mut self.font_system,
+                    shaped(caption_rgba(translation_outline_color, fade_opacity)),
+                );
+            }
+            if translation_has_shadow {
+                self.translation_shadow_text.update(
+                    &mut self.font_system,
+                    shaped(caption_rgba(
+                        translation_shadow_color,
+                        fade_opacity * SHADOW_LAYER_ALPHA * translation_shadow_strength,
+                    )),
+                );
+            }
+            let (mut secondary_width, mut secondary_height) = (0.0_f32, 0.0_f32);
+            for run in LayoutRunIter::new(&self.translation_text.buffer) {
+                secondary_width = secondary_width.max(run.line_w);
+                secondary_height = secondary_height.max(run.line_top + run.line_height);
+            }
+            if secondary_height == 0.0 {
+                secondary_height = secondary_size * 1.2;
+                secondary_width = secondary_width.max(secondary_size);
+            }
+            (secondary_width, secondary_height, secondary_size)
+        });
 
         let mut layout_width: f32 = 0.0;
         let mut layout_height: f32 = 0.0;
@@ -906,7 +1208,9 @@ impl CaptionsLayer {
             layout_width = layout_width.max(run.line_w);
             layout_height = layout_height.max(run.line_top + run.line_height);
 
-            if let Some((word_start, word_end)) = active_word_byte_range {
+            if let Some((word_start, word_end)) = active_word_byte_range
+                && run.line_i == 0
+            {
                 for glyph in run.glyphs.iter() {
                     if glyph.start < word_end && glyph.end > word_start {
                         match highlight_extent {
@@ -940,16 +1244,37 @@ impl CaptionsLayer {
             layout_width = layout_width.max(font_size);
         }
 
+        let translation_gap = if secondary_layout.is_some() {
+            caption_data.settings.translation_gap.unwrap_or(0).min(200) as f32 * height as f32
+                / 1080.0
+        } else {
+            0.0
+        };
+        let source_width = layout_width;
+        let source_height = layout_height;
+        let group_font_size =
+            if let Some((secondary_width, secondary_height, secondary_size)) = secondary_layout {
+                layout_width = layout_width.max(secondary_width);
+                layout_height += secondary_height + translation_gap;
+                font_size.max(secondary_size)
+            } else {
+                font_size
+            };
+
         let available_width = (width as f32 - margin * 2.0).max(1.0);
-        let initial_padding = font_size * 0.5;
-        let fit_scale = if layout_width + initial_padding * 2.0 > available_width {
+        let initial_padding = group_font_size * 0.5;
+        let mut fit_scale = if layout_width + initial_padding * 2.0 > available_width {
             (available_width / (layout_width + initial_padding * 2.0)).clamp(0.35, 1.0)
         } else {
             1.0
         };
+        if independent_style.is_some() {
+            let available_height = (height as f32 * 0.9).max(1.0);
+            fit_scale = fit_scale.min(available_height / (layout_height + initial_padding * 2.0));
+        }
         let effective_font_size = font_size * fit_scale;
-        let padding = effective_font_size * 0.5;
-        let corner_radius = effective_font_size * 0.55;
+        let padding = group_font_size * fit_scale * 0.5;
+        let corner_radius = group_font_size * fit_scale * 0.55;
         let text_width = (layout_width * fit_scale).min(available_width);
         let text_height = layout_height * fit_scale;
         let box_width = (text_width + padding * 2.0).min(available_width).max(1.0);
@@ -961,6 +1286,16 @@ impl CaptionsLayer {
             (box_width, box_height),
             (width as f32, height as f32),
         );
+        let base_background_top = match (position, caption_data.settings.bottom_margin) {
+            (
+                CaptionPosition::BottomLeft
+                | CaptionPosition::BottomCenter
+                | CaptionPosition::BottomRight,
+                Some(margin),
+            ) => (height as f32 - margin.min(400) as f32 * height as f32 / 1080.0 - box_height)
+                .max(0.0),
+            _ => base_background_top,
+        };
         let background_top = (base_background_top + bounce_offset as f32)
             .clamp(0.0, (height as f32 - box_height).max(0.0));
 
@@ -975,52 +1310,70 @@ impl CaptionsLayer {
         let draw_text_width = text_width * anim_scale;
         let draw_text_height = text_height * anim_scale;
 
-        let text_left = draw_box_left + padding * anim_scale;
+        let group_text_left = draw_box_left + padding * anim_scale;
+        let text_left = group_text_left
+            + if secondary_layout.is_some() {
+                (layout_width - source_width).max(0.0) * render_scale * 0.5
+            } else {
+                0.0
+            };
         let text_top = draw_box_top + padding * anim_scale;
 
+        let effect_extent = 0.16_f32
+            .max(if show_outline { outline_width } else { 0.0 })
+            .max(if show_shadow { shadow_size * 2.2 } else { 0.0 })
+            .max(if secondary_layout.is_some() && translation_has_outline {
+                translation_outline_width
+            } else {
+                0.
+            })
+            .max(if secondary_layout.is_some() && translation_has_shadow {
+                translation_shadow_size * 2.2
+            } else {
+                0.
+            });
+        let effect_margin = (group_font_size * effect_extent * render_scale).max(2.0);
         let bounds = TextBounds {
-            left: (text_left - 2.0).floor() as i32,
-            top: (text_top - 2.0).floor() as i32,
-            right: (text_left + draw_text_width + 2.0).ceil() as i32,
-            bottom: (text_top + draw_text_height + 2.0).ceil() as i32,
+            left: (group_text_left - effect_margin).floor() as i32,
+            top: (text_top - effect_margin).floor() as i32,
+            right: (group_text_left + draw_text_width + effect_margin).ceil() as i32,
+            bottom: (text_top + draw_text_height + effect_margin).ceil() as i32,
         };
 
         self.viewport.update(queue, Resolution { width, height });
 
         let mut text_areas = Vec::new();
 
-        let outline_color = Color::rgba(
-            (outline_color_rgb[0] * 255.0) as u8,
-            (outline_color_rgb[1] * 255.0) as u8,
-            (outline_color_rgb[2] * 255.0) as u8,
-            (fade_opacity * 255.0) as u8,
-        );
-
-        if caption_data.settings.outline {
-            let outline_thickness = 1.2 * render_scale;
-            let outline_offsets = [
-                (-outline_thickness, -outline_thickness),
-                (0.0, -outline_thickness),
-                (outline_thickness, -outline_thickness),
-                (-outline_thickness, 0.0),
-                (outline_thickness, 0.0),
-                (-outline_thickness, outline_thickness),
-                (0.0, outline_thickness),
-                (outline_thickness, outline_thickness),
-                (-outline_thickness * 0.7, -outline_thickness * 0.7),
-                (outline_thickness * 0.7, -outline_thickness * 0.7),
-                (-outline_thickness * 0.7, outline_thickness * 0.7),
-                (outline_thickness * 0.7, outline_thickness * 0.7),
-            ];
-
-            for (offset_x, offset_y) in outline_offsets.iter() {
+        if show_shadow {
+            let reach = font_size * shadow_size * render_scale;
+            for (offset_x, offset_y) in shadow_offsets(reach) {
                 text_areas.push(TextArea {
-                    buffer: &self.text.buffer,
+                    buffer: &self.shadow_text.buffer,
                     left: text_left + offset_x,
                     top: text_top + offset_y,
                     scale: render_scale,
                     bounds,
-                    default_color: outline_color,
+                    default_color: Color::rgba(0, 0, 0, 255),
+                    custom_glyphs: &[],
+                });
+            }
+        }
+
+        if show_outline {
+            let outline_size = if caption_data.settings.translation_appearance.is_some() {
+                font_size
+            } else {
+                caption_data.settings.size as f32 * height as f32 / 1080.
+            };
+            let thickness = outline_size * outline_width * render_scale;
+            for (offset_x, offset_y) in outline_offsets(thickness) {
+                text_areas.push(TextArea {
+                    buffer: &self.outline_text.buffer,
+                    left: text_left + offset_x,
+                    top: text_top + offset_y,
+                    scale: render_scale,
+                    bounds,
+                    default_color: Color::rgba(0, 0, 0, 255),
                     custom_glyphs: &[],
                 });
             }
@@ -1042,6 +1395,56 @@ impl CaptionsLayer {
             default_color,
             custom_glyphs: &[],
         });
+
+        if let Some((secondary_width, _, secondary_size)) = secondary_layout {
+            let left =
+                group_text_left + (layout_width - secondary_width).max(0.0) * render_scale * 0.5;
+            let top = text_top + (source_height + translation_gap) * render_scale;
+            if translation_has_shadow {
+                for (offset_x, offset_y) in
+                    shadow_offsets(secondary_size * translation_shadow_size * render_scale)
+                {
+                    text_areas.push(TextArea {
+                        buffer: &self.translation_shadow_text.buffer,
+                        left: left + offset_x,
+                        top: top + offset_y,
+                        scale: render_scale,
+                        bounds,
+                        default_color: Color::rgba(0, 0, 0, 255),
+                        custom_glyphs: &[],
+                    });
+                }
+            }
+            if translation_has_outline {
+                for (offset_x, offset_y) in outline_offsets(
+                    (if caption_data.settings.translation_appearance.is_some() {
+                        secondary_size
+                    } else {
+                        caption_data.settings.size as f32 * height as f32 / 1080.
+                    }) * translation_outline_width
+                        * render_scale,
+                ) {
+                    text_areas.push(TextArea {
+                        buffer: &self.translation_outline_text.buffer,
+                        left: left + offset_x,
+                        top: top + offset_y,
+                        scale: render_scale,
+                        bounds,
+                        default_color: Color::rgba(0, 0, 0, 255),
+                        custom_glyphs: &[],
+                    });
+                }
+            }
+            text_areas.push(TextArea {
+                buffer: &self.translation_text.buffer,
+                left,
+                top,
+                scale: render_scale,
+                bounds,
+                default_color: caption_rgba(translation_color, highlight_alpha),
+                custom_glyphs: &[],
+            });
+        }
 
         match self.text_renderer.prepare(
             device,
@@ -1110,6 +1513,11 @@ impl CaptionsLayer {
             let pill_height = (line_height * render_scale + pill_pad_y * 2.0)
                 .min((height as f32 - pill_top).max(0.0))
                 .max(1.0);
+            let pill_height = if secondary_layout.is_some() {
+                pill_height.min((text_top + source_height * render_scale - pill_top).max(0.0))
+            } else {
+                pill_height
+            };
             let pill_radius = (pill_height * 0.4).min(pill_width / 2.0);
 
             let pill_uniforms = CaptionBackgroundUniforms {
@@ -1362,6 +1770,7 @@ mod tests {
             text: "word".to_string(),
             start,
             end,
+            hidden: false,
         }
     }
 
@@ -1512,6 +1921,34 @@ mod tests {
     }
 
     #[test]
+    fn chinese_in_a_font_without_han_moves_to_one_font_for_the_whole_line() {
+        let mut fonts = crate::layers::new_font_system();
+        let mut known = std::collections::HashMap::new();
+        let family =
+            |fonts: &mut glyphon::FontSystem,
+             known: &mut std::collections::HashMap<String, bool>,
+             font: &str,
+             text: &str| { super::resolve_caption_family(fonts, known, font, text) };
+        assert_eq!(
+            family(&mut fonts, &mut known, "System Sans-Serif", "hello"),
+            glyphon::Family::SansSerif
+        );
+        // Bundled fonts only load inside the app, so here the check is on the
+        // decision itself: a family with the glyphs keeps its name.
+        known.insert("System Sans-Serif".to_string(), false);
+        known.insert("Noto Sans SC".to_string(), true);
+        assert_eq!(
+            family(&mut fonts, &mut known, "System Sans-Serif", "比如说"),
+            glyphon::Family::Name("Noto Sans SC")
+        );
+        known.insert("LXGW".to_string(), true);
+        assert_eq!(
+            family(&mut fonts, &mut known, "LXGW", "比如说"),
+            glyphon::Family::Name("LXGW")
+        );
+    }
+
+    #[test]
     fn hidden_fillers_do_not_show_or_hold_a_caption() {
         let mut seg = segment(
             1.0,
@@ -1576,6 +2013,7 @@ mod tests {
             text: text.to_string(),
             start: 0.0,
             end: 1.0,
+            hidden: false,
         });
         let text = "ŉ Straße ŉ";
 
@@ -1614,6 +2052,7 @@ mod shaping_tests {
                 text: text.to_string(),
                 start: start + index as f32 * 0.3,
                 end: start + index as f32 * 0.3 + 0.25,
+                hidden: false,
             })
             .collect()
     }
@@ -1645,6 +2084,8 @@ mod shaping_tests {
                     self.current_time,
                     &self.highlight,
                 )),
+                wrap: false,
+                balance: false,
             }
         }
 
@@ -1967,6 +2408,73 @@ mod shaping_tests {
 }
 
 #[cfg(test)]
+mod bilingual_tests {
+    use super::*;
+
+    fn fonts() -> FontSystem {
+        let mut db = glyphon::fontdb::Database::new();
+        db.load_font_data(
+            include_bytes!("../../../../apps/desktop-gpui/assets/caption-fonts/SGH-Medium.ttf")
+                .to_vec(),
+        );
+        FontSystem::new_with_locale_and_db("zh-CN".to_string(), db)
+    }
+
+    #[test]
+    fn bilingual_layout_keeps_languages_on_separate_non_overlapping_lines() {
+        let mut fonts = fonts();
+        let shaped = ShapedCaptionText {
+            text: "开始录制\nStart recording".to_string(),
+            font_size: 40.0_f32.to_bits(),
+            wrap_width: 800.0_f32.to_bits(),
+            family: Family::Name("宋骨黑体"),
+            weight: Weight::BOLD,
+            colors: CaptionTextColors::Uniform(Color::rgb(255, 255, 255)),
+            wrap: true,
+            balance: false,
+        };
+        let buffer = shape_caption_text(&mut fonts, &shaped);
+        let runs: Vec<_> = buffer.layout_runs().collect();
+        assert_eq!(runs.len(), 2);
+        assert!(runs[1].line_top >= runs[0].line_top + runs[0].line_height);
+        assert!(runs.iter().all(|run| run.line_w <= 800.0));
+        let buffer_width = buffer.size().0.unwrap();
+        assert!(
+            runs.iter()
+                .flat_map(|run| run.glyphs)
+                .all(|glyph| glyph.x >= 0.0 && glyph.x + glyph.w <= buffer_width + 0.1)
+        );
+    }
+
+    #[test]
+    fn translation_does_not_receive_original_word_highlighting() {
+        let text = "hello\nhello world";
+        let words = [CaptionWord {
+            text: "world".into(),
+            start: 0.0,
+            end: 1.0,
+            hidden: false,
+        }];
+        let base = caption_rgba([1.0, 1.0, 1.0], 1.0);
+        let spans = word_highlight_spans(
+            text,
+            &words,
+            false,
+            0.5,
+            &WordHighlight {
+                base_rgb: [1.0, 1.0, 1.0],
+                highlight_rgb: [1.0, 0.0, 0.0],
+                base_alpha: 1.0,
+                highlight_alpha: 1.0,
+                transition_duration: 0.0,
+            },
+        );
+        assert_eq!(spans, vec![(0..text.len(), base)]);
+        assert_eq!(word_byte_range(text, &words, 0, false), None);
+    }
+}
+
+#[cfg(test)]
 mod gpu_tests {
     use cap_project::{
         CaptionSettings, CaptionTrackSegment, CaptionWord, CaptionsData, CursorEvents,
@@ -1982,7 +2490,7 @@ mod gpu_tests {
 
     const FPS: u32 = 60;
 
-    fn constants(size: XY<u32>) -> RenderVideoConstants {
+    pub(super) fn constants(size: XY<u32>) -> RenderVideoConstants {
         let meta: StudioRecordingMeta = serde_json::from_value(serde_json::json!({
             "display": { "path": "synthetic.mp4", "fps": FPS }
         }))
@@ -2020,6 +2528,7 @@ mod gpu_tests {
                         text: text.to_string(),
                         start: start as f32 + word_index as f32 * 0.3,
                         end: start as f32 + word_index as f32 * 0.3 + 0.25,
+                        hidden: false,
                     })
                     .collect::<Vec<_>>();
                 let end = f64::from(words.last().map_or(start as f32, |word| word.end));
@@ -2042,7 +2551,7 @@ mod gpu_tests {
             .collect()
     }
 
-    fn frames(size: XY<u32>) -> DecodedSegmentFrames {
+    pub(super) fn frames(size: XY<u32>) -> DecodedSegmentFrames {
         DecodedSegmentFrames {
             screen_size: size,
             screen_frame: None,
@@ -2053,7 +2562,7 @@ mod gpu_tests {
         }
     }
 
-    fn uniforms(
+    pub(super) fn uniforms(
         constants: &RenderVideoConstants,
         settings: CaptionSettings,
         segments: &[CaptionTrackSegment],
@@ -2099,7 +2608,7 @@ mod gpu_tests {
         uniforms
     }
 
-    fn render_pixels(
+    pub(super) fn render_pixels(
         constants: &RenderVideoConstants,
         layer: &CaptionsLayer,
         size: XY<u32>,
@@ -2171,6 +2680,117 @@ mod gpu_tests {
         let pixels = readback.slice(..).get_mapped_range().to_vec();
         readback.unmap();
         pixels
+    }
+
+    #[test]
+    #[ignore = "requires a working wgpu adapter"]
+    fn caption_effect_controls_change_pixels_without_a_background_panel() {
+        let size = XY::new(512, 288);
+        let constants = constants(size);
+        let segments = spoken_segments(&["Ship it today"]);
+        let frames = frames(size);
+        let render = |layer: &mut CaptionsLayer, settings: &CaptionSettings| {
+            let mut uniforms = uniforms(&constants, settings.clone(), &segments, size);
+            uniforms.frame_number = 45;
+            layer.prepare(&uniforms, &frames, size, &constants);
+            render_pixels(&constants, layer, size)
+        };
+        let plain = CaptionSettings {
+            enabled: true,
+            size: 80,
+            background_opacity: 0,
+            animation: "none".into(),
+            ..Default::default()
+        };
+        let mut layer = CaptionsLayer::new(&constants.device, &constants.queue);
+        let plain_pixels = render(&mut layer, &plain);
+        let alpha_mass = |pixels: &[u8]| {
+            pixels
+                .chunks_exact(4)
+                .map(|pixel| u64::from(pixel[3]))
+                .sum::<u64>()
+        };
+        let narrow = CaptionSettings {
+            outline: true,
+            outline_width: 3.0,
+            ..plain.clone()
+        };
+        let wide = CaptionSettings {
+            outline_width: 12.0,
+            ..narrow.clone()
+        };
+        let narrow_pixels = render(&mut layer, &narrow);
+        let wide_pixels = render(&mut layer, &wide);
+        assert!(alpha_mass(&narrow_pixels) > alpha_mass(&plain_pixels));
+        assert!(alpha_mass(&wide_pixels) > alpha_mass(&narrow_pixels));
+        assert_eq!(
+            render(
+                &mut layer,
+                &CaptionSettings {
+                    outline_width: 0.0,
+                    ..wide.clone()
+                }
+            ),
+            plain_pixels
+        );
+        let inverse = CaptionSettings {
+            color: "#000000".into(),
+            outline_color: "#FFFFFF".into(),
+            ..wide.clone()
+        };
+        let inverse_pixels = render(&mut layer, &inverse);
+        assert_ne!(inverse_pixels, wide_pixels);
+        assert!(
+            inverse_pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] > 200 && pixel[3] > 200)
+        );
+        assert!(
+            inverse_pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] < 20 && pixel[3] > 200)
+        );
+        let shadow = CaptionSettings {
+            shadow: true,
+            shadow_opacity: 25,
+            ..plain.clone()
+        };
+        let weak_shadow = render(&mut layer, &shadow);
+        let strong_shadow = render(
+            &mut layer,
+            &CaptionSettings {
+                shadow_opacity: 100,
+                ..shadow.clone()
+            },
+        );
+        assert!(alpha_mass(&strong_shadow) > alpha_mass(&weak_shadow));
+        assert_eq!(
+            render(
+                &mut layer,
+                &CaptionSettings {
+                    shadow_opacity: 0,
+                    ..shadow.clone()
+                }
+            ),
+            plain_pixels
+        );
+        for settings in [
+            wide,
+            inverse,
+            CaptionSettings {
+                shadow_size: 25.0,
+                ..shadow.clone()
+            },
+            CaptionSettings {
+                shadow_color: "#00FF00".into(),
+                ..shadow
+            },
+        ] {
+            let pixels = render(&mut layer, &settings);
+            assert_eq!(&pixels[..4], &[0, 0, 0, 0]);
+            let mut fresh = CaptionsLayer::new(&constants.device, &constants.queue);
+            assert_eq!(pixels, render(&mut fresh, &settings));
+        }
     }
 
     #[test]

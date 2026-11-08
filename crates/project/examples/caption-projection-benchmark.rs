@@ -26,6 +26,7 @@ fn fixture(seconds: usize, clips: usize, spacing: usize) -> ProjectConfiguration
                             text: "word".into(),
                             start,
                             end: start + 0.3,
+                            hidden: false,
                         }
                     })
                     .collect(),

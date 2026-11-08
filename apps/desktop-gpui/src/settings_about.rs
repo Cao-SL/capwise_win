@@ -17,7 +17,31 @@ impl SettingsWindow {
             self.render_about_identity(cx).into_any_element(),
             self.render_about_qr_cards().into_any_element(),
             self.render_about_footer().into_any_element(),
+            self.render_about_advanced(cx).into_any_element(),
         ]
+    }
+
+    /// `showAdvancedSettings`: off by default, so the sidebar and the General
+    /// page stay short until someone asks for more.
+    fn render_about_advanced(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        self.rows(vec![
+            self.setting_row(
+                tr::settings::about::advanced(),
+                Some(tr::settings::about::advanced_hint()),
+                self.toggle(
+                    "show-advanced-settings",
+                    tr::settings::about::advanced(),
+                    self.settings.show_advanced_settings,
+                    cx,
+                    |this, cx| {
+                        let value = !this.settings.show_advanced_settings;
+                        this.settings.show_advanced_settings = value;
+                        this.write_bool(crate::store::SHOW_ADVANCED_SETTINGS_KEY, value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+        ])
     }
 
     fn render_about_identity(&self, cx: &mut Context<Self>) -> impl IntoElement {

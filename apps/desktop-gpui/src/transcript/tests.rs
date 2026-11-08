@@ -47,6 +47,7 @@ fn captions(words: &[(&str, f64, f64)]) -> CaptionsData {
                     text: (*text).to_string(),
                     start: *start as f32,
                     end: *end as f32,
+                    hidden: false,
                 })
                 .collect(),
         })
@@ -1861,4 +1862,113 @@ fn chinese_transcripts_read_without_spaces_and_search_across_characters() {
     assert!(!text.contains(' '), "{text}");
     assert_eq!(super::view::find_matches(&doc, "零路"), [4..6, 6..8]);
     assert!(super::view::find_matches(&doc, "灵录").is_empty());
+}
+
+#[test]
+fn hiding_a_filler_leaves_the_caption_but_not_the_timeline() {
+    use super::model::set_captions_hidden;
+    let words = [("好", 0.0, 0.2), ("呃", 0.8, 1.2), ("看", 1.8, 2.0)];
+    let mut captions = cap_project::CaptionsData {
+        segments: vec![cap_project::CaptionSegment {
+            id: "a".into(),
+            start: 0.0,
+            end: 2.0,
+            text: "好呃看".into(),
+            words: words
+                .iter()
+                .map(|(text, start, end)| cap_project::CaptionWord {
+                    text: (*text).into(),
+                    start: *start,
+                    end: *end,
+                    hidden: false,
+                })
+                .collect(),
+        }],
+        source_timed: true,
+        ..Default::default()
+    };
+    let doc = TranscriptDoc::build(&captions);
+    assert_eq!(doc.review.len(), 1);
+    assert!(!doc.is_hidden(1));
+    let filler = &doc.words[1];
+    assert!(set_captions_hidden(
+        &mut captions,
+        &[filler.start..filler.end],
+        true
+    ));
+    assert!(!set_captions_hidden(
+        &mut captions,
+        &[filler.start..filler.end],
+        true
+    ));
+    let hidden = TranscriptDoc::build(&captions);
+    assert!(hidden.is_hidden(1));
+    assert!(!hidden.is_hidden(0) && !hidden.is_hidden(2));
+    assert_ne!(doc.signature, hidden.signature);
+    assert_eq!(hidden.words.len(), 3);
+}
+
+#[test]
+fn english_captions_move_to_per_word_flags_when_one_filler_comes_back() {
+    use super::model::set_captions_hidden;
+    let words = [("um", 0.0, 0.2), ("so", 0.4, 0.6), ("uh", 0.8, 1.0)];
+    let mut captions = cap_project::CaptionsData {
+        segments: vec![cap_project::CaptionSegment {
+            id: "a".into(),
+            start: 0.0,
+            end: 1.0,
+            text: "um so uh".into(),
+            words: words
+                .iter()
+                .map(|(text, start, end)| cap_project::CaptionWord {
+                    text: (*text).into(),
+                    start: *start,
+                    end: *end,
+                    hidden: false,
+                })
+                .collect(),
+        }],
+        source_timed: true,
+        settings: cap_project::CaptionSettings {
+            filler_language: Some("en".into()),
+            ..Default::default()
+        },
+    };
+    let doc = TranscriptDoc::build(&captions);
+    assert!(doc.is_hidden(0) && doc.is_hidden(2));
+    let first = &doc.words[0];
+    set_captions_hidden(&mut captions, &[first.start..first.end], false);
+    let after = TranscriptDoc::build(&captions);
+    assert!(!after.is_hidden(0));
+    assert!(after.is_hidden(2));
+    assert!(!after.is_hidden(1));
+}
+
+#[test]
+fn a_filler_cut_reaches_the_next_word_so_its_tail_is_gone() {
+    let words = [("的", 0.0, 0.2), ("呃", 1.2, 1.24), ("模", 1.4, 1.6)];
+    let captions = cap_project::CaptionsData {
+        segments: vec![cap_project::CaptionSegment {
+            id: "a".into(),
+            start: 0.0,
+            end: 1.6,
+            text: "的呃模".into(),
+            words: words
+                .iter()
+                .map(|(text, start, end)| cap_project::CaptionWord {
+                    text: (*text).into(),
+                    start: *start,
+                    end: *end,
+                    hidden: false,
+                })
+                .collect(),
+        }],
+        source_timed: true,
+        ..Default::default()
+    };
+    let doc = TranscriptDoc::build(&captions);
+    let cuts = super::cuts::plan_filler_cuts(&doc, None, None, &[1..2]);
+    assert_eq!(cuts.len(), 1);
+    assert!(cuts[0].start <= 1.2 && cuts[0].start > 0.2, "{cuts:?}");
+    assert!(cuts[0].end > 1.36 && cuts[0].end <= 1.4, "{cuts:?}");
 }

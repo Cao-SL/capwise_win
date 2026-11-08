@@ -82,6 +82,8 @@ step.
 - `cap screenshot` — capture a still of a screen/window (`--json` → `{path,width,height}`).
 - `cap targets` (`screens`/`windows`/`cameras`/`mics`) — enumerate capture inputs.
 - `cap project inspect` / `validate` / `config get|set` — inspect and edit `.cap` projects.
+- `cap project captions get|export|style` — read local captions, export SRT/VTT, and patch caption presentation with `--dry-run` previews.
+- `cap project title-card get|set|remove|export` — prepare intro/outro cards with shared timing rules, preview edits, or export a matching PNG.
 - `cap recordings list` — list `.cap` recordings across Desktop's current, default, and previously used storage folders. Use `--dir <path>` to list only that directory.
 - `cap upload` — upload a `.cap` project or video file and get a shareable link.
 - `cap update` — download and install the latest Cap Desktop bundle, then repair the `cap` shim.
@@ -101,3 +103,48 @@ notification, and open-editor actions are desktop-only and are skipped on the CL
 rules with `cap automations list --json`.
 
 Run `cap --help` or `cap <command> --help` for full flag documentation.
+
+## Local captions without the editor
+
+```sh
+cap project captions get lesson.cap --json
+cap project captions style lesson.cap --enabled true --outline true --outline-width 7 --background-opacity 0 --dry-run --json
+cap project captions style lesson.cap --font "Noto Sans SC" --size 42 --translation-font Inter --translation-size 30 --translation-gap 10 --bottom-margin 60 --dry-run --json
+cap project captions export lesson.cap --subtitle-format srt --display-mode bilingual --output lesson-bilingual.srt --dry-run --json
+```
+
+Review the dry-run result, then run the same explicit operation without `--dry-run`. For style writes,
+pass `--expected-revision <revision>` from the preview to reject a changed project. These commands preserve
+source media; subtitle export refuses existing destinations. Bilingual export uses existing valid
+translations and reports any original-language fallback in `coverage`; it does not call an LLM.
+See [the local editing coverage and acceptance matrix](../../docs/capwise-cli-automation.md) for the
+contract, supported settings, error codes, and remaining shared-service work.
+
+## Intro and outro cards
+
+```sh
+cap project title-card get lesson.cap --json
+cap project title-card set lesson.cap --role intro --title "Three steps to a clear demo" --subtitle "Record, refine, share" --template hero --duration 2 --dry-run --json
+cap project title-card set lesson.cap --role intro --title "Three steps to a clear demo" --subtitle "Record, refine, share" --template hero --duration 2 --expected-revision REVISION_FROM_PREVIEW --json
+cap project title-card remove lesson.cap --role intro --dry-run --json
+cap project title-card export lesson.cap --role intro --output cover.png --width 1920 --height 1920 --json
+```
+
+Keep the project closed in the desktop editor while applying CLI edits. Every project edit requires
+`--expected-revision`; a stale revision fails without changing the file. The write also checks the
+on-disk bytes under a shared lock before atomic replacement. Caption style and title-card writes
+use the same lock; a busy project returns `PROJECT_BUSY` with `retryable: true`. The lock is released
+by the operating system when a process exits. This does not yet provide a shared lock with the
+desktop editor or other legacy editing commands. `set` updates the selected role without creating duplicate cards, and only
+changes supplied fields. Intro duration moves body overlays; independent music and source-timed
+captions keep their source positions. Outro cards follow the edited body. Unknown project fields
+are preserved. `--background-image` accepts an image already inside the project; it does not download
+or upload media. Durations are output seconds, independent of the recording playback speed.
+
+`export` uses the same renderer as video export, saves lossless PNG, and leaves project files
+unchanged. `--width` and `--height` bound the output while preserving the project's aspect ratio;
+the JSON result reports actual pixel dimensions. The default bounds of 1920 × 1920 accommodate
+both landscape and portrait projects. Existing output files are never overwritten. Use `--dry-run`
+to validate without rendering, or `--expected-revision` to reject a changed project. A missing
+card returns `NO_TITLE_CARD`. The selected card's first complete video frame is used, including
+outros that start between frame boundaries.

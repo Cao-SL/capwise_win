@@ -17,6 +17,7 @@ fn fixture(clips: usize, words_per_clip: usize) -> (ProjectConfiguration, Vec<f6
             text: format!("word{index}"),
             start: (index as f64 * 0.4) as f32,
             end: (index as f64 * 0.4 + 0.3) as f32,
+            hidden: false,
         })
         .collect();
     let segments = words
@@ -241,6 +242,7 @@ fn baseline_synchronize(project: &mut ProjectConfiguration, recording_durations:
                             text: word.text.clone(),
                             start: to_source(word.start)?,
                             end: to_source(word.end)?,
+                            hidden: false,
                         })
                     })
                     .collect();

@@ -60,6 +60,7 @@ mod shape;
 pub mod spring_mass_damper;
 mod takeover;
 mod text;
+mod title_cards;
 mod transition;
 #[cfg(test)]
 mod transition_render_tests;
@@ -78,8 +79,9 @@ pub use frame_pipeline::{GpuOutputFormat, Nv12RenderedFrame, RenderedFrame, Shar
 pub use frame_pipeline::{PendingSurface, RgbaToBgraSurfaceConverter};
 pub use frame_windows::FrameWindows;
 pub use layers::{
-    BackgroundTextureCache, CaptionFrameBox, ChineseFontFamily, chinese_font_families,
-    clean_background_path, last_caption_center, new_font_system,
+    BackgroundTextureCache, CaptionFrameBox, ChineseFontFamily, bundled_font_dirs,
+    chinese_font_families, clean_background_path, font_family_available, last_caption_center,
+    new_font_system,
 };
 pub use managed_segment::{
     ManagedRecordingSegmentDecoders, ManagedSegmentDecoderStatus, ManagedSegmentStopHandles,
@@ -834,6 +836,8 @@ pub enum RenderingError {
     ChannelSendNv12FrameFailed(#[from] mpsc::error::SendError<(Nv12RenderedFrame, u32)>),
     #[error("Failed to load image: {0}")]
     ImageLoadError(String),
+    #[error("Title card: {0}")]
+    TitleCard(String),
     #[error("Error polling wgpu: {0}")]
     PollError(#[from] wgpu::PollError),
     #[error("Failed to upload display frame {frame_number} at recording time {recording_time}")]
@@ -4027,6 +4031,13 @@ impl ProjectUniforms {
         })
     }
 
+    fn camera_skin_smoothing(&self) -> Option<f32> {
+        let camera = &self.project.camera;
+        camera
+            .skin_smoothing_is_active()
+            .then_some(camera.skin_smoothing)
+    }
+
     fn compute_display_motion_blur(
         current: MotionBounds,
         previous: MotionBounds,
@@ -6366,6 +6377,7 @@ mod style_image_tests {
             alpha: 255,
         };
         project.camera.background_blur.mode = cap_project::BackgroundBlurMode::Remove;
+        project.color_correction.camera = cap_project::ColorCorrection::default();
         project.timeline = Some(
             serde_json::from_value(serde_json::json!({
                 "segments": [], "zoomSegments": [],
@@ -8235,6 +8247,8 @@ pub struct RendererLayers {
     camera_blur_processor: Option<cap_camera_effects::BlurProcessor>,
     camera_blur_init_failed: bool,
     camera_blur_unavailable: bool,
+    camera_skin_smoother: Option<cap_camera_effects::SkinSmoother>,
+    camera_skin_smoothed: bool,
     realtime_camera_effects: bool,
     #[cfg(test)]
     split_layer_passes: bool,
@@ -8364,6 +8378,8 @@ impl RendererLayers {
                 camera_blur_processor: None,
                 camera_blur_init_failed: false,
                 camera_blur_unavailable: false,
+                camera_skin_smoother: None,
+                camera_skin_smoothed: false,
                 realtime_camera_effects: false,
                 #[cfg(test)]
                 split_layer_passes: false,
@@ -8406,6 +8422,82 @@ impl RendererLayers {
         }
     }
 
+    fn run_camera_skin_smoothing(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        strength: Option<f32>,
+        display_is_camera: bool,
+        recording_time: f32,
+    ) {
+        self.camera_skin_smoothed = false;
+        self.display.clear_skin_smoothing();
+        let Some(strength) = strength else {
+            self.camera_skin_smoother = None;
+            return;
+        };
+        let display_source = display_is_camera
+            && self.camera.source_texture_for_blur().is_none()
+            && self.camera_only.source_texture_for_blur().is_none();
+        if display_source {
+            self.display.copy_to_texture(encoder);
+        }
+        let source_texture = if display_source {
+            self.display.source_texture_for_skin_smoothing()
+        } else {
+            self.camera
+                .source_texture_for_blur()
+                .or_else(|| self.camera_only.source_texture_for_blur())
+        };
+        if source_texture.is_none() {
+            return;
+        }
+
+        self.ensure_camera_blur_processor(device);
+        // Segmentation reads the frame outside the caller's encoder, so its
+        // YUV conversion and copy have to be on the GPU first.
+        let pending = std::mem::replace(
+            encoder,
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Camera effects and composition"),
+            }),
+        );
+        queue.submit([pending.finish()]);
+
+        let source_texture = if display_source {
+            self.display.source_texture_for_skin_smoothing()
+        } else {
+            self.camera
+                .source_texture_for_blur()
+                .or_else(|| self.camera_only.source_texture_for_blur())
+        };
+        let Some(source_texture) = source_texture else {
+            return;
+        };
+        let person_mask = self.camera_blur_processor.as_mut().and_then(|processor| {
+            processor.set_frame_time(recording_time);
+            processor.update_person_mask(device, queue, source_texture)
+        });
+        let smoother = self
+            .camera_skin_smoother
+            .get_or_insert_with(|| cap_camera_effects::SkinSmoother::new(device));
+        smoother.process_into_encoder(
+            device,
+            queue,
+            source_texture,
+            encoder,
+            strength,
+            person_mask,
+        );
+        self.camera_skin_smoothed = true;
+        self.camera.attach_skin_smoothing(device, smoother);
+        self.camera_only.attach_skin_smoothing(device, smoother);
+        if display_source {
+            self.display.attach_skin_smoothing(device, smoother);
+        }
+    }
+
     fn run_shared_camera_blur(
         &mut self,
         device: &wgpu::Device,
@@ -8425,8 +8517,11 @@ impl RendererLayers {
         };
 
         let source_texture = self
-            .camera
-            .source_texture_for_blur()
+            .camera_skin_smoother
+            .as_ref()
+            .filter(|_| self.camera_skin_smoothed)
+            .and_then(cap_camera_effects::SkinSmoother::output_texture)
+            .or_else(|| self.camera.source_texture_for_blur())
             .or_else(|| self.camera_only.source_texture_for_blur());
         let Some(source_texture) = source_texture else {
             return;
@@ -8472,8 +8567,11 @@ impl RendererLayers {
         };
 
         let source_texture = self
-            .camera
-            .source_texture_for_blur()
+            .camera_skin_smoother
+            .as_ref()
+            .filter(|_| self.camera_skin_smoothed)
+            .and_then(cap_camera_effects::SkinSmoother::output_texture)
+            .or_else(|| self.camera.source_texture_for_blur())
             .or_else(|| self.camera_only.source_texture_for_blur());
         let Some(source_texture) = source_texture else {
             return;
@@ -8629,11 +8727,30 @@ impl RendererLayers {
             camera_frame_data,
         );
 
+        let mut skin_encoder =
+            constants
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Camera skin smoothing"),
+                });
+        self.run_camera_skin_smoothing(
+            &constants.device,
+            &constants.queue,
+            &mut skin_encoder,
+            uniforms.camera_skin_smoothing(),
+            render_display && constants.recording_meta.display_is_camera(),
+            segment_frames.recording_time,
+        );
+        if self.camera_skin_smoothed {
+            constants.queue.submit([skin_encoder.finish()]);
+        }
+
         if let Some(mode) = uniforms.camera_background_effect_mode() {
             self.run_shared_camera_blur(&constants.device, &constants.queue, mode);
         }
 
         if let Some(overlays) = &mut self.overlays {
+            overlays.prepare_title_card(constants, uniforms).await?;
             overlays.images.prepare(constants, uniforms).await;
             overlays.shapes.prepare(
                 &constants.device,
@@ -8802,6 +8919,14 @@ impl RendererLayers {
         timings.camera_only_prepare_duration = start.elapsed();
 
         let start = Instant::now();
+        self.run_camera_skin_smoothing(
+            &constants.device,
+            &constants.queue,
+            encoder,
+            uniforms.camera_skin_smoothing(),
+            render_display && constants.recording_meta.display_is_camera(),
+            segment_frames.recording_time,
+        );
         if let Some(mode) = uniforms.camera_background_effect_mode() {
             self.run_shared_camera_blur_with_encoder(
                 &constants.device,
@@ -8814,6 +8939,7 @@ impl RendererLayers {
 
         if let Some(overlays) = &mut self.overlays {
             let start = Instant::now();
+            overlays.prepare_title_card(constants, uniforms).await?;
             overlays.images.prepare(constants, uniforms).await;
             overlays.shapes.prepare(
                 &constants.device,
@@ -9193,6 +9319,17 @@ impl RendererLayers {
         parts: LayerParts,
     ) {
         let load = wgpu::LoadOp::Load;
+
+        if parts.overlays
+            && let Some(card) = self
+                .overlays
+                .as_ref()
+                .and_then(|overlays| overlays.title_card.as_ref())
+                .filter(|card| card.visible())
+        {
+            card.render(passes.pass(session.current_texture_view(), load));
+            return;
+        }
 
         if !uniforms.project.has_overlay_order() {
             if parts.masks {
@@ -11626,13 +11763,11 @@ mod per_frame_cache_tests {
         };
         let zoom = ZoomTransformTimeline::from_project(&project, &cursor, 1.0, size);
         let mut renderer = FrameRenderer::new(&constants);
-        let mut layers = RendererLayers::new_for_preparing_preview(
+        let mut layers = RendererLayers::new_with_options(
             &constants.device,
             &constants.queue,
             constants.is_software_adapter,
-            &project,
-        )
-        .expect("layers");
+        );
 
         let mut first_cursor_bind_group = None;
         let mut first_background_generation = None;

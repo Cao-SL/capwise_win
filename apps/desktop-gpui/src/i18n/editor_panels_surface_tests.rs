@@ -16,12 +16,6 @@ pub(super) fn is_editor_panels_surface_key(key: &str) -> bool {
 const FORMATTED: &[&str] = &[
     "editor.panel.zoom.title",
     "editor.panel.font_weight.custom",
-    "editor.panel.text_segment.title",
-    "editor.panel.caption.title",
-    "editor.panel.keyboard.title",
-    "editor.panel.audio.title",
-    "editor.panel.mask.title",
-    "editor.shape.title",
     "editor.panel.camera3d.shots",
     "editor.panel.camera3d.pose_start",
     "editor.panel.camera3d.pose_end",
@@ -47,8 +41,6 @@ const FORMATTED: &[&str] = &[
 #[test]
 fn editor_panels_match_the_literals_they_replaced() {
     let pairs: &[(&str, &str)] = &[
-        (tr::editor::panel::done(), "Done"),
-        (tr::editor::panel::delete(), "Delete"),
         (tr::editor::panel::enabled(), "Enabled"),
         (tr::editor::panel::name(), "Name"),
         (tr::editor::panel::duration(), "Duration"),
@@ -241,17 +233,27 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::panel::timing::to(), "to"),
         (tr::editor::panel::timing::end(), "End"),
         (tr::editor::panel::audio::fallback_name(), "Audio"),
-        (
-            tr::editor::panel::audio::change_hint(),
-            "Tap to change track",
-        ),
         (tr::editor::panel::audio::change(), "Change"),
         (tr::editor::panel::audio::volume(), "Volume"),
         (tr::editor::panel::audio::fade_in(), "Fade In"),
         (tr::editor::panel::audio::fade_out(), "Fade Out"),
-        (tr::editor::panel::mask::sensitive(), "Sensitive"),
+        (
+            tr::editor::panel::audio_ducking::title(),
+            "Lower music while speaking",
+        ),
+        (
+            tr::editor::panel::audio_ducking::description(),
+            "Lowers this clip by 12 dB during microphone speech, then smoothly restores its volume.",
+        ),
+        (
+            tr::editor::panel::audio_ducking::no_microphone(),
+            "This recording has no microphone track. Music ducking needs recorded microphone speech.",
+        ),
+        (
+            tr::editor::panel::audio_ducking::microphone_muted(),
+            "The microphone is muted. This clip keeps its current volume until microphone sound is enabled.",
+        ),
         (tr::editor::panel::mask::highlight(), "Highlight"),
-        (tr::editor::panel::mask::effect(), "Effect"),
         (tr::editor::panel::mask::blur(), "Blur"),
         (tr::editor::panel::mask::pixelate(), "Pixelate"),
         (tr::editor::panel::mask::pixel_size(), "Pixel Size"),
@@ -333,10 +335,6 @@ fn editor_panels_match_the_literals_they_replaced() {
         (
             tr::editor::panel::camera3d::play_shot_tooltip(),
             "Play this shot",
-        ),
-        (
-            tr::editor::panel::camera3d::delete_tooltip(),
-            "Delete this shot",
         ),
         (tr::editor::panel::camera3d::camera(), "Camera"),
         (tr::editor::panel::camera3d::distance(), "Distance"),
@@ -422,12 +420,7 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::panel::camera3d::blur::angle(), "Angle"),
         (tr::editor::panel::camera3d::blur::position(), "Position"),
         (tr::editor::panel::camera3d::blur::scan(), "Scan"),
-        (tr::editor::panel::image::arrange(), "Arrange on canvas"),
-        (
-            tr::editor::panel::image::arrange_help(),
-            "Drag the image to move it. Pull a corner to resize, or use the rotation control below to turn it.",
-        ),
-        (tr::editor::panel::image::center(), "Center on canvas"),
+        (tr::editor::panel::image::center(), "Center"),
         (tr::editor::panel::image::replace(), "Replace image"),
         (
             tr::editor::panel::image::missing(),
@@ -438,7 +431,7 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::panel::image::rounding(), "Rounding"),
         (
             tr::editor::panel::style::help(),
-            "Overrides apply only during this segment. Enable a group to copy its global settings.",
+            "Turn on a group to give this segment its own settings.",
         ),
         (
             tr::editor::panel::style::edit_background(),
@@ -455,6 +448,7 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::panel::style::crop_width(), "Width"),
         (tr::editor::panel::style::crop_height(), "Height"),
         (tr::editor::panel::style::reset_crop(), "Reset crop"),
+        (tr::editor::panel::style::edit(), "Edit"),
         (
             tr::editor::panel::style::camera_only_background(),
             "Camera Only background",
@@ -467,11 +461,10 @@ fn editor_panels_match_the_literals_they_replaced() {
             tr::editor::panel::style::camera_only_help(),
             "Use a Camera Only scene. Padding reveals the background around the camera.",
         ),
-        (tr::editor::sidebar::tab::background(), "Background"),
+        (tr::editor::sidebar::tab::background(), "Frame"),
         (tr::editor::sidebar::tab::camera(), "Camera"),
         (tr::editor::sidebar::tab::audio(), "Audio"),
         (tr::editor::sidebar::tab::cursor(), "Cursor"),
-        (tr::editor::sidebar::tab::keyboard(), "Keyboard"),
         (tr::editor::sidebar::tab::captions(), "Captions"),
         (tr::editor::sidebar::source::desktop(), "Desktop"),
         (tr::editor::sidebar::source::wallpaper(), "Wallpaper"),
@@ -490,7 +483,6 @@ fn editor_panels_match_the_literals_they_replaced() {
             tr::editor::sidebar::desktop_import_failed(),
             "Couldn't import your desktop wallpaper",
         ),
-        (tr::editor::sidebar::layout::title(), "Layout"),
         (
             tr::editor::sidebar::layout::background_blur(),
             "Background Blur",
@@ -782,15 +774,44 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::audio::library::done(), "Done"),
         (tr::editor::audio::library::change_title(), "Change audio"),
         (tr::editor::audio::library::add_title(), "Add audio"),
-        (
-            tr::editor::audio::library::change_hint(),
-            "Pick a different track for this segment",
-        ),
-        (
-            tr::editor::audio::library::add_hint(),
-            "Add audio, music or other sounds to your video",
-        ),
         (tr::editor::audio::library::import(), "Import file"),
+        (
+            tr::editor::audio::library::bundled_title(),
+            "Built-in music",
+        ),
+        (
+            tr::editor::audio::library::placement_playhead(),
+            "At playhead",
+        ),
+        (tr::editor::audio::library::placement_start(), "At start"),
+        (
+            tr::editor::audio::library::audition_failed(),
+            "Cannot preview audio. Check the audio file and output device, then try again.",
+        ),
+        (
+            tr::editor::audio::library::metadata_loading(),
+            "Reading track duration…",
+        ),
+        (
+            tr::editor::audio::library::metadata_failed(),
+            "Could not read the track duration. Please try again.",
+        ),
+        (
+            tr::editor::audio::library::retry_metadata(),
+            "Read duration again",
+        ),
+        (
+            tr::editor::audio::library::source_changed(),
+            "The track file has changed. Please select it again.",
+        ),
+        (
+            tr::editor::audio::library::source_conflict(),
+            "Could not safely save the music. Check the project files and try again.",
+        ),
+        (
+            tr::editor::audio::library::timing_changed(),
+            "Video timing has changed. Please choose the insertion point again.",
+        ),
         (tr::editor::crop::title(), "Crop"),
         (tr::editor::crop::free(), "Free"),
         (tr::editor::crop::snap_to_ratios(), "Snap to ratios"),
@@ -806,30 +827,15 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::crop::full(), "Full"),
         (tr::editor::crop::loading_frame(), "Loading frame…"),
         (tr::editor::crop::rendering_preview(), "Rendering preview…"),
-        (
-            tr::editor::panel::style_presets::apply(),
-            "Apply",
-        ),
-        (
-            tr::editor::panel::style_presets::create(),
-            "Save",
-        ),
+        (tr::editor::panel::style_presets::apply(), "Apply"),
+        (tr::editor::panel::style_presets::create(), "Save"),
         (
             tr::editor::panel::style_presets::create_title(),
             "Save Style Preset",
         ),
-        (
-            tr::editor::panel::style_presets::custom(),
-            "Custom style",
-        ),
-        (
-            tr::editor::panel::style_presets::default_badge(),
-            "Default",
-        ),
-        (
-            tr::editor::panel::style_presets::delete(),
-            "Delete",
-        ),
+        (tr::editor::panel::style_presets::custom(), "Custom style"),
+        (tr::editor::panel::style_presets::default_badge(), "Default"),
+        (tr::editor::panel::style_presets::delete(), "Delete"),
         (
             tr::editor::panel::style_presets::delete_title(),
             "Delete Style Preset",
@@ -842,22 +848,13 @@ fn editor_panels_match_the_literals_they_replaced() {
             tr::editor::panel::style_presets::empty_help(),
             "Save a style to reuse it in any project.",
         ),
-        (
-            tr::editor::panel::style_presets::move_down(),
-            "Move down",
-        ),
-        (
-            tr::editor::panel::style_presets::move_up(),
-            "Move up",
-        ),
+        (tr::editor::panel::style_presets::move_down(), "Move down"),
+        (tr::editor::panel::style_presets::move_up(), "Move up"),
         (
             tr::editor::panel::style_presets::remove_default(),
             "Remove as default",
         ),
-        (
-            tr::editor::panel::style_presets::rename(),
-            "Rename",
-        ),
+        (tr::editor::panel::style_presets::rename(), "Rename"),
         (
             tr::editor::panel::style_presets::rename_title(),
             "Rename Style Preset",
@@ -874,10 +871,7 @@ fn editor_panels_match_the_literals_they_replaced() {
             tr::editor::panel::style_presets::set_default(),
             "Set as default",
         ),
-        (
-            tr::editor::panel::style_presets::tooltip(),
-            "Style presets",
-        ),
+        (tr::editor::panel::style_presets::tooltip(), "Style presets"),
         (
             tr::editor::panel::style_presets::update(),
             "Update with current style",
@@ -1043,30 +1037,6 @@ fn editor_panel_messages_format_like_the_code_they_replaced() {
         assert_eq!(
             tr::editor::panel::zoom::title(number),
             format!("Zoom {}", index + 1)
-        );
-        assert_eq!(
-            tr::editor::panel::text_segment::title(number),
-            format!("Text {}", index + 1)
-        );
-        assert_eq!(
-            tr::editor::panel::caption::title(number),
-            format!("Caption {}", index + 1)
-        );
-        assert_eq!(
-            tr::editor::panel::keyboard::title(number),
-            format!("Keyboard {}", index + 1)
-        );
-        assert_eq!(
-            tr::editor::panel::audio::title(number),
-            format!("Audio {}", index + 1)
-        );
-        assert_eq!(
-            tr::editor::panel::mask::title(number),
-            format!("Mask {}", index + 1)
-        );
-        assert_eq!(
-            tr::editor::shape::title(number),
-            format!("Shape {}", index + 1)
         );
         assert_eq!(
             tr::editor::crop::editing_style(number),

@@ -8,6 +8,7 @@ mod click_ripple;
 mod color_grade;
 mod cursor;
 mod display;
+mod font;
 mod frame;
 mod image;
 mod keyboard;
@@ -15,6 +16,7 @@ mod mask;
 mod notch;
 mod shape;
 mod text;
+mod title_card;
 
 use std::sync::OnceLock;
 
@@ -41,9 +43,17 @@ pub fn new_font_system() -> glyphon::FontSystem {
     result
 }
 
-/// Where the fonts the app ships live: `CAPWISE_FONTS_DIR`, or
-/// `Contents/Resources/fonts` next to the running executable.
-fn bundled_font_dirs() -> Vec<std::path::PathBuf> {
+pub fn font_family_available(family: &str) -> bool {
+    font_template()
+        .1
+        .faces()
+        .any(|face| face.families.iter().any(|(name, _)| name == family))
+}
+
+/// Where the fonts the app ships live: `CAPWISE_FONTS_DIR`,
+/// `Contents/Resources/fonts` next to the running executable, and in debug
+/// builds the source tree's `assets/caption-fonts`.
+pub fn bundled_font_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs = Vec::new();
     if let Some(dir) = std::env::var_os("CAPWISE_FONTS_DIR") {
         dirs.push(std::path::PathBuf::from(dir));
@@ -52,6 +62,15 @@ fn bundled_font_dirs() -> Vec<std::path::PathBuf> {
         && let Some(contents) = exe.parent().and_then(std::path::Path::parent)
     {
         dirs.push(contents.join("Resources").join("fonts"));
+    }
+    // Debug builds outside the app bundle (`cargo test`, `cargo run`) read
+    // the fonts straight from the source tree, so they see the same caption
+    // fonts the shipped app does.
+    if cfg!(debug_assertions) {
+        dirs.push(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../apps/desktop-gpui/assets/caption-fonts"),
+        );
     }
     dirs.into_iter().filter(|dir| dir.is_dir()).collect()
 }
@@ -207,6 +226,7 @@ pub use mask::*;
 pub use notch::*;
 pub use shape::*;
 pub use text::*;
+pub(crate) use title_card::TitleCardLayer;
 
 #[cfg(test)]
 mod font_tests {

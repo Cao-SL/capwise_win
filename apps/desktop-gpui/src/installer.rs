@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::{Read as _, Write as _},
     path::{Path, PathBuf},
     time::Duration,
@@ -10,15 +11,17 @@ use minisign_verify::{PublicKey, Signature, StreamVerifier};
 use semver::Version;
 use serde::Deserialize;
 
-use crate::store::UpdateChannel;
-
-const UPDATE_ENDPOINT: &str = "https://cdn.crabnebula.app/update/cap/cap";
-const UPDATER_PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUyOTAzOTdFNzJFQkRFOTMKUldTVDN1dHlmam1RNHFXb1VYTXlrQk1iMFFkcjN0YitqZlA5WnZNY0ZtQ1dvM1dxK211M3VIYUQK";
+const UPDATE_MANIFEST_URL: &str =
+    "https://github.com/joeseesun/capwise/releases/latest/download/latest.json";
+/// The minisign public key every update must be signed with. The private half
+/// never enters the repository; see docs/release.md. An empty file means this
+/// build was made before the key existed, so it never looks for updates.
+const UPDATER_PUBLIC_KEY: &str = include_str!("../packaging/updater.pub");
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const METADATA_TIMEOUT: Duration = Duration::from_secs(20);
 const CHUNK_TIMEOUT: Duration = Duration::from_secs(60);
 
-const STAGING_SLUG: &str = "cap";
+const STAGING_SLUG: &str = "capwise";
 
 pub(crate) fn update_platform() -> Result<String, String> {
     let arch = if cfg!(target_arch = "aarch64") {
@@ -69,10 +72,10 @@ impl ArtifactKind {
 
     fn file_name(self) -> &'static str {
         match self {
-            Self::AppArchive => "Cap.app.tar.gz",
-            Self::NsisInstaller => "Cap-setup.exe",
-            Self::Deb => "Cap.deb",
-            Self::AppImage => "Cap.AppImage",
+            Self::AppArchive => "Capwise.app.tar.gz",
+            Self::NsisInstaller => "Capwise-setup.exe",
+            Self::Deb => "Capwise.deb",
+            Self::AppImage => "Capwise.AppImage",
         }
     }
 
@@ -87,12 +90,24 @@ impl ArtifactKind {
 }
 
 #[derive(Deserialize)]
-struct RemoteRelease {
-    version: String,
+struct RemoteAsset {
     url: String,
     signature: String,
+}
+
+/// `latest.json` on the newest GitHub release: one version with an asset per
+/// update platform. A flat `url` and `signature` serve every platform.
+#[derive(Deserialize)]
+struct RemoteManifest {
+    version: String,
     #[serde(default)]
     notes: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    signature: Option<String>,
+    #[serde(default)]
+    platforms: HashMap<String, RemoteAsset>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,56 +118,63 @@ pub(crate) struct Release {
     pub(crate) notes: Option<String>,
 }
 
-fn parse_release(body: &[u8]) -> Result<Release, String> {
-    let remote: RemoteRelease = serde_json::from_slice(body)
+fn parse_release(body: &[u8], platform: &str) -> Result<Option<Release>, String> {
+    let mut remote: RemoteManifest = serde_json::from_slice(body)
         .map_err(|error| format!("Invalid update response: {error}"))?;
     let version = Version::parse(remote.version.trim().trim_start_matches('v'))
         .map_err(|error| format!("Invalid update version {:?}: {error}", remote.version))?;
-    let url = reqwest::Url::parse(remote.url.trim())
+    let (url, signature) = match remote.platforms.remove(platform) {
+        Some(asset) => (asset.url, asset.signature),
+        None if remote.platforms.is_empty() => match (remote.url, remote.signature) {
+            (Some(url), Some(signature)) => (url, signature),
+            (None, _) => return Err("The update has no download URL".to_string()),
+            (_, None) => return Err("The update has no signature".to_string()),
+        },
+        None => return Ok(None),
+    };
+    let url = reqwest::Url::parse(url.trim())
         .map_err(|error| format!("Invalid update download URL: {error}"))?;
     if url.scheme() != "https" {
         return Err("Update downloads must use HTTPS".to_string());
     }
-    if remote.signature.trim().is_empty() {
+    if signature.trim().is_empty() {
         return Err("The update has no signature".to_string());
     }
-    Ok(Release {
+    Ok(Some(Release {
         version,
         url: url.into(),
-        signature: remote.signature.trim().to_string(),
+        signature: signature.trim().to_string(),
         notes: remote.notes.filter(|notes| !notes.trim().is_empty()),
-    })
+    }))
 }
 
-fn endpoint(platform: &str, channel: UpdateChannel, current: &Version) -> String {
-    let url = format!("{UPDATE_ENDPOINT}/{platform}/{current}");
-    match channel {
-        UpdateChannel::Stable => url,
-        UpdateChannel::Nightly => format!("{url}?channel=nightly"),
-    }
+pub(crate) fn updates_configured() -> bool {
+    !UPDATER_PUBLIC_KEY.trim().is_empty()
 }
 
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent(concat!("Cap/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Capwise/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(CONNECT_TIMEOUT)
         .build()
         .map_err(|error| error.to_string())
 }
 
-pub(crate) async fn fetch_release(
-    channel: UpdateChannel,
-    current: &Version,
-) -> Result<Option<Release>, String> {
+pub(crate) async fn fetch_release() -> Result<Option<Release>, String> {
+    if !updates_configured() {
+        return Err("This build has no update signing key".to_string());
+    }
     let platform = update_platform()?;
     let response = client()?
-        .get(endpoint(&platform, channel, current))
+        .get(UPDATE_MANIFEST_URL)
+        .header(reqwest::header::CACHE_CONTROL, "no-cache")
         .timeout(METADATA_TIMEOUT)
         .send()
         .await
         .map_err(|error| error.to_string())?;
 
-    if response.status() == reqwest::StatusCode::NO_CONTENT {
+    // Before the first release, latest/download has nothing to redirect to.
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
 
@@ -162,7 +184,7 @@ pub(crate) async fn fetch_release(
         .bytes()
         .await
         .map_err(|error| error.to_string())?;
-    parse_release(&body).map(Some)
+    parse_release(&body, &platform)
 }
 
 fn decode_base64_text(value: &str, what: &str) -> Result<String, String> {
@@ -172,9 +194,8 @@ fn decode_base64_text(value: &str, what: &str) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| format!("Invalid {what} text"))
 }
 
-fn trusted_key(encoded: &str) -> Result<PublicKey, String> {
-    PublicKey::decode(&decode_base64_text(encoded, "update key")?)
-        .map_err(|error| format!("Invalid update key: {error}"))
+fn trusted_key(text: &str) -> Result<PublicKey, String> {
+    PublicKey::decode(text.trim()).map_err(|error| format!("Invalid update key: {error}"))
 }
 
 fn decode_signature(encoded: &str) -> Result<Signature, String> {
@@ -192,7 +213,7 @@ impl<'a> Verifier<'a> {
         match key.verify_stream(signature) {
             Ok(verifier) => Ok(Self::Stream(Box::new(verifier))),
             Err(minisign_verify::Error::UnsupportedLegacyMode) => Ok(Self::Buffered),
-            Err(error) => Err(format!("The update was not signed by Cap: {error}")),
+            Err(error) => Err(format!("The update was not signed by Capwise: {error}")),
         }
     }
 
@@ -240,7 +261,7 @@ pub(crate) fn check_artifact_kind(file: &Path, kind: ArtifactKind) -> Result<(),
     if kind.matches(&header[..read]) {
         Ok(())
     } else {
-        Err("The downloaded file is not a Cap package for this platform".to_string())
+        Err("The downloaded file is not a Capwise package for this platform".to_string())
     }
 }
 
@@ -252,7 +273,7 @@ fn staging_root() -> PathBuf {
     }
     dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("so.cap.desktop")
+        .join("com.capwise.app")
         .join("updates")
 }
 
@@ -287,12 +308,12 @@ pub(crate) async fn download(
 
 async fn download_into(
     root: &Path,
-    encoded_key: &str,
+    public_key: &str,
     kind: ArtifactKind,
     release: &Release,
     progress: &mut (impl FnMut(u64, Option<u64>) + Send),
 ) -> Result<PathBuf, String> {
-    let key = trusted_key(encoded_key)?;
+    let key = trusted_key(public_key)?;
     let signature = decode_signature(&release.signature)?;
     let product_dir = root.join(STAGING_SLUG);
     let version_dir = product_dir.join(release.version.to_string());
@@ -364,10 +385,10 @@ pub(crate) fn install_app_bundle(archive: &Path, destination: &Path) -> Result<(
         .parent()
         .ok_or_else(|| "The app has no parent folder".to_string())?;
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let staging = match unique_directory_in(parent, ".cap-update") {
+    let staging = match unique_directory_in(parent, ".capwise-update") {
         Ok(directory) => directory,
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-            unique_directory_in(&std::env::temp_dir(), "cap-update")
+            unique_directory_in(&std::env::temp_dir(), "capwise-update")
                 .map_err(|error| error.to_string())?
         }
         Err(error) => return Err(error.to_string()),
@@ -522,7 +543,7 @@ fn replace_directory_with_privileges(new: &Path, destination: &Path) -> Result<(
         Ok(())
     } else {
         Err(format!(
-            "Cap couldn't replace {}. {}",
+            "Capwise couldn't replace {}. {}",
             destination.display(),
             String::from_utf8_lossy(&output.stderr).trim()
         ))
@@ -665,51 +686,88 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_update_key_decodes() {
-        let key = trusted_key(UPDATER_PUBLIC_KEY).unwrap();
+    fn the_shipped_update_key_is_a_public_minisign_key() {
+        assert!(!UPDATER_PUBLIC_KEY.contains("secret key"));
+        if updates_configured() {
+            let key = trusted_key(UPDATER_PUBLIC_KEY).unwrap();
+            assert!(
+                key.untrusted_comment()
+                    .is_some_and(|comment| comment.contains("public key"))
+            );
+        }
+    }
+
+    #[test]
+    fn the_update_manifest_is_the_latest_github_release() {
         assert_eq!(
-            key.untrusted_comment(),
-            Some("untrusted comment: minisign public key: E290397E72EBDE93")
+            UPDATE_MANIFEST_URL,
+            "https://github.com/joeseesun/capwise/releases/latest/download/latest.json"
         );
     }
 
     #[test]
     fn release_metadata_requires_https_and_a_signature() {
         let release = parse_release(
-            br#"{"version":"v0.7.0","notes":"","url":"https://cdn.crabnebula.app/asset/1","signature":"c2ln"}"#,
+            br#"{"version":"v0.7.0","notes":"","url":"https://example.com/1","signature":"c2ln"}"#,
+            "darwin-aarch64",
         )
+        .unwrap()
         .unwrap();
         assert_eq!(release.version, Version::new(0, 7, 0));
         assert_eq!(release.notes, None);
-        assert!(
-            parse_release(
-                br#"{"version":"0.7.0","url":"http://example.com/a","signature":"c2ln"}"#
-            )
-            .is_err()
-        );
-        assert!(
-            parse_release(br#"{"version":"0.7.0","url":"https://example.com/a","signature":" "}"#)
-                .is_err()
-        );
-        assert!(
-            parse_release(
-                br#"{"version":"seven","url":"https://example.com/a","signature":"c2ln"}"#
-            )
-            .is_err()
-        );
+        for body in [
+            &br#"{"version":"0.7.0","url":"http://example.com/a","signature":"c2ln"}"#[..],
+            br#"{"version":"0.7.0","url":"https://example.com/a","signature":" "}"#,
+            br#"{"version":"0.7.0","url":"https://example.com/a"}"#,
+            br#"{"version":"seven","url":"https://example.com/a","signature":"c2ln"}"#,
+            br#"{"version":"0.7.0","platforms":{"darwin-aarch64":{"url":"http://example.com/a","signature":"c2ln"}}}"#,
+            b"<html>",
+        ] {
+            assert!(parse_release(body, "darwin-aarch64").is_err());
+        }
     }
 
     #[test]
-    fn endpoints_name_the_platform_version_and_channel() {
-        let current = Version::parse("0.6.2-nightly.4").unwrap();
-        assert_eq!(
-            endpoint("darwin-aarch64", UpdateChannel::Stable, &current),
-            "https://cdn.crabnebula.app/update/cap/cap/darwin-aarch64/0.6.2-nightly.4"
-        );
-        assert_eq!(
-            endpoint("windows-x86_64", UpdateChannel::Nightly, &current),
-            "https://cdn.crabnebula.app/update/cap/cap/windows-x86_64/0.6.2-nightly.4?channel=nightly"
-        );
+    fn manifests_pick_this_platforms_asset() {
+        let body = br#"{
+            "version": "0.2.0",
+            "notes": "Faster captions",
+            "pub_date": "2026-11-08T00:00:00Z",
+            "platforms": {
+                "darwin-aarch64": {
+                    "url": "https://github.com/joeseesun/capwise/releases/download/v0.2.0/Capwise_0.2.0_aarch64.app.tar.gz",
+                    "signature": "YXJt"
+                },
+                "darwin-x86_64": {
+                    "url": "https://github.com/joeseesun/capwise/releases/download/v0.2.0/Capwise_0.2.0_x64.app.tar.gz",
+                    "signature": "aW50ZWw="
+                }
+            }
+        }"#;
+        let arm = parse_release(body, "darwin-aarch64").unwrap().unwrap();
+        assert_eq!(arm.version, Version::new(0, 2, 0));
+        assert_eq!(arm.signature, "YXJt");
+        assert!(arm.url.ends_with("Capwise_0.2.0_aarch64.app.tar.gz"));
+        assert_eq!(arm.notes.as_deref(), Some("Faster captions"));
+        let intel = parse_release(body, "darwin-x86_64").unwrap().unwrap();
+        assert_eq!(intel.signature, "aW50ZWw=");
+        assert_eq!(parse_release(body, "windows-x86_64").unwrap(), None);
+    }
+
+    #[test]
+    fn release_script_signatures_verify_against_the_matching_key_only() {
+        const RELEASE_KEY: &str = "untrusted comment: minisign public key 0EE3701F23B76A14\nRWQUarcjH3DjDho8clfzZBZuLdM1mLs0hNnMEeUaLGBwqbA+6eA4hM7c\n";
+        const RELEASE_SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIG1pbmlzaWduIHNlY3JldCBrZXkKUlVRVWFyY2pIM0RqRHM4MExNNFU0bGoxcTVtOFFuWG1xMkhZbDI5VU01cCsrZk03UStwQ3BBUVhzWEcxUnoySVBLdXdad2g3UVJyYW01dUJvVXllVVFRZG0rV0ZRMmhiQndrPQp0cnVzdGVkIGNvbW1lbnQ6IENhcHdpc2UgMC4yLjAgZGFyd2luLWFhcmNoNjQKS28vaUdFbGtFZ2RuY3h1N0Z0Y0c1K01lbHVQWUwyazhzUGFiOGdseDNqdXhaTkN6YUhRcE0wbjZYSHJSeFNNQ1dadFhBaUIzc1c0MFA0QXdtdUNKQ1E9PQo=";
+        let directory = scratch("release-signature");
+        let file = directory.join("Capwise.app.tar.gz");
+        std::fs::write(&file, b"capwise-update").unwrap();
+        let signature = decode_signature(RELEASE_SIGNATURE).unwrap();
+
+        verify_file(&file, &trusted_key(RELEASE_KEY).unwrap(), &signature).unwrap();
+        assert!(verify_file(&file, &trusted_key(TEST_KEY).unwrap(), &signature).is_err());
+        std::fs::write(&file, b"capwise-updatE").unwrap();
+        assert!(verify_file(&file, &trusted_key(RELEASE_KEY).unwrap(), &signature).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -739,7 +797,7 @@ mod tests {
 
     #[test]
     fn signatures_verify_while_streaming_and_reject_tampering() {
-        let key = trusted_key(&encode(TEST_KEY)).unwrap();
+        let key = trusted_key(TEST_KEY).unwrap();
         let signature = decode_signature(&encode(TEST_SIGNATURE)).unwrap();
         let directory = scratch("verify");
         let file = directory.join("artifact");
@@ -765,7 +823,7 @@ mod tests {
             .build()
             .unwrap();
         let root = scratch("download");
-        let stale = root.join("cap").join("0.0.1");
+        let stale = root.join("capwise").join("0.0.1");
         std::fs::create_dir_all(&stale).unwrap();
 
         let (url, server) = serve_once(b"test");
@@ -773,14 +831,14 @@ mod tests {
         let downloaded = runtime
             .block_on(download_into(
                 &root,
-                &encode(TEST_KEY),
+                TEST_KEY,
                 ArtifactKind::AppImage,
                 &release(url),
                 &mut |done, total| updates.push((done, total)),
             ))
             .unwrap();
         assert_eq!(server.join().unwrap(), 1);
-        assert_eq!(downloaded, root.join("cap/9.9.9/Cap.AppImage"));
+        assert_eq!(downloaded, root.join("capwise/9.9.9/Capwise.AppImage"));
         assert_eq!(std::fs::read(&downloaded).unwrap(), b"test");
         assert_eq!(updates.first(), Some(&(0, Some(4))));
         assert_eq!(updates.last(), Some(&(4, Some(4))));
@@ -790,7 +848,7 @@ mod tests {
         let reused = runtime
             .block_on(download_into(
                 &root,
-                &encode(TEST_KEY),
+                TEST_KEY,
                 ArtifactKind::AppImage,
                 &release("http://127.0.0.1:9/unreachable".to_string()),
                 &mut |_, _| panic!("a verified cached download must not be fetched again"),
@@ -830,7 +888,7 @@ mod tests {
         let error = runtime
             .block_on(download_into(
                 &root,
-                &encode(TEST_KEY),
+                TEST_KEY,
                 ArtifactKind::AppImage,
                 &release(url),
                 &mut |_, _| {},
@@ -838,9 +896,9 @@ mod tests {
             .unwrap_err();
         assert_eq!(server.join().unwrap(), 1);
         assert!(error.contains("signature verification"));
-        let version_dir = root.join("cap").join("9.9.9");
-        assert!(!version_dir.join("Cap.AppImage").exists());
-        assert!(!version_dir.join("Cap.AppImage.partial").exists());
+        let version_dir = root.join("capwise").join("9.9.9");
+        assert!(!version_dir.join("Capwise.AppImage").exists());
+        assert!(!version_dir.join("Capwise.AppImage.partial").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 

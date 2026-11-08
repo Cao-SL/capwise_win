@@ -518,11 +518,15 @@ impl DeepLinkAction {
                     cap_project::BackgroundBlurMode::Remove => crate::store::BlurMode::Remove,
                 };
                 crate::store::update(|persisted| {
+                    let skin_smoothing = persisted
+                        .camera_window
+                        .is_some_and(|window| window.skin_smoothing);
                     persisted.camera_window = Some(crate::store::CameraWindowState {
                         size: state.size,
                         shape,
                         mirrored: state.mirrored,
                         background_blur,
+                        skin_smoothing,
                     });
                 });
                 if cx.global::<app_windows::AppWindows>().camera.is_some() {

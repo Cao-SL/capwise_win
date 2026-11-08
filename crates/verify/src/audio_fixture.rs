@@ -116,6 +116,7 @@ pub fn add_music(
         enabled: true,
         trim_start,
         volume_db,
+        ducking: false,
         fade_in: 0.0,
         fade_out: 0.0,
         duration: Some(MUSIC_SECS),

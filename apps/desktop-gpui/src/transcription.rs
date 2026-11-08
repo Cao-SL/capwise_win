@@ -58,6 +58,8 @@ mod align;
 mod refine;
 mod verbatim;
 
+pub(crate) use refine::refinement_request_checked;
+
 pub use refine::{
     RefinedCaptions, RefinementRequest, apply_refined_captions, clear_refinement_request,
     lower_thread_priority, refine_blocking, refinement_request, save_refinement_request,
@@ -117,7 +119,13 @@ impl Default for VerbatimOptions {
 pub const CAPTION_MODEL_FOLDER: &str = "transcription_models";
 
 /// Every model the catalogue can name, for the disk scan.
-const MODEL_NAMES: [&str; 5] = ["best", "best-max", "small", "medium", crate::local_qwen::MODEL];
+const MODEL_NAMES: [&str; 5] = [
+    "best",
+    "best-max",
+    "small",
+    "medium",
+    crate::local_qwen::MODEL,
+];
 
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 const PARAKEET_UNSUPPORTED_MESSAGE: &str = "Parakeet transcription is not available on Intel macOS";
@@ -239,6 +247,7 @@ struct Hub {
     download: Option<ModelDownload>,
     /// `None` until the first disk scan.
     downloaded: Option<HashSet<String>>,
+    disk_bytes: HashMap<String, u64>,
     deleting: Option<String>,
     generating: HashSet<PathBuf>,
     generation_errors: HashMap<PathBuf, String>,
@@ -316,7 +325,35 @@ pub fn refresh_downloaded_models() {
         .filter(|model| model_files_present(model))
         .map(|model| (*model).to_string())
         .collect();
-    hub().downloaded = Some(downloaded);
+    let disk_bytes = downloaded
+        .iter()
+        .map(|model| (model.clone(), disk_usage(&model_path(model))))
+        .collect();
+    let mut hub = hub();
+    hub.downloaded = Some(downloaded);
+    hub.disk_bytes = disk_bytes;
+}
+
+/// What each downloaded model takes on disk, as of the last scan.
+pub fn downloaded_model_bytes() -> HashMap<String, u64> {
+    hub().disk_bytes.clone()
+}
+
+fn disk_usage(path: &Path) -> u64 {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !meta.is_dir() {
+        return meta.len();
+    }
+    std::fs::read_dir(path)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| disk_usage(&entry.path()))
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 pub fn begin_download(model: &str) -> bool {
@@ -443,6 +480,50 @@ pub fn begin_generation(project_path: &Path) -> bool {
     hub.generation_errors.remove(project_path);
     hub.generating.insert(project_path.to_path_buf());
     true
+}
+
+pub(crate) fn clear_generation_error(project_path: &Path) -> Option<String> {
+    hub().generation_errors.remove(project_path)
+}
+
+#[cfg(test)]
+mod generation_recovery_tests {
+    use super::*;
+
+    #[test]
+    fn new_captions_start_manual_and_existing_positions_stay_unchanged() {
+        let mut project = ProjectConfiguration::default();
+        apply_caption_result(&mut project, Vec::new(), "zh", &[5.], 5.);
+        let settings = &project.captions.as_ref().unwrap().settings;
+        assert_eq!(settings.position, "manual");
+        assert_eq!(
+            settings.manual_position.map(|point| (point.x, point.y)),
+            Some((0.5, 0.85))
+        );
+        project.captions.as_mut().unwrap().settings.position = "top-right".into();
+        apply_caption_result(&mut project, Vec::new(), "zh", &[5.], 5.);
+        assert_eq!(
+            project.captions.as_ref().unwrap().settings.position,
+            "top-right"
+        );
+    }
+
+    #[test]
+    fn clearing_a_saved_generation_error_does_not_finish_an_active_task() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path();
+        assert!(begin_generation(path));
+        let _ = hub()
+            .generation_errors
+            .insert(path.to_path_buf(), "previous error".into());
+        assert_eq!(
+            clear_generation_error(path).as_deref(),
+            Some("previous error")
+        );
+        assert!(hub().generating.contains(path));
+        assert!(clear_generation_error(path).is_none());
+        finish_generation(path, None);
+    }
 }
 
 pub fn finish_generation(project_path: &Path, error: Option<String>) {
@@ -1715,6 +1796,7 @@ fn process_with_whisper(
                         text: current_word.trim().to_string(),
                         start: ws,
                         end: word_end,
+                        hidden: false,
                     });
                 }
                 current_word = token_text.trim().to_string();
@@ -1735,6 +1817,7 @@ fn process_with_whisper(
                 text: current_word.trim().to_string(),
                 start: ws,
                 end: word_end,
+                hidden: false,
             });
         }
 
@@ -1861,6 +1944,7 @@ fn decode_parakeet(
         text: token.text,
         start: token.start + offset,
         end: token.end + offset,
+        hidden: false,
     });
     Ok(if subwords {
         verbatim::words_from_subword_tokens(timed)
@@ -2006,6 +2090,15 @@ fn caption_segments_from_groups(
     let english = transcript_is_english(language, groups.iter().flatten());
     let mut segments = Vec::new();
     for (group_index, words) in groups.into_iter().enumerate() {
+        let prefix = if single {
+            "segment-".to_string()
+        } else {
+            format!("segment-{group_index}-")
+        };
+        if !english && let Some(lines) = crate::caption_breaks::local_segments(&words, &prefix) {
+            segments.extend(lines);
+            continue;
+        }
         let chunks = if english {
             caption_word_chunks_skipping_fillers(&words)
         } else {
@@ -2189,14 +2282,15 @@ pub fn transcribe_blocking(
 ) -> Result<Transcript, String> {
     if crate::asr_cloud::is_cloud_model(model) || model == crate::local_qwen::MODEL {
         let hints = user_transcription_hints();
-        let segments = transcribe_project_with(project_path, timeline, recording_durations, |audio_path| {
-            let samples = read_wav_16k_mono(audio_path)?;
-            if model == crate::local_qwen::MODEL {
-                crate::local_qwen::transcribe(&samples, &hints)
-            } else {
-                crate::asr_cloud::transcribe(model, &samples, &hints)
-            }
-        })?;
+        let segments =
+            transcribe_project_with(project_path, timeline, recording_durations, |audio_path| {
+                let samples = read_wav_16k_mono(audio_path)?;
+                if model == crate::local_qwen::MODEL {
+                    crate::local_qwen::transcribe(&samples, &hints)
+                } else {
+                    crate::asr_cloud::transcribe(model, &samples, &hints)
+                }
+            })?;
         return Ok(Transcript {
             segments,
             refinement: RefinementRequest::new(
@@ -2371,8 +2465,8 @@ fn transcribe_project_with(
 // ---------------------------------------------------------------------------
 
 use cap_project::caption_words::{
-    MAX_CAPTION_WORD_DURATION, caption_text_from_words, caption_word_chunks,
-    caption_word_chunks_skipping_fillers, normalize_caption_words,
+    caption_text_from_words, caption_word_chunks, caption_word_chunks_skipping_fillers,
+    normalize_caption_words,
 };
 
 // ---------------------------------------------------------------------------
@@ -2494,6 +2588,7 @@ pub fn sync_caption_words_with_text(
                 text: (*token).to_string(),
                 start: word.start,
                 end: word.end,
+                hidden: word.hidden,
             })
             .collect();
     }
@@ -2513,6 +2608,7 @@ pub fn sync_caption_words_with_text(
                 text: (*token).to_string(),
                 start: word_start as f32,
                 end: word_end as f32,
+                hidden: false,
             }
         })
         .collect()
@@ -2595,7 +2691,7 @@ pub fn apply_caption_result(
             .captions
             .as_ref()
             .map(|captions| captions.settings.clone())
-            .unwrap_or_default()
+            .unwrap_or_else(crate::style_presets::new_caption_settings)
     };
 
     if project.timeline.is_none() {
@@ -2772,6 +2868,7 @@ mod tests {
             text: text.to_string(),
             start: index as f32,
             end: index as f32 + 0.5,
+            hidden: false,
         }
     }
 
@@ -2786,6 +2883,7 @@ mod tests {
                 text: (*text).to_string(),
                 start: *start,
                 end: *end,
+                hidden: false,
             })
             .collect();
         CaptionSegment {
@@ -2962,10 +3060,14 @@ mod tests {
             text: "seconds.".to_string(),
             start: 53.92,
             end: 70.16,
+            hidden: false,
         }]);
 
         assert_eq!(words.len(), 1);
-        assert!((words[0].end - (53.92 + MAX_CAPTION_WORD_DURATION)).abs() < 1e-4);
+        assert!(
+            (words[0].end - (53.92 + cap_project::caption_words::MAX_CAPTION_WORD_DURATION)).abs()
+                < 1e-4
+        );
     }
 
     #[test]
@@ -3267,6 +3369,30 @@ mod tests {
         assert_eq!(track.len(), 1);
         assert_eq!(track[0].id, "segment-0-0");
         assert_eq!(track[0].text, "hello");
+    }
+
+    #[test]
+    fn apply_caption_result_preserves_affirmations_for_contextual_review() {
+        let mut project = ProjectConfiguration::default();
+        apply_caption_result(
+            &mut project,
+            vec![caption(
+                "affirmation",
+                0.0,
+                2.0,
+                &[("嗯", 0.0, 0.5), ("可以", 0.6, 1.2), ("呃", 1.3, 2.0)],
+            )],
+            "zh",
+            &[3.0],
+            3.0,
+        );
+        let captions = project.captions.as_ref().unwrap();
+        assert!(captions.segments[0].words.iter().all(|word| !word.hidden));
+        assert!(
+            project.timeline.as_ref().unwrap().caption_segments[0]
+                .text
+                .contains('嗯')
+        );
     }
 
     fn cut_project() -> ProjectConfiguration {

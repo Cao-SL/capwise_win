@@ -79,6 +79,8 @@ pub struct CameraWindowState {
     pub shape: CameraShape,
     pub mirrored: bool,
     pub background_blur: BlurMode,
+    #[serde(default)]
+    pub skin_smoothing: bool,
 }
 
 impl Default for CameraWindowState {
@@ -88,6 +90,7 @@ impl Default for CameraWindowState {
             shape: CameraShape::Round,
             mirrored: false,
             background_blur: BlurMode::Off,
+            skin_smoothing: false,
         }
     }
 }
@@ -225,6 +228,12 @@ fn bundled_resource_dirs_for(
 
 fn state_path() -> PathBuf {
     app_data_dir().join("gpui-state.json")
+}
+
+pub(crate) fn camera_skin_smoothing_preference() -> Option<bool> {
+    let value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state_path()).ok()?).ok()?;
+    value.get("camera_window")?.get("skin_smoothing")?.as_bool()
 }
 
 pub fn load() -> PersistedState {
@@ -433,6 +442,23 @@ pub fn store_section(section: &str) -> Map<String, Value> {
             _ => None,
         })
         .unwrap_or_default()
+}
+
+pub(crate) fn store_section_checked(section: &str) -> Result<Map<String, Value>, String> {
+    let bytes = match std::fs::read(tauri_store_path()) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let value: Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "Settings must be a JSON object".to_string())?;
+    match object.get(section) {
+        Some(Value::Object(section)) => Ok(section.clone()),
+        Some(_) => Err(format!("Invalid settings section: {section}")),
+        None => Ok(Map::new()),
+    }
 }
 
 pub fn notification_sounds_enabled() -> bool {
@@ -735,6 +761,21 @@ settings_enum! {
     default = ScreenRegion
 }
 
+fn window_capture_style_at(
+    general: &Map<String, Value>,
+    focused_by_default: bool,
+) -> WindowCaptureStyle {
+    general
+        .get("windowCaptureStyle")
+        .and_then(Value::as_str)
+        .and_then(WindowCaptureStyle::from_json)
+        .unwrap_or(if focused_by_default {
+            WindowCaptureStyle::FocusedWindow
+        } else {
+            WindowCaptureStyle::ScreenRegion
+        })
+}
+
 settings_enum! {
     /// `PostStudioRecordingBehaviour`.
     PostStudioBehaviour {
@@ -757,6 +798,7 @@ settings_enum! {
     default = OpenEditor
 }
 
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 impl PostScreenshotBehaviour {
     pub fn copies(self) -> bool {
         matches!(self, Self::Copy | Self::CopyAndOpenEditor)
@@ -977,6 +1019,7 @@ pub struct GeneralSettings {
     pub crash_recovery_recording: bool,
     pub custom_cursor_capture: bool,
     pub auto_zoom_on_clicks: bool,
+    pub auto_captions_after_recording: bool,
     pub default_zoom_amount: Option<f32>,
     pub capture_keyboard_events: bool,
     pub macbook_notch_overlay: bool,
@@ -986,6 +1029,7 @@ pub struct GeneralSettings {
     pub recording_marker_sound: bool,
     pub max_fps: u32,
     pub recordings_path: Option<String>,
+    pub export_path: Option<String>,
     /// Custom folders the library has been pointed at before. Not rendered by
     /// any page -- the recordings scan reads it, because
     /// `known_recordings_dirs` keeps listing recordings that were left behind
@@ -1006,6 +1050,9 @@ pub struct GeneralSettings {
     /// `!!settings.outOfProcessMuxer` in experimental.tsx).
     pub enable_native_camera_preview: bool,
     pub out_of_process_muxer: bool,
+    /// GPUI-only `showAdvancedSettings`, switched from the About page: reveals
+    /// the CLI and Experimental pages and the General page's advanced rows.
+    pub show_advanced_settings: bool,
     /// Not part of `general_settings` at all: the mic-confirmation toggle
     /// lives in the store's own `recording_start_safety` section
     /// (`RECORDING_START_SAFETY_DEFAULTS`), and the page renders it in the
@@ -1020,6 +1067,7 @@ pub const SHOW_MAIN_WINDOW_AFTER_INSTANT_KEY: &str = "showMainWindowAfterInstant
 pub const EDITOR_PREVIEW_SPEED_KEY: &str = "editorPreviewSpeed";
 
 pub const RECORDING_MARKER_SOUND_KEY: &str = "recordingMarkerSound";
+pub const SHOW_ADVANCED_SETTINGS_KEY: &str = "showAdvancedSettings";
 
 /// Read on every marker press, so it goes through the cached store rather
 /// than a full [`GeneralSettings::load`].
@@ -1060,6 +1108,21 @@ impl PostInstantBehaviour {
 /// The section names, so the write calls read as the store keys they are.
 pub const GENERAL_SETTINGS: &str = "general_settings";
 pub const RECORDING_START_SAFETY: &str = "recording_start_safety";
+
+pub fn set_export_path(path: Option<&str>) -> bool {
+    set_store_setting(
+        GENERAL_SETTINGS,
+        "exportPath",
+        path.map_or(Value::Null, Value::from),
+    )
+}
+
+pub fn export_directory() -> Option<std::path::PathBuf> {
+    GeneralSettings::load()
+        .export_path
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_dir())
+}
 
 /// Changes the recordings folder and remembers the old one, like Tauri's
 /// `remember_previous_recordings_path`, so the library keeps listing projects
@@ -1403,7 +1466,7 @@ impl GeneralSettings {
                 general,
                 "mainWindowRecordingStartBehaviour",
             ),
-            window_capture_style: enum_at(general, "windowCaptureStyle"),
+            window_capture_style: window_capture_style_at(general, cfg!(target_os = "macos")),
             focus_center: bool_at(general, "focusCenter", false),
             post_studio_recording_behaviour: enum_at(general, "postStudioRecordingBehaviour"),
             post_screenshot_behaviour: enum_at(general, "postScreenshotBehaviour"),
@@ -1414,19 +1477,20 @@ impl GeneralSettings {
                 "deleteInstantRecordingsAfterUpload",
                 false,
             ),
-            crash_recovery_recording: bool_at(general, "crashRecoveryRecording", true),
-            // The one snake_case key in the store: `#[serde(rename =
-            // "custom_cursor_capture2")]` on `custom_cursor_capture`, which
-            // is how the setting was re-defaulted without inheriting the old
-            // key's values.
-            custom_cursor_capture: bool_at(general, "custom_cursor_capture2", true),
-            auto_zoom_on_clicks: bool_at(general, "autoZoomOnClicks", false),
+            // Capwise pins these on and no longer offers a switch, so a
+            // `false` left in the store by an older build or the Tauri app
+            // must not turn them off again.
+            crash_recovery_recording: true,
+            custom_cursor_capture: true,
+            auto_zoom_on_clicks: true,
+            auto_captions_after_recording: bool_at(general, "autoCaptionsAfterRecording", true),
             default_zoom_amount: opt_f32_at(general, "defaultZoomAmount"),
-            capture_keyboard_events: bool_at(general, "captureKeyboardEvents", true),
+            capture_keyboard_events: true,
             macbook_notch_overlay: bool_at(general, "macbookNotchOverlay", false),
             recording_marker_sound: bool_at(general, RECORDING_MARKER_SOUND_KEY, false),
             max_fps: u32_at(general, "maxFps", 60),
             recordings_path: opt_string_at(general, "recordingsPath"),
+            export_path: opt_string_at(general, "exportPath"),
             previous_recordings_paths: strings_at(general, "previousRecordingsPaths"),
             default_project_name_template: opt_string_at(general, "defaultProjectNameTemplate"),
             // Key absent -> the default exclusion list, matching the Rust
@@ -1454,6 +1518,7 @@ impl GeneralSettings {
                 .unwrap_or_default(),
             enable_native_camera_preview: bool_at(general, "enableNativeCameraPreview", false),
             out_of_process_muxer: bool_at(general, "outOfProcessMuxer", false),
+            show_advanced_settings: bool_at(general, SHOW_ADVANCED_SETTINGS_KEY, false),
             confirm_without_microphone: bool_at(
                 safety,
                 "confirmBeforeRecordingWithoutMicrophone",
@@ -1482,6 +1547,9 @@ pub const TELEPROMPTER: &str = "teleprompter";
 #[derive(Debug, Clone, PartialEq)]
 pub struct TeleprompterState {
     pub script: String,
+    pub script_backup: String,
+    pub narrow_reading: bool,
+    pub window_bounds: Option<[f32; 4]>,
     pub font_size: f32,
     pub words_per_minute: u32,
     pub line_height: f32,
@@ -1492,6 +1560,9 @@ pub struct TeleprompterState {
 
 impl TeleprompterState {
     /// The store keys, so a write call reads as the key it writes.
+    pub const SCRIPT_BACKUP: &'static str = "scriptBackup";
+    pub const NARROW_READING: &'static str = "narrowReading";
+    pub const WINDOW_BOUNDS: &'static str = "windowBounds";
     pub const SCRIPT: &'static str = "script";
     pub const FONT_SIZE: &'static str = "fontSize";
     pub const WORDS_PER_MINUTE: &'static str = "wordsPerMinute";
@@ -1508,6 +1579,16 @@ impl TeleprompterState {
         let defaults = Self::default();
         Self {
             script: opt_string_at(map, Self::SCRIPT).unwrap_or(defaults.script),
+            script_backup: opt_string_at(map, Self::SCRIPT_BACKUP).unwrap_or_default(),
+            narrow_reading: bool_at(map, Self::NARROW_READING, true),
+            window_bounds: map
+                .get(Self::WINDOW_BOUNDS)
+                .and_then(|value| serde_json::from_value::<[f32; 4]>(value.clone()).ok())
+                .filter(|bounds| {
+                    bounds.iter().all(|value| value.is_finite())
+                        && bounds[2] >= 220.0
+                        && bounds[3] >= 160.0
+                }),
             font_size: f32_at(map, Self::FONT_SIZE, defaults.font_size),
             words_per_minute: u32_at(map, Self::WORDS_PER_MINUTE, defaults.words_per_minute),
             line_height: f32_at(map, Self::LINE_HEIGHT, defaults.line_height),
@@ -1526,6 +1607,9 @@ impl TeleprompterState {
     pub fn value_for(&self, key: &str) -> Value {
         match key {
             Self::SCRIPT => Value::from(self.script.clone()),
+            Self::SCRIPT_BACKUP => Value::from(self.script_backup.clone()),
+            Self::NARROW_READING => Value::Bool(self.narrow_reading),
+            Self::WINDOW_BOUNDS => serde_json::json!(self.window_bounds),
             Self::FONT_SIZE => Value::from(self.font_size),
             Self::WORDS_PER_MINUTE => Value::from(self.words_per_minute),
             Self::LINE_HEIGHT => Value::from(self.line_height),
@@ -1541,6 +1625,9 @@ impl Default for TeleprompterState {
     fn default() -> Self {
         Self {
             script: String::new(),
+            script_backup: String::new(),
+            narrow_reading: true,
+            window_bounds: None,
             font_size: 30.,
             words_per_minute: 150,
             line_height: 1.5,
@@ -1641,9 +1728,7 @@ pub fn seed_recording_marker_hotkey() {
 
 // -- Transcription hints --------------------------------------------------------
 
-/// `DEFAULT_TRANSCRIPTION_HINTS` (`apps/desktop/src/utils/general-settings.ts`).
-pub const DEFAULT_TRANSCRIPTION_HINTS: &[&str] =
-    &["Cap", "TypeScript", "My Brand Name", "mywebsite.com"];
+pub const DEFAULT_TRANSCRIPTION_HINTS: &[&str] = &[];
 
 /// `normalizeTranscriptionHints`: strip NULs, trim, drop empties and
 /// duplicates, first occurrence wins.
@@ -1664,9 +1749,6 @@ where
     normalized
 }
 
-/// `deriveGeneralSettings(store).transcriptionHints ?? []`: the stored array
-/// as-is when the key exists (normalisation happens on write, not read), the
-/// four defaults when it does not.
 pub fn transcription_hints() -> Vec<String> {
     match store_section(GENERAL_SETTINGS).get("transcriptionHints") {
         Some(Value::Array(entries)) => entries
@@ -2134,6 +2216,54 @@ pub fn preset_names() -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn window_capture_defaults_preserve_explicit_scope_and_centering_choices() {
+        let empty = Map::new();
+        assert_eq!(
+            window_capture_style_at(&empty, true),
+            WindowCaptureStyle::FocusedWindow
+        );
+        assert_eq!(
+            window_capture_style_at(&empty, false),
+            WindowCaptureStyle::ScreenRegion
+        );
+        let defaults = GeneralSettings::from_sections(&empty, &empty, &empty);
+        assert_eq!(
+            defaults.window_capture_style,
+            window_capture_style_at(&empty, cfg!(target_os = "macos"))
+        );
+        assert!(!defaults.focus_center);
+        for focused_by_default in [false, true] {
+            for (value, expected) in [
+                ("screenRegion", WindowCaptureStyle::ScreenRegion),
+                ("focusedWindow", WindowCaptureStyle::FocusedWindow),
+            ] {
+                let general = serde_json::json!({"windowCaptureStyle": value, "focusCenter": true});
+                let general = general.as_object().unwrap();
+                assert_eq!(
+                    window_capture_style_at(general, focused_by_default),
+                    expected
+                );
+                let settings = GeneralSettings::from_sections(general, &empty, &empty);
+                assert_eq!(settings.window_capture_style, expected);
+                assert!(settings.focus_center);
+                assert_eq!(general["windowCaptureStyle"], value);
+            }
+            for value in [
+                Value::Null,
+                Value::Bool(false),
+                Value::String("unknown".into()),
+            ] {
+                let general = Map::from_iter([("windowCaptureStyle".into(), value)]);
+                assert_eq!(
+                    window_capture_style_at(&general, focused_by_default),
+                    window_capture_style_at(&empty, focused_by_default)
+                );
+                assert!(!GeneralSettings::from_sections(&general, &empty, &empty).focus_center);
+            }
+        }
+    }
+
     struct TempStore {
         path: PathBuf,
     }
@@ -2492,6 +2622,30 @@ mod tests {
             false
         }));
         assert_eq!(store.read()["auth"]["user_id"], "a");
+    }
+
+    #[test]
+    fn export_folder_round_trips_without_changing_project_storage() {
+        let _store = TempStore::new(
+            "export-folder",
+            Some(r#"{"general_settings":{"recordingsPath":"projects"}}"#),
+        );
+        assert!(GeneralSettings::load().export_path.is_none());
+        assert!(set_export_path(Some("/missing-export-directory")));
+        assert_eq!(
+            GeneralSettings::load().export_path.as_deref(),
+            Some("/missing-export-directory")
+        );
+        assert!(export_directory().is_none());
+        assert_eq!(
+            GeneralSettings::load().recordings_path.as_deref(),
+            Some("projects")
+        );
+        let directory = std::env::temp_dir();
+        assert!(set_export_path(Some(&directory.to_string_lossy())));
+        assert_eq!(export_directory(), Some(directory));
+        assert!(set_export_path(None));
+        assert!(GeneralSettings::load().export_path.is_none());
     }
 
     #[test]
@@ -3080,7 +3234,7 @@ mod tests {
             PostDeletionBehaviour::DoNothing
         );
         assert_eq!(settings.recording_countdown, Some(5));
-        assert!(!settings.custom_cursor_capture);
+        assert!(settings.custom_cursor_capture);
         assert_eq!(settings.default_zoom_amount, Some(2.5));
         assert_eq!(settings.max_fps, 120);
         assert_eq!(settings.server_url, "https://cap.example.com");
@@ -3094,9 +3248,74 @@ mod tests {
         assert_eq!(settings.instant_mode_max_resolution, 1920);
     }
 
+    #[test]
+    fn pinned_recording_switches_ignore_stored_false() {
+        let _store = TempStore::new(
+            "pinned-switches",
+            Some(
+                r#"{
+  "general_settings": {
+    "crashRecoveryRecording": false,
+    "custom_cursor_capture2": false,
+    "autoZoomOnClicks": false,
+    "captureKeyboardEvents": false,
+    "showAdvancedSettings": true
+  }
+}"#,
+            ),
+        );
+
+        let settings = GeneralSettings::load();
+        assert!(settings.crash_recovery_recording);
+        assert!(settings.custom_cursor_capture);
+        assert!(settings.auto_zoom_on_clicks);
+        assert!(settings.capture_keyboard_events);
+        assert!(settings.show_advanced_settings);
+        assert!(!GeneralSettings::default().show_advanced_settings);
+    }
+
     /// The teleprompter's own section: defaults when absent, and a per-key
     /// write that leaves the rest of the section (and the rest of the store)
     /// alone -- the window writes only the fields the user touched.
+    #[test]
+    fn teleprompter_reading_preferences_and_backup_survive_reload() {
+        let mut map = Map::new();
+        map.insert(
+            TeleprompterState::SCRIPT.into(),
+            serde_json::json!("current"),
+        );
+        map.insert(
+            TeleprompterState::SCRIPT_BACKUP.into(),
+            serde_json::json!("original"),
+        );
+        map.insert(
+            TeleprompterState::NARROW_READING.into(),
+            serde_json::json!(false),
+        );
+        map.insert(
+            TeleprompterState::WINDOW_BOUNDS.into(),
+            serde_json::json!([100., 50., 560., 320.]),
+        );
+        let loaded = TeleprompterState::from_section(&map);
+        assert_eq!(loaded.script_backup, "original");
+        assert!(!loaded.narrow_reading);
+        assert_eq!(loaded.window_bounds, Some([100., 50., 560., 320.]));
+        assert_eq!(
+            loaded.value_for(TeleprompterState::WINDOW_BOUNDS),
+            serde_json::json!([100., 50., 560., 320.])
+        );
+        map.insert(
+            TeleprompterState::WINDOW_BOUNDS.into(),
+            serde_json::json!([0., 0., -10., 0.]),
+        );
+        assert!(
+            TeleprompterState::from_section(&map)
+                .window_bounds
+                .is_none()
+        );
+        assert!(TeleprompterState::default().narrow_reading);
+    }
+
     #[test]
     fn the_teleprompter_section_round_trips_per_key() {
         let store = TempStore::new(

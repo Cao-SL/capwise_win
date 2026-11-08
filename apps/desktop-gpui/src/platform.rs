@@ -314,6 +314,7 @@ async fn linux_save_file_panel(
     cx: &mut gpui::AsyncApp,
 ) -> LinuxFileDialogResult {
     let name = suggested.to_owned();
+    let directory = crate::store::export_directory();
     let filters = if extensions.is_empty() {
         Vec::new()
     } else {
@@ -323,6 +324,8 @@ async fn linux_save_file_panel(
         let request = ashpd::desktop::file_chooser::SaveFileRequest::default()
             .identifier(identifier)
             .current_name(name.as_str())
+            .current_folder::<&std::path::PathBuf>(directory.as_ref())
+            .map_err(|error| LinuxFileDialogError::BeforeDispatch(error.to_string()))?
             .filters(filters)
             .send()
             .await
@@ -2489,6 +2492,13 @@ mod mac {
                 return Err("The save dialog is unavailable".to_string());
             }
             let _: () = msg_send![panel, setCanCreateDirectories: true];
+            if let Some(directory) = crate::store::export_directory() {
+                let path = NSString::from_str(&directory.to_string_lossy());
+                let url: *mut AnyObject = msg_send![class!(NSURL), fileURLWithPath: &*path];
+                if !url.is_null() {
+                    let _: () = msg_send![panel, setDirectoryURL: url];
+                }
+            }
             let _: () = msg_send![panel, setNameFieldStringValue: &*NSString::from_str(suggested)];
             if !extensions.is_empty() {
                 let types: Vec<Retained<NSString>> = extensions

@@ -976,9 +976,18 @@ impl EditorInstance {
             }
             let start_frame_number = start_frame_number.unwrap_or(state.playhead_position);
 
+            let music_project_path = self.project_path.clone();
+            let music_cache = self.music_cache.clone();
+
             let playback = playback::Playback {
                 segment_medias: self.segment_medias.clone(),
                 music: music.clone(),
+                music_loader: Some(Arc::new(move |project| {
+                    let mut cache = music_cache
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    crate::load_music_tracks(project, &music_project_path, &mut cache)
+                })),
                 renderer: self.renderer.clone(),
                 render_constants: self.render_constants.clone(),
                 start_frame_number,

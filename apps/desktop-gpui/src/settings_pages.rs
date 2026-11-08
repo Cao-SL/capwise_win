@@ -318,6 +318,9 @@ pub(crate) struct PagesState {
     hint_save: HintSave,
     hint_save_task: Option<gpui::Task<()>>,
     pub(crate) ai: crate::settings_ai::AiState,
+    pub(crate) stock: crate::settings_stock::StockSettings,
+    pub(crate) cover: crate::settings_cover::CoverSettings,
+    pub(crate) agents: crate::settings_agents::AgentsSettings,
 
     // Feedback (feedback.tsx)
     feedback_input: Entity<ui::TextInputState>,
@@ -428,6 +431,9 @@ impl PagesState {
             hint_save: HintSave::Idle,
             hint_save_task: None,
             ai: crate::settings_ai::AiState::new(window, cx),
+            stock: crate::settings_stock::StockSettings::new(window, cx),
+            cover: crate::settings_cover::CoverSettings::new(window, cx),
+            agents: crate::settings_agents::AgentsSettings::new(window, cx),
             feedback_input,
             feedback_draft: String::new(),
             feedback: FeedbackStatus::Idle,
@@ -569,9 +575,10 @@ impl SettingsWindow {
     /// Option lists for the [`MenuKind`] variants owned by these pages.
     pub(crate) fn pages_menu_items(&self, kind: MenuKind) -> Vec<ui::MenuItem> {
         match kind {
-            MenuKind::AiRecognizer | MenuKind::AiModel | MenuKind::AiLlmAdd | MenuKind::AiLlmDefault => {
-                self.ai_menu_items(kind)
-            }
+            MenuKind::AiRecognizer
+            | MenuKind::AiModel
+            | MenuKind::AiLlmAdd
+            | MenuKind::AiLlmDefault => self.ai_menu_items(kind),
             MenuKind::S3Provider => S3_PROVIDERS
                 .iter()
                 .map(|(value, label)| ui::MenuItem::new(label(), *value == self.pages.s3.provider))
@@ -725,7 +732,13 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) {
         match kind {
-            MenuKind::AiRecognizer | MenuKind::AiModel | MenuKind::AiLlmAdd | MenuKind::AiLlmDefault => {
+            MenuKind::CoverProvider | MenuKind::CoverModel => {
+                self.choose_cover_menu(kind, index, window, cx)
+            }
+            MenuKind::AiRecognizer
+            | MenuKind::AiModel
+            | MenuKind::AiLlmAdd
+            | MenuKind::AiLlmDefault => {
                 self.ai_choose(kind, index, window, cx);
             }
             MenuKind::S3Provider => {
@@ -964,7 +977,6 @@ struct OutcomeOption {
     hint: fn() -> &'static str,
 }
 
-
 const STUDIO_OUTCOMES: [(store::PostStudioBehaviour, OutcomeOption); 3] = [
     (
         store::PostStudioBehaviour::OpenEditor,
@@ -991,7 +1003,6 @@ const STUDIO_OUTCOMES: [(store::PostStudioBehaviour, OutcomeOption); 3] = [
         },
     ),
 ];
-
 
 const CANCEL_OUTCOMES: [(bool, OutcomeOption); 2] = [
     (
@@ -1583,30 +1594,7 @@ impl SettingsWindow {
                 .collect::<Vec<_>>()
         };
 
-        let mut recording = rows_for(&RECORDING_SHORTCUTS, cx);
-        recording.push(
-            self.render_outcome_panel(
-                "outcome-studio",
-                tr::settings::shortcuts::after_studio::title(),
-                tr::settings::shortcuts::after_studio::hint(),
-                &STUDIO_OUTCOMES
-                    .iter()
-                    .map(|(value, option)| {
-                        (
-                            *option,
-                            *value == self.settings.post_studio_recording_behaviour,
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-                |this, index, cx| {
-                    if let Some((value, _)) = STUDIO_OUTCOMES.get(index) {
-                        this.settings.post_studio_recording_behaviour = *value;
-                        this.write_enum("postStudioRecordingBehaviour", *value, cx);
-                    }
-                },
-                cx,
-            ),
-        );
+        let recording = rows_for(&RECORDING_SHORTCUTS, cx);
         let cancel = vec![
             self.render_outcome_panel(
                 "outcome-cancel",
@@ -1678,6 +1666,33 @@ impl SettingsWindow {
             .into_any_element(),
         );
         sections
+    }
+
+    /// "After a Studio recording", shown on the General page under the
+    /// countdown: it applies however the recording was started, not only from
+    /// a shortcut.
+    pub(crate) fn render_post_studio_panel(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        self.render_outcome_panel(
+            "outcome-studio",
+            tr::settings::shortcuts::after_studio::title(),
+            tr::settings::shortcuts::after_studio::hint(),
+            &STUDIO_OUTCOMES
+                .iter()
+                .map(|(value, option)| {
+                    (
+                        *option,
+                        *value == self.settings.post_studio_recording_behaviour,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            |this, index, cx| {
+                if let Some((value, _)) = STUDIO_OUTCOMES.get(index) {
+                    this.settings.post_studio_recording_behaviour = *value;
+                    this.write_enum("postStudioRecordingBehaviour", *value, cx);
+                }
+            },
+            cx,
+        )
     }
 
     fn render_outcome_panel(
@@ -2651,12 +2666,24 @@ impl SettingsWindow {
 // Experimental (experimental.tsx)
 // ---------------------------------------------------------------------------
 
+/// The page's only switch, the out-of-process muxer, runs the `cap-muxer`
+/// binary, which Capwise builds do not bundle; without it the switch would
+/// do nothing, so the page has nothing to show and leaves the sidebar.
+pub(crate) fn experimental_has_items() -> bool {
+    static MUXER_BUNDLED: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| cap_recording::oop_muxer::resolve_muxer_binary().is_ok());
+    *MUXER_BUNDLED
+}
+
 impl SettingsWindow {
     pub(crate) fn render_experimental(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         // No "Native camera preview" toggle here: the native camera path is
         // the only implementation, so the 0.6.0 page's experimental switch has
         // nothing to switch. The store key (`enableNativeCameraPreview`) stays
         // readable in `store.rs` and is left untouched in the store.
+        if !experimental_has_items() {
+            return Vec::new();
+        }
         vec![
             self.section(
                 tr::settings::experimental::reliability(),

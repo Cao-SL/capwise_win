@@ -136,6 +136,7 @@ actions!(
         /// Settings… -- ⌘, on macOS, Ctrl+, on Windows and Linux.
         OpenSettings,
         OpenFile,
+        ShowRecorder,
         ImportMedia,
         Changelog,
         HelpDocs,
@@ -172,6 +173,9 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &HideSelf, cx: &mut App| cx.hide());
     cx.on_action(|_: &HideOthers, cx: &mut App| cx.hide_other_apps());
     cx.on_action(|_: &Quit, cx: &mut App| quit(cx));
+    cx.on_action(|_: &ShowRecorder, cx: &mut App| {
+        cx.defer(app_windows::show_main_window);
+    });
     cx.on_action(|_: &OpenFile, cx: &mut App| {
         let (files, directories) = if cfg!(target_os = "macos") {
             (true, false)
@@ -185,10 +189,24 @@ pub fn init(cx: &mut App) {
             prompt: Some(tr::menu::file::open_prompt().into()),
         });
         cx.spawn(async move |cx| {
-            if let Ok(Ok(Some(paths))) = paths.await
-                && let Some(path) = paths.into_iter().next()
-            {
-                cx.update(|cx| crate::tray::open_previous_item(path, cx));
+            let selection = paths
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|result| result.map_err(|error| error.to_string()));
+            match selection {
+                Ok(Some(paths)) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        cx.update(|cx| crate::tray::open_previous_item(path, cx));
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::error!(%error, "Project selection failed");
+                    platform::alert_dialog(
+                        tr::menu::file::open_failed_title(),
+                        tr::menu::file::open_dialog_failed(),
+                    );
+                }
             }
         })
         .detach();
@@ -198,9 +216,7 @@ pub fn init(cx: &mut App) {
     });
     cx.on_action(|_: &Changelog, cx: &mut App| cx.open_url(&format!("{REPO_URL}/releases")));
     cx.on_action(|_: &HelpDocs, cx: &mut App| cx.open_url(&format!("{REPO_URL}#readme")));
-    cx.on_action(|_: &HelpFeedback, cx: &mut App| {
-        cx.open_url(&format!("{REPO_URL}/issues/new"))
-    });
+    cx.on_action(|_: &HelpFeedback, cx: &mut App| cx.open_url(&format!("{REPO_URL}/issues/new")));
     cx.on_action(|_: &CloseWindow, cx: &mut App| close_key_window(cx));
     cx.on_action(|_: &Minimize, cx: &mut App| with_key_native(cx, platform::minimize_native));
     cx.on_action(|_: &Zoom, cx: &mut App| with_key_native(cx, platform::zoom_native));
@@ -324,6 +340,7 @@ pub(crate) fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-m", Minimize, None),
         KeyBinding::new("ctrl-cmd-f", ToggleFullscreen, None),
         KeyBinding::new("secondary-,", OpenSettings, None),
+        KeyBinding::new("secondary-o", OpenFile, None),
     ]
 }
 
@@ -407,6 +424,8 @@ pub fn build_menus(_update_status: &updates::UpdateStatus, settings_enabled: boo
             name: tr::menu::window::title().into(),
             disabled: false,
             items: vec![
+                MenuItem::action(tr::menu::window::recorder(), ShowRecorder),
+                MenuItem::separator(),
                 MenuItem::action(tr::menu::window::minimize(), Minimize),
                 MenuItem::action(tr::menu::window::zoom(), Zoom),
                 MenuItem::separator(),
@@ -1178,7 +1197,7 @@ mod tests {
     }
 
     #[test]
-    fn global_keymap_is_unchanged_apart_from_settings() {
+    fn global_keymap_keeps_editing_keys_scoped_and_binds_open_file() {
         let settings = if cfg!(target_os = "macos") {
             "cmd-,"
         } else {
@@ -1192,6 +1211,14 @@ mod tests {
             ("cmd-m", &Minimize),
             ("ctrl-cmd-f", &ToggleFullscreen),
             (settings, &OpenSettings),
+            (
+                if cfg!(target_os = "macos") {
+                    "cmd-o"
+                } else {
+                    "ctrl-o"
+                },
+                &OpenFile,
+            ),
         ];
         let bindings = bindings();
         assert_eq!(bindings.len(), expected.len());
@@ -1276,6 +1303,8 @@ mod tests {
                 (
                     "Window".into(),
                     vec![
+                        "Recording Window".into(),
+                        "-".into(),
                         "Minimize".into(),
                         "Zoom".into(),
                         "-".into(),

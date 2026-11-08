@@ -31,6 +31,9 @@
 			"icons/icon.ico"
 		],
 		"resources": {
+			"assets/caption-fonts/*.ttf": "fonts/",
+			"assets/caption-fonts/*.otf": "fonts/",
+			"assets/caption-fonts/*.txt": "fonts/",
 			"assets/backgrounds/macOS/*": "assets/backgrounds/macOS/",
 			"assets/backgrounds/blue/*": "assets/backgrounds/blue/",
 			"assets/backgrounds/cities/*": "assets/backgrounds/cities/",

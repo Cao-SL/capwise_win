@@ -766,23 +766,19 @@ fn paint_chrome(chrome: &ShapeChrome, bounds: Bounds<Pixels>, window: &mut Windo
     }
 }
 
-pub fn free_lane(segments: &[ShapeSegment], start: f64, end: f64) -> u32 {
-    let used = edits::used_lane_count(segments);
-    (0..used)
-        .find(|lane| {
-            !segments
-                .iter()
-                .any(|segment| segment.track == *lane && segment.start < end && start < segment.end)
-        })
-        .unwrap_or(used)
+pub fn free_lane(placed: &[(u32, f64, f64)], start: f64, end: f64) -> u32 {
+    placed
+        .iter()
+        .filter(|(_, segment_start, segment_end)| *segment_start < end && start < *segment_end)
+        .map(|(lane, _, _)| lane + 1)
+        .max()
+        .unwrap_or(0)
 }
 
-pub fn pasted(
-    shapes: &[ShapeSegment],
-    time: f64,
-    total: f64,
-    offset: (f64, f64),
-) -> Vec<ShapeSegment> {
+pub fn pasted(shapes: &[ShapeSegment], time: f64, offset: (f64, f64)) -> Vec<ShapeSegment> {
+    if !time.is_finite() {
+        return Vec::new();
+    }
     let Some(first) = shapes
         .iter()
         .map(|shape| shape.start)
@@ -790,31 +786,17 @@ pub fn pasted(
     else {
         return Vec::new();
     };
-    let last = shapes
-        .iter()
-        .map(|shape| shape.end)
-        .max_by(f64::total_cmp)
-        .unwrap_or(first);
-    let span = (last - first).max(0.);
-    let start = if total > 0. {
-        time.clamp(0., (total - span).max(0.))
-    } else {
-        time.max(0.)
-    };
-    let shift = start - first;
+    let shift = time.max(0.) - first;
     shapes
         .iter()
         .map(|shape| {
             let mut copy = shape.clone();
             copy.start += shift;
             copy.end += shift;
-            if total > 0. {
-                copy.end = copy.end.min(total);
-            }
             copy.translate(offset.0, offset.1);
             copy
         })
-        .filter(|copy| copy.end > copy.start)
+        .filter(|copy| copy.start.is_finite() && copy.end.is_finite() && copy.end > copy.start)
         .collect()
 }
 
@@ -959,6 +941,9 @@ impl EditorWindow {
 
     fn shape_local(&self, position: Point<Pixels>) -> Option<(Px, Px)> {
         let (bounds, size) = self.shape_canvas()?;
+        if !bounds.contains(&position) {
+            return None;
+        }
         Some((
             (
                 f64::from(f32::from(position.x - bounds.origin.x)),
@@ -1013,22 +998,9 @@ impl EditorWindow {
     }
 
     fn shape_placement(&self, time: f64, length: f64) -> Option<(u32, f64, f64)> {
-        let segments = self.shape_segments();
         let total = self.total_duration();
-        let lanes = self.tracks.shape.max(edits::used_lane_count(segments));
-        for lane in 0..lanes {
-            let on_lane: Vec<ShapeSegment> = segments
-                .iter()
-                .filter(|segment| segment.track == lane)
-                .cloned()
-                .collect();
-            if let Some((start, end)) = edits::place_segment_at_time(&on_lane, time, length, total)
-            {
-                return Some((lane, start, end));
-            }
-        }
-        edits::place_segment_at_time(&[] as &[ShapeSegment], time, length, total)
-            .map(|(start, end)| (lanes, start, end))
+        let timeline = self.project.timeline.as_ref()?;
+        edits::place_overlay_at_time(timeline, time, length, total)
     }
 
     fn insert_shapes(
@@ -1059,10 +1031,7 @@ impl EditorWindow {
                     .position(|item| item == shape)
             })
             .collect();
-        self.tracks.shape = self
-            .tracks
-            .shape
-            .max(edits::used_lane_count(&timeline.shape_segments));
+        self.tracks.overlay = self.tracks.overlay.max(timeline.overlay_layer_count());
         if let Some(last) = shapes.last() {
             self.last_shape_kind = last.kind;
         }
@@ -1511,6 +1480,19 @@ impl EditorWindow {
         true
     }
 
+    fn overlay_placed_spans(&self) -> Vec<(u32, f64, f64)> {
+        self.project
+            .timeline
+            .as_ref()
+            .map(|timeline| {
+                timeline
+                    .overlay_spans()
+                    .map(|(_, _, lane, start, end)| (lane, start, end))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn copy_offset(&self) -> (f64, f64) {
         self.shape_canvas().map_or((0.01, 0.01), |(_, canvas)| {
             (COPY_OFFSET_PX / canvas.0, COPY_OFFSET_PX / canvas.1)
@@ -1523,7 +1505,7 @@ impl EditorWindow {
             return false;
         }
         let offset = self.copy_offset();
-        let mut placed: Vec<ShapeSegment> = self.shape_segments().to_vec();
+        let mut placed = self.overlay_placed_spans();
         let mut copies = Vec::new();
         for index in indices {
             let Some(source) = self.shape_segments().get(index) else {
@@ -1532,7 +1514,7 @@ impl EditorWindow {
             let mut copy = source.clone();
             copy.translate(offset.0, offset.1);
             copy.track = free_lane(&placed, copy.start, copy.end);
-            placed.push(copy.clone());
+            placed.push((copy.track, copy.start, copy.end));
             copies.push(copy);
         }
         let inserted = !self.insert_shapes(copies, window, cx).is_empty();
@@ -1558,10 +1540,9 @@ impl EditorWindow {
         if self.shape_clipboard.is_empty() {
             return false;
         }
-        let total = self.total_duration();
         let step = self.copy_offset();
         let mut offset = (0., 0.);
-        let mut copies = pasted(&self.shape_clipboard, self.playhead.max(0.), total, offset);
+        let mut copies = pasted(&self.shape_clipboard, self.playhead.max(0.), offset);
         for _ in 0..12 {
             let overlaps = copies.iter().any(|copy| {
                 self.shape_segments().iter().any(|segment| {
@@ -1575,12 +1556,12 @@ impl EditorWindow {
                 break;
             }
             offset = (offset.0 + step.0, offset.1 + step.1);
-            copies = pasted(&self.shape_clipboard, self.playhead.max(0.), total, offset);
+            copies = pasted(&self.shape_clipboard, self.playhead.max(0.), offset);
         }
-        let mut placed: Vec<ShapeSegment> = self.shape_segments().to_vec();
+        let mut placed = self.overlay_placed_spans();
         for copy in &mut copies {
             copy.track = free_lane(&placed, copy.start, copy.end);
-            placed.push(copy.clone());
+            placed.push((copy.track, copy.start, copy.end));
         }
         let first = copies.first().map(|copy| {
             (
@@ -2071,32 +2052,27 @@ impl EditorWindow {
             });
         }));
 
-        let mut panel = div().flex().flex_col().gap(px(16.)).child(
-            crate::ui::Field::section(
+        let enabled_row = crate::ui::Field::inline(&theme, tr::editor::panel::enabled()).value(
+            crate::ui::Toggle::plain(
                 &theme,
-                SharedString::from(tr::editor::shape::title(index + 1)),
+                SharedString::from(format!("shape-enabled-{index}")),
+                enabled,
             )
-            .value(
-                crate::ui::Toggle::plain(
-                    &theme,
-                    SharedString::from(format!("shape-enabled-{index}")),
-                    enabled,
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.edit_shape_segment("shape-enabled", index, window, cx, move |segment| {
-                        segment.enabled = !enabled;
-                        true
-                    });
-                }))
-                .into_any_element(),
-            )
-            .child(
-                div().flex().flex_col().gap(px(6.)).child(kinds).child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(Hsla::from(theme.editor.text_2))
-                        .child(crate::editor_timeline::shape_kind_label(kind)),
-                ),
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.edit_shape_segment("shape-enabled", index, window, cx, move |segment| {
+                    segment.enabled = !enabled;
+                    true
+                });
+            }))
+            .into_any_element(),
+        );
+        let mut more = div().flex().flex_col().gap(px(16.));
+        let mut panel = div().flex().flex_col().gap(px(16.)).child(
+            div().flex().flex_col().gap(px(6.)).child(kinds).child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(crate::editor_timeline::shape_kind_label(kind)),
             ),
         );
 
@@ -2156,11 +2132,11 @@ impl EditorWindow {
                         )),
                 );
             }
-            panel = panel.child(section);
+            more = more.child(section);
         }
 
         if kind.supports_corner_radius() {
-            panel = panel.child(self.shape_slider(
+            more = more.child(self.shape_slider(
                 tr::editor::shape::corner_radius(),
                 ShapeProperty::CornerRadius,
                 "px",
@@ -2170,7 +2146,7 @@ impl EditorWindow {
         }
 
         if kind == ShapeKind::Arrow {
-            panel = panel.child(
+            more = more.child(
                 crate::ui::Field::section(&theme, tr::editor::shape::arrowhead()).child(
                     crate::ui::SegmentedControl::editor(
                         &theme,
@@ -2285,7 +2261,7 @@ impl EditorWindow {
             );
         }
 
-        panel = panel.child(
+        more = more.child(
             crate::ui::Field::section(&theme, tr::editor::shape::look()).child(
                 div()
                     .flex()
@@ -2308,7 +2284,7 @@ impl EditorWindow {
             ),
         );
 
-        panel = panel.child(
+        more = more.child(
             crate::ui::Field::section(&theme, tr::editor::shape::animation())
                 .value(
                     crate::ui::SegmentedControl::editor(
@@ -2388,7 +2364,10 @@ impl EditorWindow {
                 ),
         );
 
-        panel.into_any_element()
+        more = more.child(enabled_row);
+        panel
+            .child(self.more_settings("shape", cx, move |_, _| more.into_any_element()))
+            .into_any_element()
     }
 }
 
@@ -2969,7 +2948,7 @@ mod tests {
 
     #[test]
     fn free_lanes_skip_overlaps_and_open_a_new_lane_when_full() {
-        let shapes = [timed(0., 5., 0), timed(2., 4., 1)];
+        let shapes = [(0, 0., 5.), (1, 2., 4.)];
         assert_eq!(free_lane(&shapes, 5., 7.), 0);
         assert_eq!(free_lane(&shapes, 4., 6.), 1);
         assert_eq!(free_lane(&shapes, 3., 4.5), 2);
@@ -2977,9 +2956,9 @@ mod tests {
     }
 
     #[test]
-    fn pastes_keep_relative_timing_and_stay_inside_the_timeline() {
+    fn pastes_keep_relative_timing_and_full_duration_at_the_playhead() {
         let copied = [timed(10., 12., 0), timed(11., 15., 1)];
-        let pasted_at = pasted(&copied, 2., 60., (0.01, 0.02));
+        let pasted_at = pasted(&copied, 2., (0.01, 0.02));
         assert_eq!(
             pasted_at
                 .iter()
@@ -2989,14 +2968,14 @@ mod tests {
         );
         assert!(close(pasted_at[0].from.x, copied[0].from.x + 0.01));
         assert!(close(pasted_at[0].to.y, copied[0].to.y + 0.02));
-        let near_end = pasted(&copied, 58., 60., (0., 0.));
-        assert_eq!(near_end[1].end, 60.);
-        assert_eq!(near_end[0].start, 55.);
-        assert!(pasted(&[], 1., 60., (0., 0.)).is_empty());
-        let longer_than_timeline = pasted(&[timed(0., 90., 0)], 5., 60., (0., 0.));
+        let near_end = pasted(&copied, 58., (0., 0.));
+        assert_eq!(near_end[1].end, 63.);
+        assert_eq!(near_end[0].start, 58.);
+        assert!(pasted(&[], 1., (0., 0.)).is_empty());
+        let longer_than_timeline = pasted(&[timed(0., 90., 0)], 5., (0., 0.));
         assert_eq!(
             (longer_than_timeline[0].start, longer_than_timeline[0].end),
-            (0., 60.)
+            (5., 95.)
         );
     }
 

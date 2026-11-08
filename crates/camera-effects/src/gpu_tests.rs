@@ -242,3 +242,282 @@ async fn effects_preserve_foreground_alpha_and_suppress_background_detail() {
     assert_eq!(processor.mask_status.status, BlurMaskStatus::Pending);
     assert!(processor.inference_requested);
 }
+
+mod skin_smoothing {
+    use crate::SkinSmoother;
+
+    const WIDTH: u32 = 128;
+    const HEIGHT: u32 = 128;
+
+    async fn device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance.request_adapter(&Default::default()).await.ok()?;
+        adapter.request_device(&Default::default()).await.ok()
+    }
+
+    fn smooth(device: &wgpu::Device, queue: &wgpu::Queue, pixels: &[u8], strength: f32) -> Vec<u8> {
+        smooth_with_person(device, queue, pixels, strength, None)
+    }
+
+    fn smooth_with_person(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pixels: &[u8],
+        strength: f32,
+        person: Option<u8>,
+    ) -> Vec<u8> {
+        let person_view = person.map(|value| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            queue.write_texture(
+                texture.as_image_copy(),
+                &[value],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(1),
+                    rows_per_image: Some(1),
+                },
+                texture.size(),
+            );
+            texture.create_view(&Default::default())
+        });
+        let input = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            input.as_image_copy(),
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(WIDTH * 4),
+                rows_per_image: Some(HEIGHT),
+            },
+            input.size(),
+        );
+        let mut smoother = SkinSmoother::new(device);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        smoother.process_into_encoder(
+            device,
+            queue,
+            &input,
+            &mut encoder,
+            strength,
+            person_view.as_ref(),
+        );
+        let output = smoother.output_texture().unwrap();
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(WIDTH * 4) * u64::from(HEIGHT),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        encoder.copy_texture_to_buffer(
+            output.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(WIDTH * 4),
+                    rows_per_image: Some(HEIGHT),
+                },
+            },
+            output.size(),
+        );
+        queue.submit([encoder.finish()]);
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        device.poll(wgpu::PollType::Wait).unwrap();
+        slice.get_mapped_range().to_vec()
+    }
+
+    fn textured(base: [u8; 3]) -> Vec<u8> {
+        let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let speck = if (x * 7 + y * 13) % 5 == 0 { -8 } else { 2 };
+                for channel in base {
+                    pixels.push((i32::from(channel) + speck).clamp(0, 255) as u8);
+                }
+                pixels.push(255);
+            }
+        }
+        pixels
+    }
+
+    fn mean_channels(pixels: &[u8]) -> [f64; 3] {
+        let count = (pixels.len() / 4) as f64;
+        let mut sums = [0.0; 3];
+        for pixel in pixels.chunks_exact(4) {
+            for channel in 0..3 {
+                sums[channel] += f64::from(pixel[channel]);
+            }
+        }
+        sums.map(|sum| sum / count)
+    }
+
+    #[tokio::test]
+    async fn brightens_warm_pixels_only_where_the_person_mask_says() {
+        let Some((device, queue)) = device().await else {
+            return;
+        };
+        let skin = textured([170, 120, 95]);
+        let without_mask = mean_channels(&smooth(&device, &queue, &skin, 1.0));
+        let outside_person =
+            mean_channels(&smooth_with_person(&device, &queue, &skin, 1.0, Some(0)));
+        let on_person = mean_channels(&smooth_with_person(&device, &queue, &skin, 1.0, Some(255)));
+        let original = mean_channels(&skin);
+
+        for channel in 0..3 {
+            assert!(
+                (without_mask[channel] - original[channel]).abs() < 1.5,
+                "{without_mask:?} {original:?}"
+            );
+            assert!(
+                (outside_person[channel] - original[channel]).abs() < 1.5,
+                "{outside_person:?} {original:?}"
+            );
+            assert!(
+                on_person[channel] > original[channel] + 8.0,
+                "{on_person:?} {original:?}"
+            );
+        }
+        // Keeps the hue: the red lead over blue must not collapse into grey.
+        assert!(on_person[0] - on_person[2] > (original[0] - original[2]) * 0.9);
+
+        let grey = textured([120, 120, 120]);
+        let grey_on_person =
+            mean_channels(&smooth_with_person(&device, &queue, &grey, 1.0, Some(255)));
+        assert!((grey_on_person[1] - mean_channels(&grey)[1]).abs() < 1.5);
+    }
+
+    #[tokio::test]
+    async fn brightening_leaves_highlights_unclipped() {
+        let Some((device, queue)) = device().await else {
+            return;
+        };
+        let lit = textured([238, 190, 150]);
+        let out = smooth_with_person(&device, &queue, &lit, 1.0, Some(255));
+        assert!(out.chunks_exact(4).all(|pixel| pixel[0] < 252));
+    }
+
+    #[tokio::test]
+    async fn levels_blotches_wider_than_the_fine_window() {
+        let Some((device, queue)) = device().await else {
+            return;
+        };
+        let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let wave = (f64::from(x) * std::f64::consts::TAU / 16.0).sin()
+                    * (f64::from(y) * std::f64::consts::TAU / 16.0).sin();
+                let blotch = (wave * 4.0).round() as i32;
+                for channel in [190, 145, 120] {
+                    pixels.push((channel + blotch) as u8);
+                }
+                pixels.push(255);
+            }
+        }
+        let range = |pixels: &[u8]| {
+            let row = (HEIGHT / 2 + 4) * WIDTH * 4;
+            let green =
+                (32..WIDTH as usize - 32).map(|x| i32::from(pixels[row as usize + x * 4 + 1]));
+            green.clone().max().unwrap() - green.min().unwrap()
+        };
+        let smoothed = smooth(&device, &queue, &pixels, 1.0);
+        assert!(
+            range(&smoothed) * 2 <= range(&pixels),
+            "{} -> {}",
+            range(&pixels),
+            range(&smoothed)
+        );
+    }
+
+    fn roughness(pixels: &[u8]) -> f64 {
+        let row = (HEIGHT / 2 * WIDTH * 4) as usize;
+        let green: Vec<f64> = (16..WIDTH as usize - 16)
+            .map(|x| f64::from(pixels[row + x * 4 + 1]))
+            .collect();
+        let mean = green.iter().sum::<f64>() / green.len() as f64;
+        green.iter().map(|value| (value - mean).abs()).sum::<f64>() / green.len() as f64
+    }
+
+    #[tokio::test]
+    async fn smooths_skin_texture_and_keeps_other_colors_and_alpha() {
+        let Some((device, queue)) = device().await else {
+            return;
+        };
+        let skin = textured([205, 160, 135]);
+        let out = smooth(&device, &queue, &skin, 0.6);
+        assert!(
+            roughness(&out) < roughness(&skin) * 0.8,
+            "{} vs {}",
+            roughness(&out),
+            roughness(&skin)
+        );
+        assert!(out.chunks(4).all(|pixel| pixel[3] == 255));
+
+        let wall = textured([90, 130, 200]);
+        let out = smooth(&device, &queue, &wall, 1.0);
+        assert!((roughness(&out) - roughness(&wall)).abs() < 0.2);
+    }
+
+    #[tokio::test]
+    async fn keeps_strong_edges_on_skin() {
+        let Some((device, queue)) = device().await else {
+            return;
+        };
+        let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+        for _ in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let rgb: [u8; 3] = if x < WIDTH / 2 {
+                    [205, 160, 135]
+                } else {
+                    [60, 35, 25]
+                };
+                pixels.extend_from_slice(&rgb);
+                pixels.push(255);
+            }
+        }
+        let out = smooth(&device, &queue, &pixels, 1.0);
+        let row = (HEIGHT / 2 * WIDTH * 4) as usize;
+        let green = |x: u32| i32::from(out[row + (x * 4) as usize + 1]);
+        assert!(green(WIDTH / 2 - 2) - green(WIDTH / 2 + 1) > 100);
+    }
+
+    #[tokio::test]
+    async fn zero_strength_is_identity() {
+        let Some((device, queue)) = device().await else {
+            return;
+        };
+        let skin = textured([205, 160, 135]);
+        let out = smooth(&device, &queue, &skin, 0.0);
+        assert!(
+            out.iter()
+                .zip(&skin)
+                .all(|(a, b)| (i32::from(*a) - i32::from(*b)).abs() <= 1)
+        );
+    }
+}

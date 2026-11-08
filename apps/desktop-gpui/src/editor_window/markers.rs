@@ -374,7 +374,7 @@ impl EditorWindow {
 
     /// Markers on a clip edge or too close to a crossfade are skipped, as a
     /// split there would be.
-    fn split_at_markers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn split_at_markers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let times: Vec<f64> = self
             .markers
             .placed

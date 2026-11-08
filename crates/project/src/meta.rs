@@ -316,6 +316,25 @@ impl RecordingMeta {
         }
     }
 
+    /// A camera-only recording keeps the camera in its display track, with no
+    /// camera track and no pointer input. The folder name separates it from a
+    /// screen recording made with cursor and keyboard capture turned off, which
+    /// has the same tracks; nothing else in the meta tells them apart.
+    pub fn display_is_camera(&self) -> bool {
+        let Some(StudioRecordingMeta::MultipleSegments { inner }) = self.studio_meta() else {
+            return false;
+        };
+        !inner.segments.is_empty()
+            && inner.segments.iter().all(|segment| {
+                segment.camera.is_none() && segment.cursor.is_none() && segment.keyboard.is_none()
+            })
+            && self
+                .project_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("Camera (Camera) "))
+    }
+
     pub fn studio_meta(&self) -> Option<&StudioRecordingMeta> {
         match &self.inner {
             RecordingMetaInner::Studio(meta) => Some(meta),
@@ -836,6 +855,7 @@ mod metadata_save_tests {
                     text: "Café".into(),
                     start: 1.25,
                     end: 2.0,
+                    hidden: false,
                 }],
             }],
             ..Default::default()

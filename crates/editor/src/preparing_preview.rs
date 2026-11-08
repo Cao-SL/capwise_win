@@ -373,6 +373,7 @@ pub(crate) fn validate_input(input: &PreparingPreviewInput) -> Result<f64, Prepa
         .is_some_and(|frame| frame.style != FrameStyle::None)
         || project.captions.is_some()
         || project.camera.background_blur.is_active()
+        || project.camera.skin_smoothing_is_active()
         || project.keyboard.is_some()
         || !project.annotations.is_empty()
         || !project.hidden_text_segments.is_empty()

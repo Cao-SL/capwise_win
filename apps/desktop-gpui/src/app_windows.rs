@@ -1242,6 +1242,16 @@ pub(crate) fn refresh_settings(cx: &mut App) {
 /// getCurrentWindow().hide();` -- both halves, in that order. Must be reached
 /// through `cx.defer` from anything inside an entity update: opening a window
 /// paints it synchronously and would double-lease the caller.
+pub(crate) fn open_ai_settings(tab: crate::settings_ai::AiTab, cx: &mut App) {
+    open_settings(Page::Transcription, cx);
+    if let Some(handle) = cx.global::<AppWindows>().settings {
+        let _ = handle.update(cx, |view, window, cx| {
+            view.pages.ai.tab = tab;
+            view.reset_ai_tab(window, cx);
+        });
+    }
+}
+
 pub fn open_settings(page: Page, cx: &mut App) {
     #[cfg(target_os = "linux")]
     if defer_window_until_capture_safe(cx) {
@@ -1704,6 +1714,69 @@ pub fn set_recording_mode(mode: Mode, cx: &mut App) {
 
 // -- Teleprompter -----------------------------------------------------------
 
+fn teleprompter_placement(
+    saved: Option<[f32; 4]>,
+    preferred: Size<Pixels>,
+    cx: &App,
+) -> (Bounds<Pixels>, Option<gpui::DisplayId>) {
+    let target = saved
+        .and_then(|saved| {
+            let center = point(px(saved[0] + saved[2] / 2.), px(saved[1] + saved[3] / 2.));
+            scap_targets::Display::list().into_iter().find(|display| {
+                capture_display_bounds(display).is_some_and(|bounds| bounds.contains(&center))
+            })
+        })
+        .or_else(scap_targets::Display::get_containing_cursor);
+    let Some(available) = display_work_area(target.as_ref(), cx).map(inset_work_area) else {
+        return opening_window_placement(preferred, cx);
+    };
+    let bounds = saved.map_or_else(
+        || Bounds {
+            origin: point(
+                available.center().x - preferred.width / 2.,
+                available.origin.y,
+            ),
+            size: preferred,
+        },
+        |saved| Bounds {
+            origin: point(px(saved[0]), px(saved[1])),
+            size: size(px(saved[2]), px(saved[3])),
+        },
+    );
+    (
+        fit_window_bounds(bounds, available),
+        gpui_display_id(target.as_ref(), cx),
+    )
+}
+
+fn place_teleprompter_frame(native: &platform::NativeWindow, bounds: Bounds<Pixels>) {
+    let x = f64::from(f32::from(bounds.origin.x));
+    let y = f64::from(f32::from(bounds.origin.y));
+    let width = f64::from(f32::from(bounds.size.width));
+    let height = f64::from(f32::from(bounds.size.height));
+    #[cfg(target_os = "macos")]
+    {
+        let primary_height = scap_targets::Display::primary()
+            .logical_size()
+            .map(|size| size.height())
+            .unwrap_or(height);
+        platform::set_window_frame(native, x, primary_height - y - height, width, height);
+    }
+    #[cfg(target_os = "windows")]
+    platform::set_window_logical_frame(native, x, y, width, height);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = (native, x, y, width, height);
+}
+
+pub(crate) fn position_teleprompter_near_camera(window: &gpui::Window, cx: &mut App) {
+    let Some(native) = platform::native_window(window) else {
+        return;
+    };
+    let (bounds, _) = teleprompter_placement(None, window.bounds().size, cx);
+    cx.spawn(async move |_| place_teleprompter_frame(&native, bounds))
+        .detach();
+}
+
 /// Open (or re-show) the teleprompter -- `openTeleprompter()` in
 /// `utils/teleprompter.ts`, which reuses a live window with
 /// `unminimize()`/`show()`/`setFocus()` and otherwise builds a new one.
@@ -1726,7 +1799,8 @@ pub fn open_teleprompter(cx: &mut App) {
         return;
     }
 
-    let (bounds, display_id) = opening_window_placement(
+    let (bounds, display_id) = teleprompter_placement(
+        crate::store::TeleprompterState::load().window_bounds,
         size(
             px(teleprompter_window::TELEPROMPTER_WIDTH),
             px(teleprompter_window::TELEPROMPTER_HEIGHT),
@@ -1819,6 +1893,7 @@ pub fn open_teleprompter(cx: &mut App) {
 
     cx.spawn(async move |cx| {
         if let Some(native) = &native {
+            place_teleprompter_frame(native, bounds);
             // `applyMacOSWindowMaterial("teleprompter")`: radius 22 on glass.
             let kind = platform::install_window_material(
                 native,
@@ -5802,7 +5877,9 @@ fn load_editor_project_candidate(
                 view.set_summary(summary, window, cx);
                 view.set_project(config, window, cx);
                 view.set_instance(instance.clone());
+                view.show_recording_setup(cx);
                 view.refine_caption_timings(window, cx);
+                view.start_recording_captions(false, window, cx);
             })
             .is_err()
         {
@@ -6714,6 +6791,22 @@ async fn delete_after_editor_cleanup(
 /// not just refocus the dying window, and the main window never flashes in
 /// between.
 pub fn reload_editor(project_path: &Path, cx: &mut App) {
+    reload_editor_inner(project_path, None, cx);
+}
+
+pub(crate) fn reload_editor_with_history(
+    project_path: &Path,
+    history: crate::editor_edits::ProjectHistory,
+    cx: &mut App,
+) {
+    reload_editor_inner(project_path, Some(history), cx);
+}
+
+fn reload_editor_inner(
+    project_path: &Path,
+    history: Option<crate::editor_edits::ProjectHistory>,
+    cx: &mut App,
+) {
     let key = editor_key(project_path);
     if cx.global::<AppWindows>().deleting_editors.contains(&key) {
         return;
@@ -6727,6 +6820,25 @@ pub fn reload_editor(project_path: &Path, cx: &mut App) {
         handle
             .update(cx, |view, _window, _cx| view.timeline_transform())
             .ok()
+    });
+    let asset_lanes = handle.and_then(|handle| {
+        handle
+            .update(cx, |view, _, _| (view.tracks.overlay, view.tracks.audio))
+            .ok()
+    });
+    let playhead = handle.and_then(|handle| {
+        handle
+            .update(cx, |view, _, cx| {
+                view.stop_playback(cx);
+                view.playhead
+            })
+            .ok()
+    });
+    let asset_browser = handle.and_then(|handle| {
+        handle
+            .update(cx, |view, _, cx| view.take_asset_browser_snapshot(cx))
+            .ok()
+            .flatten()
     });
 
     if let Some(handle) = handle {
@@ -6747,6 +6859,36 @@ pub fn reload_editor(project_path: &Path, cx: &mut App) {
 
     tracing::info!(path = %key.display(), "reloading editor after import");
     open_editor(key.clone(), cx);
+    if let Some(lanes) = asset_lanes
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, _, _| view.restore_import_asset_lanes(lanes))
+            .ok();
+    }
+    if let Some(playhead) = playhead
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, _, cx| view.restore_import_playhead(playhead, cx))
+            .ok();
+    }
+    if let Some(snapshot) = asset_browser
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, window, cx| {
+                view.restore_asset_browser(snapshot, window, cx)
+            })
+            .ok();
+    }
+    if let Some(history) = history
+        && let Some(handle) = editor_window_handle(&key, cx)
+    {
+        handle
+            .update(cx, |view, _, _| view.restore_import_history(history))
+            .ok();
+    }
     if let Some(transform) = transform
         && let Some(handle) = editor_window_handle(&key, cx)
     {
@@ -7135,6 +7277,7 @@ fn open_controls(
 /// TargetSelectOverlay / CaptureArea / ModeSelect (`recording.rs:2876-2895`):
 /// an overlay still on screen would be in the shot. Returns whether anything
 /// was up -- the caller's cue to wait the same 150ms the Tauri command waits.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn prepare_for_screenshot_capture(cx: &mut App) -> bool {
     if cx.global::<AppWindows>().overlays.is_empty() {
         return false;
@@ -7152,6 +7295,7 @@ pub fn prepare_for_screenshot_capture(cx: &mut App) -> bool {
 /// the Tauri app -- and open the screenshot editor on the new bundle, the
 /// `automationShouldOpenScreenshotEditor` default. A failure reveals the main
 /// window if the picker had hidden it, since nothing else will.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn screenshot_finished(captured: Option<PathBuf>, cx: &mut App) {
     let Some(png) = captured else {
         let hidden = std::mem::take(&mut cx.global_mut::<AppWindows>().main_hidden_for_picker);
@@ -7331,6 +7475,7 @@ fn bring_screenshot_editor_forward(handle: WindowHandle<ScreenshotEditorWindow>,
 /// The screenshot editor's Delete finished: drop the window (its pending
 /// write is for a bundle that no longer exists), refresh every surface that
 /// lists screenshots, and run the ordinary closed bookkeeping.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn close_screenshot_editor_after_delete(bundle: &Path, cx: &mut App) {
     let key = editor_key(bundle);
     let handle = cx
@@ -7351,6 +7496,7 @@ pub fn close_screenshot_editor_after_delete(bundle: &Path, cx: &mut App) {
     refresh_screenshot_surfaces(cx);
 }
 
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn refresh_screenshot_surfaces(cx: &mut App) {
     crate::tray::refresh_previous(cx);
     if let Some(settings) = cx.global::<AppWindows>().settings {
@@ -7366,6 +7512,7 @@ pub fn refresh_screenshot_surfaces(cx: &mut App) {
 /// A screenshot editor window is going away: flush its pending config write
 /// and bring the main window back once the last editor of either kind closes
 /// -- the same `Destroyed` arm `editor_closed` mirrors.
+#[cfg_attr(not(feature = "screenshots"), allow(dead_code))]
 pub fn screenshot_editor_closed(bundle: &Path, cx: &mut App) {
     let key = editor_key(bundle);
     let handle = {

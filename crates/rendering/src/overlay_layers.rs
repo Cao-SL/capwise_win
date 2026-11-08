@@ -1,6 +1,6 @@
 use crate::{
     ProjectConfiguration, RenderingError,
-    layers::{CaptionsLayer, ImageLayer, KeyboardLayer, ShapeLayer, TextLayer},
+    layers::{CaptionsLayer, ImageLayer, KeyboardLayer, ShapeLayer, TextLayer, TitleCardLayer},
     readiness,
 };
 
@@ -10,6 +10,7 @@ pub(super) struct OverlayLayers {
     pub(super) shapes: ShapeLayer,
     pub(super) captions: CaptionsLayer,
     pub(super) keyboard: KeyboardLayer,
+    pub(super) title_card: Option<TitleCardLayer>,
 }
 
 impl OverlayLayers {
@@ -20,7 +21,32 @@ impl OverlayLayers {
             shapes: readiness::measure("layers.shapes", || ShapeLayer::new(device)),
             captions: readiness::measure("layers.captions", || CaptionsLayer::new(device, queue)),
             keyboard: readiness::measure("layers.keyboard", || KeyboardLayer::new(device, queue)),
+            title_card: None,
         }
+    }
+
+    pub(super) async fn prepare_title_card(
+        &mut self,
+        constants: &crate::RenderVideoConstants,
+        uniforms: &crate::ProjectUniforms,
+    ) -> Result<(), RenderingError> {
+        let time = f64::from(uniforms.frame_number) / f64::from(uniforms.frame_rate.max(1));
+        let card = uniforms.project.timeline.as_ref().and_then(|timeline| {
+            crate::title_cards::active_title_card(
+                time,
+                &timeline.text_segments,
+                &uniforms.project.hidden_text_segments,
+            )
+        });
+        if let Some(card) = card {
+            self.title_card
+                .get_or_insert_with(|| TitleCardLayer::new(&constants.device, &constants.queue))
+                .prepare(constants, uniforms.output_size, card)
+                .await?;
+        } else if let Some(layer) = &mut self.title_card {
+            layer.hide();
+        }
+        Ok(())
     }
 
     pub(super) fn validate_omission(
@@ -90,12 +116,14 @@ mod tests {
                 |project| project.keyboard = Some(Default::default()),
                 |project| project.hidden_text_segments.push(0),
                 |project| {
+                    project.overlay_layer_version = 0;
                     project.overlay_order.push(cap_project::OverlayTrack {
                         kind: cap_project::OverlayTrackKind::Mask,
                         track: 0,
                     });
                 },
                 |project| {
+                    project.overlay_layer_version = 0;
                     project.set_overlay_order(vec![cap_project::OverlayTrack {
                         kind: cap_project::OverlayTrackKind::Shape,
                         track: 0,

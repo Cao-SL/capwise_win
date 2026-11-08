@@ -1,24 +1,12 @@
-# Cap Contributor Guide
+# 参与灵录 Capwise
 
-## Introduction
+这个仓库维护 Capwise（灵录）的 macOS 桌面版本。请将本项目的问题和 PR 提交到 [joeseesun/capwise](https://github.com/joeseesun/capwise)，与上游 Cap 的产品支持分开。
 
-### What is Cap?
+报告问题时附上应用版本、macOS 版本、复现步骤和预期结果；截图与日志应移除 API Key、私人录屏和个人信息。提交改动前运行相关 crate 的格式检查、编译和针对性测试；界面改动请附实际运行截图。不要提交密钥、用户项目、构建缓存或私有签名文件。
 
-Cap is an open source and privacy focused alternative to Loom. It's a video messaging tool that allows you to record, edit and share videos in seconds.
+Capwise is the macOS-focused fork maintained here. Send issues and pull requests to this repository, include reproducible steps, and redact credentials and private media. Run focused formatting, compilation, and tests for your change. The inherited setup reference follows below.
 
-The development of Cap is still in its early stages, so please bare with us as we build out this guide.
-
-### What is this guide?
-
-This guide is for anyone who wants to contribute to Cap. It's a work in progress, and will be updated regularly.
-
-### How can I contribute?
-
-There are many ways to contribute to Cap. You can:
-
-- [Report a bug](https://github.com/CapSoftware/cap/issues/new)
-- [Suggest a feature (via Discord)](https://discord.com/invite/y8gdQ3WRN3)
-- Submit a PR
+---
 
 ## Running Cap
 

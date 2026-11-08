@@ -2,7 +2,7 @@
 //! `provider-catalog.ts` and one chat call over the four request styles they
 //! use. Settings live in [`crate::ai_store`].
 
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use serde_json::{Value, json};
 
@@ -10,6 +10,10 @@ use crate::{
     ai_store::{self, Endpoint, Kind},
     i18n::tr,
 };
+
+mod oauth;
+
+pub use oauth::{SignIn, begin as begin_sign_in, decode as signed_in_account};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Protocol {
@@ -27,6 +31,8 @@ pub enum Group {
     Provider,
     /// Runs on this computer.
     Local,
+    /// Signs in with an account instead of a key.
+    Account,
 }
 
 pub struct LlmProvider {
@@ -38,6 +44,8 @@ pub struct LlmProvider {
     pub base_url: &'static str,
     pub key_url: Option<&'static str>,
     pub models: &'static [&'static str],
+    /// A browser sign-in that fills in the key, or replaces it.
+    pub sign_in: Option<SignIn>,
 }
 
 impl LlmProvider {
@@ -77,17 +85,114 @@ const fn openai(
         base_url,
         key_url,
         models,
+        sign_in: None,
     }
 }
 
-/// Clipper's catalogue minus the ChatGPT and Codex account sign-ins, in the
-/// order its picker shows them.
+const fn signs_in(mut provider: LlmProvider, sign_in: SignIn) -> LlmProvider {
+    provider.sign_in = Some(sign_in);
+    provider
+}
+
+const fn account(
+    id: &'static str,
+    name: fn() -> &'static str,
+    sign_in: SignIn,
+    base_url: &'static str,
+) -> LlmProvider {
+    signs_in(
+        LlmProvider {
+            id,
+            name,
+            group: Group::Account,
+            protocol: Protocol::OpenAi,
+            base_url,
+            key_url: None,
+            models: &[],
+            sign_in: None,
+        },
+        sign_in,
+    )
+}
+
+/// Clipper's catalogue, in the order its picker shows them: signing in is
+/// easier than pasting a key, so the accounts come first.
 pub static PROVIDERS: &[LlmProvider] = &[
-    openai("tokendance", tr::ai::llm::tokendance, Group::Relay, "https://tokendance.space/gateway/v1/chat/completions", Some("https://tokendance.space/keys"), &["deepseek-v4-flash", "qwen3.8-flash", "kimi-k3"]),
-    openai("siliconflow", tr::ai::llm::siliconflow, Group::Relay, "https://api.siliconflow.cn/v1/chat/completions", Some("https://cloud.siliconflow.cn/account/ak"), &["deepseek-ai/deepseek-v4-flash", "deepseek-ai/deepseek-v4-pro"]),
-    openai("openrouter", || "OpenRouter", Group::Relay, "https://openrouter.ai/api/v1/chat/completions", Some("https://openrouter.ai/settings/keys"), &["meta-llama/llama-4-scout", "meta-llama/llama-4-maverick"]),
-    openai("opencode-go", || "OpenCode Go", Group::Relay, "https://opencode.ai/zen/go/v1/chat/completions", Some("https://opencode.ai/auth"), &["deepseek-v4.1-flash", "glm-5.3-flash", "kimi-k3", "longcat-2.0", "mimo-v2.6-flash"]),
-    openai("openai", || "OpenAI", Group::Provider, "https://api.openai.com/v1/chat/completions", Some("https://platform.openai.com/api-keys"), &["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]),
+    account(
+        "chatgpt",
+        || "ChatGPT",
+        SignIn::ChatGpt,
+        "https://api.openai.com/v1/responses",
+    ),
+    account(
+        "codex",
+        || "Codex",
+        SignIn::Codex,
+        "https://chatgpt.com/backend-api/codex/responses",
+    ),
+    signs_in(
+        openai(
+            "tokendance",
+            tr::ai::llm::tokendance,
+            Group::Relay,
+            "https://tokendance.space/gateway/v1/chat/completions",
+            Some("https://tokendance.space/keys"),
+            &["deepseek-v4-flash", "qwen3.8-flash", "kimi-k3"],
+        ),
+        SignIn::TokenDance,
+    ),
+    openai(
+        "magpie",
+        || "Magpie",
+        Group::Local,
+        "http://127.0.0.1:3425/v1/chat/completions",
+        Some("https://github.com/yetone/magpie"),
+        &[],
+    ),
+    openai(
+        "siliconflow",
+        tr::ai::llm::siliconflow,
+        Group::Relay,
+        "https://api.siliconflow.cn/v1/chat/completions",
+        Some("https://cloud.siliconflow.cn/account/ak"),
+        &[
+            "deepseek-ai/deepseek-v4-flash",
+            "deepseek-ai/deepseek-v4-pro",
+        ],
+    ),
+    signs_in(
+        openai(
+            "openrouter",
+            || "OpenRouter",
+            Group::Relay,
+            "https://openrouter.ai/api/v1/chat/completions",
+            Some("https://openrouter.ai/settings/keys"),
+            &[],
+        ),
+        SignIn::OpenRouter,
+    ),
+    openai(
+        "opencode-go",
+        || "OpenCode Go",
+        Group::Relay,
+        "https://opencode.ai/zen/go/v1/chat/completions",
+        Some("https://opencode.ai/auth"),
+        &[
+            "deepseek-v4.1-flash",
+            "glm-5.3-flash",
+            "kimi-k3",
+            "longcat-2.0",
+            "mimo-v2.6-flash",
+        ],
+    ),
+    openai(
+        "openai",
+        || "OpenAI",
+        Group::Provider,
+        "https://api.openai.com/v1/chat/completions",
+        Some("https://platform.openai.com/api-keys"),
+        &["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
+    ),
     LlmProvider {
         id: "anthropic",
         name: || "Anthropic",
@@ -96,6 +201,7 @@ pub static PROVIDERS: &[LlmProvider] = &[
         base_url: "https://api.anthropic.com/v1/messages",
         key_url: Some("https://console.anthropic.com/settings/keys"),
         models: &["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"],
+        sign_in: None,
     },
     LlmProvider {
         id: "google-gemini",
@@ -104,26 +210,157 @@ pub static PROVIDERS: &[LlmProvider] = &[
         protocol: Protocol::Gemini,
         base_url: "https://generativelanguage.googleapis.com/v1beta/models/{model-id}:generateContent",
         key_url: Some("https://aistudio.google.com/app/apikey"),
-        models: &["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.1-pro-preview"],
+        models: &[
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.1-pro-preview",
+        ],
+        sign_in: None,
     },
-    openai("deepseek", || "DeepSeek", Group::Provider, "https://api.deepseek.com/v1/chat/completions", Some("https://platform.deepseek.com/api_keys"), &["deepseek-flash", "deepseek-v4-pro"]),
-    openai("moonshot-cn", || "Kimi", Group::Provider, "https://api.moonshot.cn/v1/chat/completions", Some("https://platform.moonshot.cn/console/api-keys"), &["kimi-k3", "kimi-k2.6"]),
-    openai("zhipu", tr::ai::llm::zhipu, Group::Provider, "https://open.bigmodel.cn/api/paas/v4/chat/completions", Some("https://open.bigmodel.cn/usercenter/apikeys"), &[]),
-    openai("qwen-cn", tr::ai::llm::qwen, Group::Provider, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", Some("https://bailian.console.aliyun.com/?apiKey=1"), &[]),
-    openai("doubao", tr::ai::llm::doubao, Group::Provider, "https://ark.cn-beijing.volces.com/api/v3/chat/completions", Some("https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey"), &[]),
-    openai("minimax-cn", || "MiniMax", Group::Provider, "https://api.minimaxi.com/v1/chat/completions", Some("https://platform.minimaxi.com/user-center/basic-information/interface-key"), &[]),
-    openai("stepfun", tr::ai::llm::stepfun, Group::Provider, "https://api.stepfun.com/v1/chat/completions", Some("https://platform.stepfun.com/interface-key"), &[]),
-    openai("qianfan", tr::ai::llm::qianfan, Group::Provider, "https://qianfan.baidubce.com/v2/chat/completions", Some("https://console.bce.baidu.com/iam/#/iam/apikey/list"), &[]),
-    openai("hunyuan", tr::ai::llm::hunyuan, Group::Provider, "https://api.hunyuan.cloud.tencent.com/v1/chat/completions", Some("https://console.cloud.tencent.com/hunyuan/api-key"), &[]),
-    openai("mimo", tr::ai::llm::mimo, Group::Provider, "https://api.xiaomimimo.com/v1/chat/completions", Some("https://platform.xiaomimimo.com/"), &[]),
-    openai("xai", || "xAI", Group::Provider, "https://api.x.ai/v1/chat/completions", Some("https://console.x.ai"), &["grok-4.5", "grok-4.3"]),
-    openai("mistral", || "Mistral", Group::Provider, "https://api.mistral.ai/v1/chat/completions", Some("https://console.mistral.ai/api-keys"), &[]),
-    openai("groq", || "Groq", Group::Provider, "https://api.groq.com/openai/v1/chat/completions", Some("https://console.groq.com/keys"), &[]),
-    openai("perplexity", || "Perplexity", Group::Provider, "https://api.perplexity.ai/chat/completions", Some("https://www.perplexity.ai/settings/api"), &["sonar", "sonar-pro"]),
-    openai("nvidia", || "NVIDIA", Group::Provider, "https://integrate.api.nvidia.com/v1/chat/completions", Some("https://build.nvidia.com/settings/api-keys"), &[]),
-    openai("together", || "Together AI", Group::Provider, "https://api.together.xyz/v1/chat/completions", Some("https://api.together.xyz/settings/api-keys"), &[]),
-    openai("fireworks", || "Fireworks AI", Group::Provider, "https://api.fireworks.ai/inference/v1/chat/completions", Some("https://fireworks.ai/account/api-keys"), &[]),
-    openai("cerebras", || "Cerebras", Group::Provider, "https://api.cerebras.ai/v1/chat/completions", Some("https://cloud.cerebras.ai/"), &[]),
+    openai(
+        "deepseek",
+        || "DeepSeek",
+        Group::Provider,
+        "https://api.deepseek.com/v1/chat/completions",
+        Some("https://platform.deepseek.com/api_keys"),
+        &["deepseek-flash", "deepseek-v4-pro"],
+    ),
+    openai(
+        "moonshot-cn",
+        || "Kimi",
+        Group::Provider,
+        "https://api.moonshot.cn/v1/chat/completions",
+        Some("https://platform.moonshot.cn/console/api-keys"),
+        &["kimi-k3", "kimi-k2.6"],
+    ),
+    openai(
+        "zhipu",
+        tr::ai::llm::zhipu,
+        Group::Provider,
+        "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        Some("https://open.bigmodel.cn/usercenter/apikeys"),
+        &[],
+    ),
+    openai(
+        "qwen-cn",
+        tr::ai::llm::qwen,
+        Group::Provider,
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        Some("https://bailian.console.aliyun.com/?apiKey=1"),
+        &[],
+    ),
+    openai(
+        "doubao",
+        tr::ai::llm::doubao,
+        Group::Provider,
+        "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        Some("https://ai.volcengine.com/console/apikey"),
+        &[],
+    ),
+    openai(
+        "minimax-cn",
+        || "MiniMax",
+        Group::Provider,
+        "https://api.minimaxi.com/v1/chat/completions",
+        Some("https://platform.minimaxi.com/user-center/basic-information/interface-key"),
+        &[],
+    ),
+    openai(
+        "stepfun",
+        tr::ai::llm::stepfun,
+        Group::Provider,
+        "https://api.stepfun.com/v1/chat/completions",
+        Some("https://platform.stepfun.com/interface-key"),
+        &[],
+    ),
+    openai(
+        "qianfan",
+        tr::ai::llm::qianfan,
+        Group::Provider,
+        "https://qianfan.baidubce.com/v2/chat/completions",
+        Some("https://console.bce.baidu.com/iam/#/iam/apikey/list"),
+        &[],
+    ),
+    openai(
+        "hunyuan",
+        tr::ai::llm::hunyuan,
+        Group::Provider,
+        "https://api.hunyuan.cloud.tencent.com/v1/chat/completions",
+        Some("https://console.cloud.tencent.com/hunyuan/api-key"),
+        &[],
+    ),
+    openai(
+        "mimo",
+        tr::ai::llm::mimo,
+        Group::Provider,
+        "https://api.xiaomimimo.com/v1/chat/completions",
+        Some("https://platform.xiaomimimo.com/"),
+        &[],
+    ),
+    openai(
+        "xai",
+        || "xAI",
+        Group::Provider,
+        "https://api.x.ai/v1/chat/completions",
+        Some("https://console.x.ai"),
+        &["grok-4.5", "grok-4.3"],
+    ),
+    openai(
+        "mistral",
+        || "Mistral",
+        Group::Provider,
+        "https://api.mistral.ai/v1/chat/completions",
+        Some("https://console.mistral.ai/api-keys"),
+        &[],
+    ),
+    openai(
+        "groq",
+        || "Groq",
+        Group::Provider,
+        "https://api.groq.com/openai/v1/chat/completions",
+        Some("https://console.groq.com/keys"),
+        &[],
+    ),
+    openai(
+        "perplexity",
+        || "Perplexity",
+        Group::Provider,
+        "https://api.perplexity.ai/chat/completions",
+        Some("https://www.perplexity.ai/settings/api"),
+        &["sonar", "sonar-pro"],
+    ),
+    openai(
+        "nvidia",
+        || "NVIDIA",
+        Group::Provider,
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        Some("https://build.nvidia.com/settings/api-keys"),
+        &[],
+    ),
+    openai(
+        "together",
+        || "Together AI",
+        Group::Provider,
+        "https://api.together.xyz/v1/chat/completions",
+        Some("https://api.together.xyz/settings/api-keys"),
+        &[],
+    ),
+    openai(
+        "fireworks",
+        || "Fireworks AI",
+        Group::Provider,
+        "https://api.fireworks.ai/inference/v1/chat/completions",
+        Some("https://fireworks.ai/account/api-keys"),
+        &[],
+    ),
+    openai(
+        "cerebras",
+        || "Cerebras",
+        Group::Provider,
+        "https://api.cerebras.ai/v1/chat/completions",
+        Some("https://cloud.cerebras.ai/"),
+        &[],
+    ),
     LlmProvider {
         id: "ollama",
         name: || "Ollama",
@@ -131,9 +368,17 @@ pub static PROVIDERS: &[LlmProvider] = &[
         protocol: Protocol::Ollama,
         base_url: "http://127.0.0.1:11434/api/chat",
         key_url: None,
-        models: &["gemma4", "qwen3.5", "gpt-oss:20b", "llama3.3"],
+        models: &["qwen3.5", "gemma4", "gpt-oss:20b"],
+        sign_in: None,
     },
-    openai("lmstudio", || "LM Studio", Group::Local, "http://127.0.0.1:1234/v1/chat/completions", None, &[]),
+    openai(
+        "lmstudio",
+        || "LM Studio",
+        Group::Local,
+        "http://127.0.0.1:1234/v1/chat/completions",
+        None,
+        &[],
+    ),
 ];
 
 pub fn provider(id: &str) -> Option<&'static LlmProvider> {
@@ -157,6 +402,306 @@ pub fn default_provider() -> Option<&'static LlmProvider> {
         .or_else(|| ready.first().copied())
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscoveredModel {
+    pub id: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscoveryError {
+    Address,
+    Unsupported,
+    MissingKey,
+    Authentication,
+    Http(u16),
+    Connection,
+    Timeout,
+    Response,
+    Limit,
+}
+
+impl DiscoveryError {
+    pub fn message(self) -> String {
+        match self {
+            Self::Address => tr::ai::address_invalid().to_string(),
+            Self::Unsupported => tr::ai::discovery_unsupported().to_string(),
+            Self::MissingKey => tr::ai::discovery_missing_key().to_string(),
+            Self::Authentication => tr::ai::discovery_authentication().to_string(),
+            Self::Http(status) => tr::ai::discovery_http(status),
+            Self::Connection => tr::ai::discovery_connection().to_string(),
+            Self::Timeout => tr::ai::discovery_timeout().to_string(),
+            Self::Response => tr::ai::discovery_response().to_string(),
+            Self::Limit => tr::ai::discovery_limit().to_string(),
+        }
+    }
+}
+
+const DISCOVERY_PAGE_BYTES: usize = 1024 * 1024;
+const DISCOVERY_MAX_MODELS: usize = 4096;
+const DISCOVERY_MAX_PAGES: usize = 16;
+
+fn discovery_url(protocol: Protocol, endpoint: &str) -> Result<reqwest::Url, DiscoveryError> {
+    let endpoint = endpoint.trim().replace("{model-id}", "model-placeholder");
+    if !ai_store::address_allowed(&endpoint) {
+        return Err(DiscoveryError::Address);
+    }
+    let mut url = reqwest::Url::parse(&endpoint).map_err(|_| DiscoveryError::Address)?;
+    if url.fragment().is_some() {
+        return Err(DiscoveryError::Address);
+    }
+    let path = url.path().trim_end_matches('/');
+    let next_path = match protocol {
+        Protocol::OpenAi => path
+            .strip_suffix("/chat/completions")
+            .map(|prefix| format!("{prefix}/models")),
+        Protocol::Anthropic => path
+            .strip_suffix("/messages")
+            .map(|prefix| format!("{prefix}/models")),
+        Protocol::Ollama => path
+            .strip_suffix("/api/chat")
+            .map(|prefix| format!("{prefix}/api/tags")),
+        Protocol::Gemini => path.rsplit_once("/models/").and_then(|(prefix, model)| {
+            model
+                .strip_suffix(":generateContent")
+                .filter(|id| !id.is_empty() && !id.contains('/'))
+                .map(|_| format!("{prefix}/models"))
+        }),
+    }
+    .ok_or(DiscoveryError::Unsupported)?;
+    url.set_path(&next_path);
+    Ok(url)
+}
+
+fn model_id_valid(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 256 && id.bytes().all(|byte| byte.is_ascii_graphic())
+}
+
+fn discovery_page(
+    protocol: Protocol,
+    value: &Value,
+) -> Result<(Vec<DiscoveredModel>, Option<String>), DiscoveryError> {
+    let rows = value
+        .get(match protocol {
+            Protocol::OpenAi | Protocol::Anthropic => "data",
+            Protocol::Gemini | Protocol::Ollama => "models",
+        })
+        .and_then(Value::as_array)
+        .ok_or(DiscoveryError::Response)?;
+    if rows.len() > DISCOVERY_MAX_MODELS {
+        return Err(DiscoveryError::Limit);
+    }
+    let mut models = Vec::new();
+    for row in rows {
+        if protocol == Protocol::Gemini
+            && !row
+                .get("supportedGenerationMethods")
+                .and_then(Value::as_array)
+                .is_some_and(|methods| {
+                    methods
+                        .iter()
+                        .any(|method| method.as_str() == Some("generateContent"))
+                })
+        {
+            continue;
+        }
+        let id = match protocol {
+            Protocol::OpenAi | Protocol::Anthropic => row.get("id").and_then(Value::as_str),
+            Protocol::Gemini => row
+                .get("name")
+                .and_then(Value::as_str)
+                .and_then(|name| name.strip_prefix("models/")),
+            Protocol::Ollama => row
+                .get("model")
+                .or_else(|| row.get("name"))
+                .and_then(Value::as_str),
+        }
+        .filter(|id| model_id_valid(id));
+        let Some(id) = id else {
+            return Err(DiscoveryError::Response);
+        };
+        if protocol == Protocol::Gemini
+            && !id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+        {
+            return Err(DiscoveryError::Response);
+        }
+        let display_name = row
+            .get(match protocol {
+                Protocol::Anthropic => "display_name",
+                Protocol::Gemini => "displayName",
+                _ => "name",
+            })
+            .and_then(Value::as_str)
+            .filter(|name| {
+                !name.is_empty()
+                    && name.len() <= 512
+                    && !name.chars().any(char::is_control)
+                    && *name != id
+            })
+            .map(str::to_string);
+        models.push(DiscoveredModel {
+            id: id.to_string(),
+            display_name,
+        });
+    }
+    let cursor = match protocol {
+        Protocol::Anthropic => match value.get("has_more").and_then(Value::as_bool) {
+            Some(true) => Some(
+                value
+                    .get("last_id")
+                    .and_then(Value::as_str)
+                    .ok_or(DiscoveryError::Response)?,
+            ),
+            Some(false) => None,
+            None => return Err(DiscoveryError::Response),
+        },
+        Protocol::Gemini => match value.get("nextPageToken") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(token)) if token.is_empty() => None,
+            Some(Value::String(token)) => Some(token.as_str()),
+            Some(_) => return Err(DiscoveryError::Response),
+        },
+        _ => None,
+    };
+    if cursor.is_some_and(|cursor| {
+        cursor.is_empty() || cursor.len() > 2048 || cursor.chars().any(char::is_control)
+    }) {
+        return Err(DiscoveryError::Response);
+    }
+    Ok((models, cursor.map(str::to_string)))
+}
+
+async fn discovery_body(mut response: reqwest::Response) -> Result<Value, DiscoveryError> {
+    let status = response.status();
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        return Err(DiscoveryError::Authentication);
+    }
+    if !status.is_success() {
+        return Err(DiscoveryError::Http(status.as_u16()));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > DISCOVERY_PAGE_BYTES as u64)
+    {
+        return Err(DiscoveryError::Limit);
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| DiscoveryError::Connection)?
+    {
+        if chunk.len() > DISCOVERY_PAGE_BYTES.saturating_sub(bytes.len()) {
+            return Err(DiscoveryError::Limit);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| DiscoveryError::Response)
+}
+
+async fn discover_with(
+    provider_id: &str,
+    protocol: Protocol,
+    url: reqwest::Url,
+    key: &str,
+) -> Result<Vec<DiscoveredModel>, DiscoveryError> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|_| DiscoveryError::Connection)?;
+    let session = uuid::Uuid::new_v4().to_string();
+    let mut result = Vec::new();
+    let mut ids = HashSet::new();
+    let mut cursors = HashSet::new();
+    let mut cursor: Option<String> = None;
+    for _ in 0..DISCOVERY_MAX_PAGES {
+        let mut request = provider_headers(client.get(url.clone()), provider_id, &session);
+        request = match protocol {
+            Protocol::Anthropic => request
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01")
+                .query(&[("limit", "100")]),
+            Protocol::Gemini => request
+                .header("x-goog-api-key", key)
+                .query(&[("pageSize", "100")]),
+            _ if !key.is_empty() => request.bearer_auth(key),
+            _ => request,
+        };
+        if let Some(cursor) = &cursor {
+            request = request.query(&[(
+                if protocol == Protocol::Anthropic {
+                    "after_id"
+                } else {
+                    "pageToken"
+                },
+                cursor,
+            )]);
+        }
+        let response = request.send().await.map_err(|error| {
+            if error.is_timeout() {
+                DiscoveryError::Timeout
+            } else {
+                DiscoveryError::Connection
+            }
+        })?;
+        let value = discovery_body(response).await?;
+        let (models, next) = discovery_page(protocol, &value)?;
+        for model in models {
+            if ids.insert(model.id.clone()) {
+                result.push(model);
+                if result.len() > DISCOVERY_MAX_MODELS {
+                    return Err(DiscoveryError::Limit);
+                }
+            }
+        }
+        let Some(next) = next else {
+            return Ok(result);
+        };
+        if !cursors.insert(next.clone()) {
+            return Err(DiscoveryError::Response);
+        }
+        cursor = Some(next);
+    }
+    Err(DiscoveryError::Limit)
+}
+
+pub async fn discover_models(
+    id: &str,
+    endpoint: &str,
+    key: &str,
+) -> Result<Vec<DiscoveredModel>, DiscoveryError> {
+    let provider = provider(id).ok_or(DiscoveryError::Unsupported)?;
+    if provider.group == Group::Account {
+        if key.trim().is_empty() {
+            return Err(DiscoveryError::MissingKey);
+        }
+        return tokio::time::timeout(
+            Duration::from_secs(25),
+            oauth::models(provider.id, (provider.name)(), key),
+        )
+        .await
+        .map_err(|_| DiscoveryError::Timeout)?;
+    }
+    let url = discovery_url(provider.protocol, endpoint)?;
+    if provider.needs_key() && key.trim().is_empty() {
+        return Err(DiscoveryError::MissingKey);
+    }
+    tokio::time::timeout(
+        Duration::from_secs(25),
+        discover_with(
+            provider.id,
+            provider.protocol,
+            url,
+            effective_key(provider, key.trim()),
+        ),
+    )
+    .await
+    .map_err(|_| DiscoveryError::Timeout)?
+}
+
 const RETRIES: u32 = 3;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -168,7 +713,10 @@ fn request(
     system: &str,
     user: &str,
 ) -> reqwest::RequestBuilder {
-    let url = endpoint.base_url.trim().replace("{model-id}", endpoint.model.trim());
+    let url = endpoint
+        .base_url
+        .trim()
+        .replace("{model-id}", endpoint.model.trim());
     let model = endpoint.model.trim();
     let builder = match provider.protocol {
         Protocol::OpenAi => client.post(url).json(&json!({
@@ -200,11 +748,51 @@ fn request(
             }));
         }
     };
+    let key = effective_key(provider, key);
     if key.is_empty() {
         builder
     } else {
         builder.bearer_auth(key)
     }
+}
+
+/// Magpie on this Mac takes any bearer token but still wants one.
+fn effective_key<'a>(provider: &LlmProvider, key: &'a str) -> &'a str {
+    if key.is_empty() && provider.id == "magpie" {
+        "magpie"
+    } else {
+        key
+    }
+}
+
+/// Fills in the request path people leave off when they paste a base URL:
+/// `https://host/v1` becomes `https://host/v1/chat/completions`.
+pub fn normalize_address(id: &str, address: &str) -> String {
+    let address = address.trim();
+    let Some(provider) = provider(id) else {
+        return address.to_string();
+    };
+    if provider.group == Group::Account {
+        return address.to_string();
+    }
+    let Ok(mut url) = reqwest::Url::parse(address) else {
+        return address.to_string();
+    };
+    let path = url.path().trim_end_matches('/').to_string();
+    let versioned = path.rsplit('/').next().is_some_and(|last| {
+        last.len() > 1
+            && last.starts_with('v')
+            && last[1..].bytes().all(|byte| byte.is_ascii_digit())
+    });
+    let next = match provider.protocol {
+        Protocol::OpenAi if versioned => format!("{path}/chat/completions"),
+        Protocol::Anthropic if path.is_empty() => "/v1/messages".to_string(),
+        Protocol::Anthropic if versioned => format!("{path}/messages"),
+        Protocol::Ollama if path.is_empty() => "/api/chat".to_string(),
+        _ => return address.to_string(),
+    };
+    url.set_path(&next);
+    url.to_string()
 }
 
 fn reply_text(protocol: Protocol, value: &Value) -> Option<String> {
@@ -214,10 +802,13 @@ fn reply_text(protocol: Protocol, value: &Value) -> Option<String> {
         Protocol::Anthropic => "/content/0/text",
         Protocol::Gemini => "/candidates/0/content/parts/0/text",
     };
-    value.pointer(pointer).and_then(Value::as_str).map(str::to_string)
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
-fn error_message(body: &str) -> String {
+pub(crate) fn error_message(body: &str) -> String {
     serde_json::from_str::<Value>(body)
         .ok()
         .and_then(|value| {
@@ -232,7 +823,24 @@ fn error_message(body: &str) -> String {
         .unwrap_or_else(|| body.chars().take(160).collect())
 }
 
+fn provider_headers(
+    builder: reqwest::RequestBuilder,
+    provider_id: &str,
+    session: &str,
+) -> reqwest::RequestBuilder {
+    let builder = builder.header(
+        reqwest::header::USER_AGENT,
+        concat!("Capwise/", env!("CARGO_PKG_VERSION")),
+    );
+    if provider_id == "opencode-go" {
+        builder.header("x-opencode-session", session)
+    } else {
+        builder
+    }
+}
+
 async fn chat_with(
+    session: uuid::Uuid,
     provider: &LlmProvider,
     endpoint: &Endpoint,
     key: &str,
@@ -240,13 +848,21 @@ async fn chat_with(
     user: &str,
 ) -> Result<String, String> {
     let name = (provider.name)();
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| tr::asr::connection_failed(name, "HTTP client initialization failed"))?;
+    let session = session.to_string();
     let mut last = String::new();
     for attempt in 0..=RETRIES {
-        let sent = request(&client, provider, endpoint, key, system, user)
-            .timeout(REQUEST_TIMEOUT)
-            .send()
-            .await;
+        let sent = provider_headers(
+            request(&client, provider, endpoint, key, system, user),
+            provider.id,
+            &session,
+        )
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await;
         let response = match sent {
             Ok(response) => response,
             Err(error) => {
@@ -267,8 +883,7 @@ async fn chat_with(
         if (200..300).contains(&status) {
             let value: Value =
                 serde_json::from_str(&body).map_err(|_| tr::asr::unreadable(name))?;
-            return reply_text(provider.protocol, &value)
-                .ok_or_else(|| tr::asr::unreadable(name));
+            return reply_text(provider.protocol, &value).ok_or_else(|| tr::asr::unreadable(name));
         }
         let detail = error_message(&body);
         if status == 401 || status == 403 {
@@ -287,6 +902,44 @@ async fn chat_with(
     Err(tr::asr::connection_failed(name, &last))
 }
 
+pub async fn chat(id: &str, system: &str, user: &str) -> Result<String, String> {
+    chat_in_session(uuid::Uuid::new_v4(), id, system, user).await
+}
+
+pub async fn chat_in_session(
+    session: uuid::Uuid,
+    id: &str,
+    system: &str,
+    user: &str,
+) -> Result<String, String> {
+    chat_with_model(session, id, None, system, user).await
+}
+
+pub(crate) async fn chat_with_model(
+    session: uuid::Uuid,
+    id: &str,
+    model: Option<&str>,
+    system: &str,
+    user: &str,
+) -> Result<String, String> {
+    let provider = provider(id).ok_or_else(|| format!("Unknown model provider {id}"))?;
+    let mut endpoint = provider.endpoint();
+    if let Some(model) = model {
+        if model.trim().is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
+            return Err(tr::ai::model_missing().into());
+        }
+        endpoint.model = model.to_owned();
+    }
+    if !provider.ready() {
+        return Err(tr::ai::model_missing().to_string());
+    }
+    let key = ai_store::key(Kind::Llm, id).unwrap_or_default();
+    if provider.group == Group::Account {
+        return oauth::chat(id, (provider.name)(), &key, &endpoint.model, system, user).await;
+    }
+    chat_with(session, provider, &endpoint, &key, system, user).await
+}
+
 /// Checks the address, key and model with a one-word question. Returns the
 /// round trip in milliseconds.
 pub fn test(id: &str, key: &str, endpoint: &Endpoint) -> Result<u128, String> {
@@ -301,7 +954,19 @@ pub fn test(id: &str, key: &str, endpoint: &Endpoint) -> Result<u128, String> {
         return Err(tr::asr::no_key((provider.name)()));
     }
     let started = std::time::Instant::now();
+    if provider.group == Group::Account {
+        tokio::runtime::Handle::current().block_on(oauth::chat(
+            provider.id,
+            (provider.name)(),
+            key,
+            &endpoint.model,
+            "Reply with the single word OK.",
+            "ping",
+        ))?;
+        return Ok(started.elapsed().as_millis());
+    }
     tokio::runtime::Handle::current().block_on(chat_with(
+        uuid::Uuid::new_v4(),
         provider,
         endpoint,
         key.trim(),
@@ -314,6 +979,341 @@ pub fn test(id: &str, key: &str, endpoint: &Endpoint) -> Result<u128, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pasted_base_urls_gain_their_request_path() {
+        assert_eq!(
+            normalize_address("magpie", "https://magpie.example.com/v1"),
+            "https://magpie.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            normalize_address("magpie", "http://127.0.0.1:3425/v1/"),
+            "http://127.0.0.1:3425/v1/chat/completions"
+        );
+        assert_eq!(
+            normalize_address("deepseek", "https://api.deepseek.com/chat/completions"),
+            "https://api.deepseek.com/chat/completions"
+        );
+        assert_eq!(
+            normalize_address("anthropic", "https://relay.example.com"),
+            "https://relay.example.com/v1/messages"
+        );
+        assert_eq!(normalize_address("magpie", "not a url"), "not a url");
+    }
+
+    #[test]
+    fn account_providers_come_first_and_need_no_typed_key() {
+        assert_eq!(PROVIDERS[0].id, "chatgpt");
+        assert_eq!(PROVIDERS[1].id, "codex");
+        assert!(PROVIDERS[..2].iter().all(|p| p.group == Group::Account));
+        assert_eq!(
+            provider("tokendance").unwrap().sign_in,
+            Some(SignIn::TokenDance)
+        );
+        assert!(!provider("magpie").unwrap().needs_key());
+    }
+    use std::io::{Read as _, Write as _};
+
+    fn model_server(responses: Vec<String>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for response in responses {
+                let started = std::time::Instant::now();
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && started.elapsed() < Duration::from_secs(5) =>
+                        {
+                            std::thread::sleep(Duration::from_millis(5))
+                        }
+                        Err(error) => panic!("mock model request missing: {error}"),
+                    }
+                };
+                // macOS inherits the listener's nonblocking mode on accepted sockets.
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let count = stream.read(&mut buf).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buf[..count]);
+                }
+                requests.push(String::from_utf8(request).unwrap());
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            requests
+        });
+        (format!("http://{address}"), server)
+    }
+
+    fn model_json(value: Value) -> String {
+        let body = value.to_string();
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    fn request_header<'a>(request: &'a str, name: &str) -> Option<&'a str> {
+        request
+            .lines()
+            .skip(1)
+            .take_while(|line| !line.is_empty())
+            .filter_map(|line| line.split_once(':'))
+            .find(|(header, _)| header.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.trim())
+    }
+
+    #[test]
+    fn discovery_keeps_proxy_prefixes_and_rejects_ambiguous_addresses() {
+        for (protocol, input, expected) in [
+            (
+                Protocol::OpenAi,
+                "https://host.test/gateway/v1/chat/completions",
+                "https://host.test/gateway/v1/models",
+            ),
+            (
+                Protocol::Anthropic,
+                "https://host.test/custom/v1/messages/",
+                "https://host.test/custom/v1/models",
+            ),
+            (
+                Protocol::Gemini,
+                "https://host.test/v1beta/models/{model-id}:generateContent",
+                "https://host.test/v1beta/models",
+            ),
+            (
+                Protocol::Ollama,
+                "http://127.0.0.1:11434/api/chat",
+                "http://127.0.0.1:11434/api/tags",
+            ),
+        ] {
+            assert_eq!(discovery_url(protocol, input).unwrap().as_str(), expected);
+        }
+        for input in [
+            "https://host.test/v1?key=secret",
+            "https://user:secret@host.test/v1/chat/completions",
+            "https://host.test/v1/chat/completions#secret",
+            "http://external.test/v1/chat/completions",
+        ] {
+            assert_eq!(
+                discovery_url(Protocol::OpenAi, input),
+                Err(DiscoveryError::Address)
+            );
+        }
+        assert_eq!(
+            discovery_url(Protocol::OpenAi, "https://host.test/custom"),
+            Err(DiscoveryError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn discovery_preserves_callable_ids_and_filters_gemini_embeddings() {
+        let value = json!({"models":[
+            {"name":"models/text-embedding-004", "supportedGenerationMethods":["embedContent"]},
+            {"name":"models/gemini-version-001", "displayName":"Friendly name", "supportedGenerationMethods":["generateContent"]}
+        ]});
+        let (models, cursor) = discovery_page(Protocol::Gemini, &value).unwrap();
+        assert_eq!(
+            models,
+            vec![DiscoveredModel {
+                id: "gemini-version-001".into(),
+                display_name: Some("Friendly name".into())
+            }]
+        );
+        assert!(cursor.is_none());
+        assert_eq!(
+            discovery_page(
+                Protocol::OpenAi,
+                &json!({"data":[{"id":"organization/new-model:free"}]})
+            )
+            .unwrap()
+            .0[0]
+                .id,
+            "organization/new-model:free"
+        );
+        assert_eq!(
+            discovery_page(
+                Protocol::Ollama,
+                &json!({"models":[{"name":"installed:8b"}]})
+            )
+            .unwrap()
+            .0[0]
+                .id,
+            "installed:8b"
+        );
+        assert!(discovery_page(Protocol::Gemini, &json!({"models":[{"name":"models/model?key=bad", "supportedGenerationMethods":["generateContent"]}]})).is_err());
+    }
+
+    #[tokio::test]
+    async fn discovery_paginates_with_encoded_cursor_and_deduplicates_ids() {
+        let (base, server) = model_server(vec![
+            model_json(
+                json!({"models":[{"name":"models/first", "supportedGenerationMethods":["generateContent"]}], "nextPageToken":"token+/=&value"}),
+            ),
+            model_json(
+                json!({"models":[{"name":"models/first", "supportedGenerationMethods":["generateContent"]},{"name":"models/second", "supportedGenerationMethods":["generateContent"]}]}),
+            ),
+        ]);
+        let models = discover_models(
+            "google-gemini",
+            &format!("{base}/proxy/v1beta/models/{{model-id}}:generateContent"),
+            "synthetic-secret",
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        let requests = server.join().unwrap();
+        assert!(requests[0].starts_with("GET /proxy/v1beta/models?pageSize=100 "));
+        assert_eq!(
+            request_header(&requests[0], "x-goog-api-key"),
+            Some("synthetic-secret")
+        );
+        assert!(requests[1].contains("pageToken=token%2B%2F%3D%26value"));
+        assert!(
+            !requests[1]
+                .lines()
+                .next()
+                .unwrap()
+                .contains("synthetic-secret")
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_anthropic_pagination_stops_repeated_cursor() {
+        let page = json!({"data":[{"id":"claude-new","display_name":"Claude New"}],"has_more":true,"last_id":"claude-new"});
+        let (base, server) = model_server(vec![model_json(page.clone()), model_json(page)]);
+        let result = discover_models(
+            "anthropic",
+            &format!("{base}/v1/messages"),
+            "synthetic-secret",
+        )
+        .await;
+        assert_eq!(result, Err(DiscoveryError::Response));
+        let requests = server.join().unwrap();
+        assert_eq!(
+            request_header(&requests[0], "anthropic-version"),
+            Some("2023-06-01")
+        );
+        assert_eq!(
+            request_header(&requests[0], "x-api-key"),
+            Some("synthetic-secret")
+        );
+        assert!(requests[1].contains("after_id=claude-new"));
+    }
+
+    #[tokio::test]
+    async fn discovery_redirects_and_error_bodies_cannot_forward_or_echo_credentials() {
+        let destination = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        destination.set_nonblocking(true).unwrap();
+        let body = "synthetic-secret";
+        let (base, server) = model_server(vec![format!(
+            "HTTP/1.1 302 Found\r\nLocation: http://{}/secret\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            destination.local_addr().unwrap(),
+            body.len()
+        )]);
+        let error = discover_models("openai", &format!("{base}/v1/chat/completions"), body)
+            .await
+            .unwrap_err();
+        assert_eq!(error, DiscoveryError::Http(302));
+        assert!(!format!("{error:?}").contains(body));
+        assert!(
+            matches!(destination.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
+        let requests = server.join().unwrap();
+        assert_eq!(
+            request_header(&requests[0], "authorization"),
+            Some("Bearer synthetic-secret")
+        );
+        let (base, server) = model_server(vec![format!(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )]);
+        assert_eq!(
+            discover_models("openai", &format!("{base}/chat/completions"), body).await,
+            Err(DiscoveryError::Authentication)
+        );
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn discovery_bounds_declared_and_streamed_response_sizes() {
+        let (base, server) = model_server(vec![format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            DISCOVERY_PAGE_BYTES + 1
+        )]);
+        assert_eq!(
+            discover_models("openai", &format!("{base}/chat/completions"), "synthetic").await,
+            Err(DiscoveryError::Limit)
+        );
+        server.join().unwrap();
+        let chunk = " ".repeat(DISCOVERY_PAGE_BYTES + 1);
+        let (base, server) = model_server(vec![format!(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n",
+            chunk.len()
+        )]);
+        assert_eq!(
+            discover_models("openai", &format!("{base}/chat/completions"), "synthetic").await,
+            Err(DiscoveryError::Limit)
+        );
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn dropping_discovery_cancels_a_pending_http_request() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (accepted, request_started) = tokio::sync::oneshot::channel();
+        let (closed, socket_closed) = tokio::sync::oneshot::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            let mut buffer = [0; 1024];
+            while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+                let count = stream.read(&mut buffer).unwrap();
+                assert!(count > 0);
+                bytes.extend_from_slice(&buffer[..count]);
+            }
+            accepted.send(()).unwrap();
+            let result = stream.read(&mut buffer).map_err(|error| error.kind());
+            closed.send(result).unwrap();
+        });
+        let endpoint = format!("http://{address}/chat/completions");
+        let mut request = Box::pin(discover_models("openai", &endpoint, "synthetic-secret"));
+        tokio::select! {
+            started = request_started => started.unwrap(),
+            result = &mut request => panic!("discovery ended before cancellation: {result:?}"),
+        }
+        drop(request);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(6), socket_closed)
+                .await
+                .unwrap()
+                .unwrap(),
+            Ok(0)
+        );
+        server.join().unwrap();
+    }
 
     #[test]
     fn catalogue_ids_are_unique_and_addresses_are_allowed() {
@@ -335,15 +1335,90 @@ mod tests {
     #[test]
     fn each_protocol_reads_its_own_reply_shape() {
         let cases = [
-            (Protocol::OpenAi, json!({"choices":[{"message":{"content":"OK"}}]})),
+            (
+                Protocol::OpenAi,
+                json!({"choices":[{"message":{"content":"OK"}}]}),
+            ),
             (Protocol::Ollama, json!({"message":{"content":"OK"}})),
-            (Protocol::Anthropic, json!({"content":[{"type":"text","text":"OK"}]})),
-            (Protocol::Gemini, json!({"candidates":[{"content":{"parts":[{"text":"OK"}]}}]})),
+            (
+                Protocol::Anthropic,
+                json!({"content":[{"type":"text","text":"OK"}]}),
+            ),
+            (
+                Protocol::Gemini,
+                json!({"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}),
+            ),
         ];
         for (protocol, value) in cases {
             assert_eq!(reply_text(protocol, &value).as_deref(), Some("OK"));
         }
-        assert_eq!(error_message(r#"{"error":{"message":"bad key"}}"#), "bad key");
+        assert_eq!(
+            error_message(r#"{"error":{"message":"bad key"}}"#),
+            "bad key"
+        );
         assert_eq!(error_message("plain"), "plain");
+    }
+    #[tokio::test]
+    async fn opencode_requests_identify_capwise_and_keep_sessions_across_retries_and_batches() {
+        let (base, server) = model_server(vec![
+            "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nRetry-After: 0\r\nConnection: close\r\n\r\n".into(),
+            model_json(json!({"choices":[{"message":{"content":"OK"}}]})),
+            model_json(json!({"choices":[{"message":{"content":"OK"}}]})),
+        ]);
+        let provider = provider("opencode-go").unwrap();
+        let endpoint = Endpoint {
+            base_url: format!("{base}/chat/completions"),
+            model: "synthetic-model".into(),
+        };
+        let session = uuid::Uuid::new_v4();
+        for _ in 0..2 {
+            assert_eq!(
+                chat_with(
+                    session,
+                    provider,
+                    &endpoint,
+                    "synthetic-secret",
+                    "Reply OK",
+                    "ping"
+                )
+                .await
+                .unwrap(),
+                "OK"
+            );
+        }
+        for request in server.join().unwrap() {
+            assert_eq!(
+                request_header(&request, "x-opencode-session"),
+                Some(session.to_string().as_str())
+            );
+            assert_eq!(
+                request_header(&request, "user-agent"),
+                Some(concat!("Capwise/", env!("CARGO_PKG_VERSION")))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn opencode_discovery_sends_session_without_affecting_other_providers() {
+        let (base, server) =
+            model_server(vec![model_json(json!({"data":[{"id":"synthetic-model"}]}))]);
+        discover_models(
+            "opencode-go",
+            &format!("{base}/v1/chat/completions"),
+            "synthetic-secret",
+        )
+        .await
+        .unwrap();
+        let requests = server.join().unwrap();
+        let session = request_header(&requests[0], "x-opencode-session").unwrap();
+        assert!(uuid::Uuid::parse_str(session).is_ok());
+        let request = provider_headers(
+            reqwest::Client::new().get("https://example.com"),
+            "openai",
+            "synthetic-session",
+        )
+        .build()
+        .unwrap();
+        assert!(!request.headers().contains_key("x-opencode-session"));
     }
 }

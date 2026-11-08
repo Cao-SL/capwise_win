@@ -21,7 +21,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
 
@@ -439,7 +439,7 @@ fn compute_drop_index(pointer_y: Pixels, cards: &[ClipCardBounds]) -> usize {
 
 /// `startClipDrag`'s activation threshold (`:729`).
 const DRAG_THRESHOLD_PX: f32 = 5.;
-const CLIP_CARD_GAP: f32 = 8.;
+const CLIP_CARD_GAP: f32 = 2.;
 
 // ---------------------------------------------------------------------------
 // State
@@ -483,8 +483,9 @@ pub(crate) struct ClipsState {
     /// backdrop, panel at the click position.
     import_menu: Option<Point<Pixels>>,
     /// `importing`.
-    importing: bool,
+    pub(crate) importing: bool,
     import_cancelled: Option<Arc<AtomicBool>>,
+    import_progress: Arc<AtomicU32>,
     import_reload_subscription: Option<gpui::Subscription>,
     prepared_mp4_import: Option<PreparedMp4Import>,
     /// `editingIndex`.
@@ -508,6 +509,7 @@ impl Default for ClipsState {
             import_menu: None,
             importing: false,
             import_cancelled: None,
+            import_progress: Arc::new(AtomicU32::new(0)),
             import_reload_subscription: None,
             prepared_mp4_import: None,
             editing: None,
@@ -595,10 +597,18 @@ impl EditorWindow {
         compact: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let label: SharedString = if self.clips.importing && !self.clips.open {
+            tr::editor::clips::importing_progress(
+                self.clips.import_progress.load(Ordering::Relaxed).min(1000) / 10,
+            )
+            .into()
+        } else {
+            tr::editor::assets::title().into()
+        };
         ui::EditorButton::plain(&self.theme, "clips-pill")
-            .left_icon("icons/clapperboard.svg")
-            .when(!compact, |button| button.label(tr::editor::clips::title()))
-            .tooltip(&self.theme, tr::editor::clips::title())
+            .left_icon("icons/folder-open.svg")
+            .when(!compact, |button| button.label(label))
+            .tooltip(&self.theme, tr::editor::assets::title())
             .pressed(self.clips.open)
             .disabled(!self.project_ready())
             .on_click(cx.listener(|this, _, window, cx| this.toggle_clips(window, cx)))
@@ -612,8 +622,12 @@ impl EditorWindow {
         if self.clips.open {
             self.close_clips(window, cx);
         } else {
+            if self.transcript.open {
+                self.toggle_transcript(window, cx);
+            }
+            self.dismiss_sidebar_panels(cx);
             self.clips.open = true;
-            self.transcript.open = false;
+            self.prepare_asset_library(window, cx);
         }
         cx.notify();
     }
@@ -623,6 +637,7 @@ impl EditorWindow {
             self.commit_clip_rename(window, cx);
         }
         self.clips.open = false;
+        self.assets.cancel();
         self.clips.import_menu = None;
         self.clips.drag = None;
         self.clips.drop_index = None;
@@ -910,7 +925,14 @@ impl EditorWindow {
                     .bg(self.panel_bg())
                     .shadow(self.theme.editor.card_shadow())
                     .child(self.render_clips_back_header(cx))
-                    .child(self.render_clips_body(cx)),
+                    .child(self.render_asset_sources(cx))
+                    .child(
+                        if self.assets.source == crate::editor_assets::AssetSource::Project {
+                            self.render_clips_body(cx).into_any_element()
+                        } else {
+                            self.render_asset_body(cx)
+                        },
+                    ),
             )
     }
 
@@ -947,132 +969,192 @@ impl EditorWindow {
             .on_click(cx.listener(|this, _, window, cx| this.close_clips(window, cx)))
     }
 
-    /// `flex flex-col flex-1 gap-3 p-3 min-h-0` (`:807`).
     fn render_clips_body(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
-        let recorded_clip_count = self
-            .summary()
-            .map(|summary| summary.recording_clips)
-            .unwrap_or_default();
+        let clip_count = self.clip_segments().len();
+        let busy = self.asset_import_busy();
 
         div()
             .flex()
             .flex_col()
             .flex_1()
-            .gap(px(12.))
-            .p(px(12.))
             .min_h_0()
-            // The action row (`:808-826`).
             .child(
                 div()
                     .flex()
+                    .flex_col()
                     .flex_none()
-                    .flex_row()
                     .gap(px(8.))
+                    .px(px(12.))
+                    .pb(px(12.))
                     .child(
-                        div().flex_1().child(
-                            ui::Button::plain(
-                                &theme,
-                                "clips-record",
-                                ui::ButtonVariant::Blue,
-                                ui::ButtonSize::Md,
-                            )
-                            .icon("icons/video.svg")
-                            .label(tr::editor::clips::record_new())
-                            .height(px(40.))
+                        div()
+                            .flex()
+                            .flex_row()
                             .gap(px(8.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .full_width()
-                            .disabled(self.clips.importing)
-                            .on_click(cx.listener(
-                                |this, _, _window, cx| {
-                                    if !this.begin_editor_recording(cx) {
-                                        return;
-                                    }
-                                    let project_path = this.project_path.clone();
-                                    cx.defer(move |cx| {
-                                        app_windows::open_editor_recording_main(project_path, cx);
-                                    });
-                                },
-                            )),
-                        ),
+                            .child(
+                                div().flex_1().min_w_0().child(
+                                    ui::Button::plain(
+                                        &theme,
+                                        "clips-record",
+                                        ui::ButtonVariant::Blue,
+                                        ui::ButtonSize::Md,
+                                    )
+                                    .icon("icons/video.svg")
+                                    .label(tr::editor::clips::record_new())
+                                    .height(px(36.))
+                                    .gap(px(8.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .full_width()
+                                    .disabled(busy)
+                                    .on_click(cx.listener(
+                                        |this, _, _window, cx| {
+                                            if !this.begin_editor_recording(cx) {
+                                                return;
+                                            }
+                                            let project_path = this.project_path.clone();
+                                            cx.defer(move |cx| {
+                                                app_windows::open_editor_recording_main(
+                                                    project_path,
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    )),
+                                ),
+                            )
+                            .child(
+                                ui::Button::plain(
+                                    &theme,
+                                    "clips-import",
+                                    ui::ButtonVariant::Gray,
+                                    ui::ButtonSize::Md,
+                                )
+                                .icon("icons/circle-plus.svg")
+                                .label(tr::editor::clips::import())
+                                .height(px(36.))
+                                .gap(px(6.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .disabled(busy)
+                                .on_open(cx.listener(
+                                    |this, bounds: &Bounds<Pixels>, _window, cx| {
+                                        if this.clips.importing {
+                                            return;
+                                        }
+                                        this.clips.import_menu = Some(
+                                            bounds.bottom_left() + gpui::point(px(0.), px(4.)),
+                                        );
+                                        cx.notify();
+                                    },
+                                )),
+                            ),
                     )
-                    .child(
-                        ui::Button::plain(
-                            &theme,
-                            "clips-import",
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Md,
-                        )
-                        .icon("icons/circle-plus.svg")
-                        .label(if self.clips.importing {
-                            tr::editor::clips::importing()
-                        } else {
-                            tr::editor::clips::import()
-                        })
-                        .height(px(40.))
-                        .gap(px(8.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .disabled(self.clips.importing)
-                        .on_open(cx.listener(
-                            |this, bounds: &Bounds<Pixels>, _window, cx| {
-                                if this.clips.importing {
-                                    return;
-                                }
-                                this.clips.import_menu =
-                                    Some(bounds.bottom_left() + gpui::point(px(0.), px(4.)));
-                                cx.notify();
-                            },
-                        )),
-                    ),
+                    .children(self.render_clips_import_progress(cx)),
             )
-            // The section label and the recording-clip count (`:828-835`).
             .child(
                 div()
                     .flex()
                     .flex_none()
                     .flex_row()
                     .items_center()
-                    .gap(px(8.))
-                    .child(
+                    .gap(px(6.))
+                    .px(px(12.))
+                    .pb(px(6.))
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(tr::editor::clips::title())
+                    .children((clip_count > 0).then(|| {
                         div()
-                            .text_size(px(14.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.gray_12))
-                            .child(tr::editor::clips::title()),
-                    )
-                    .children((recorded_clip_count > 0).then(|| {
-                        div()
-                            .rounded(px(6.))
-                            .bg(Hsla::from(theme.gray_3))
-                            .px(px(6.))
-                            .py(px(2.))
-                            .text_size(px(10.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.gray_11))
-                            .child(recorded_clip_count.to_string())
+                            .text_color(Hsla::from(theme.editor.text_3))
+                            .child(clip_count.to_string())
                     })),
             )
-            // The scroll region (`:837`): `overflow-y-auto flex-1 -mx-1 px-1`.
             .child(
                 div()
                     .id("clips-scroll")
                     .flex_1()
                     .min_h_0()
-                    .mx(px(-4.))
-                    .px(px(4.))
+                    .px(px(8.))
                     .flex()
                     .flex_col()
                     .overflow_hidden()
-                    .when(self.clip_segments().is_empty(), |this| {
-                        this.overflow_y_scroll()
-                    })
-                    .child(if self.clip_segments().is_empty() {
+                    .when(clip_count == 0, |this| this.overflow_y_scroll())
+                    .child(if clip_count == 0 {
                         self.render_clips_empty().into_any_element()
                     } else {
                         self.render_clip_list(cx)
                     }),
             )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_none()
+                    .gap(px(8.))
+                    .p(px(12.))
+                    .border_t_1()
+                    .border_color(Hsla::from(theme.editor.line))
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(Hsla::from(theme.editor.text_2))
+                            .child(tr::editor::clips::title_cards()),
+                    )
+                    .child(self.render_title_card_entries(cx)),
+            )
+    }
+
+    fn render_clips_import_progress(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.clips.importing {
+            return None;
+        }
+        let theme = self.theme;
+        let fraction = self.clips.import_progress.load(Ordering::Relaxed).min(1000) as f32 / 1000.;
+        let can_cancel = self.clips.import_cancelled.is_some();
+        Some(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(8.))
+                .h(px(32.))
+                .pl(px(10.))
+                .pr(px(4.))
+                .rounded(px(8.))
+                .bg(Hsla::from(theme.editor.ctl))
+                .child(
+                    ui::CircularProgress::new(
+                        px(14.),
+                        px(2.),
+                        Hsla::from(theme.editor.line_strong),
+                        Hsla::from(theme.editor.accent),
+                    )
+                    .progress(fraction),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.))
+                        .text_color(Hsla::from(theme.editor.text_1))
+                        .child(tr::editor::clips::importing_progress(
+                            (fraction * 100.).round() as u32,
+                        )),
+                )
+                .children(can_cancel.then(|| {
+                    ui::EditorButton::plain(&theme, "clips-import-cancel")
+                        .label(tr::editor::clips::cancel_import())
+                        .height(px(24.))
+                        .text_size(px(12.))
+                        .on_click(cx.listener(|this, _, _window, cx| {
+                            this.cancel_asset_video_import(cx);
+                        }))
+                }))
+                .into_any_element(),
+        )
     }
 
     /// The empty state (`:841-849`).
@@ -1223,7 +1305,7 @@ impl EditorWindow {
                     .absolute()
                     .left_0()
                     .right_0()
-                    .top(px(-4.))
+                    .top(px(-2.))
                     .h(px(2.))
                     .rounded_full()
                     .bg(Hsla::from(theme.blue_9))
@@ -1233,7 +1315,7 @@ impl EditorWindow {
                     .absolute()
                     .left_0()
                     .right_0()
-                    .bottom(px(-4.))
+                    .bottom(px(-2.))
                     .h(px(2.))
                     .rounded_full()
                     .bg(Hsla::from(theme.blue_9))
@@ -1247,18 +1329,15 @@ impl EditorWindow {
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(px(12.))
+                    .gap(px(10.))
                     .rounded(px(8.))
-                    .border_1()
-                    .border_color(Hsla::from(theme.gray_4))
-                    .p(px(8.))
-                    .bg(card_bg(&theme))
+                    .p(px(4.))
                     .cursor(if dragging {
                         CursorStyle::ClosedHand
                     } else {
                         CursorStyle::OpenHand
                     })
-                    .hover(move |style| style.border_color(Hsla::from(theme.gray_7)))
+                    .hover(move |style| style.bg(Hsla::from(theme.editor.ctl)))
                     .when(is_dragged, |this| this.opacity(0.4))
                     .child(probe)
                     .on_mouse_down(
@@ -1274,8 +1353,8 @@ impl EditorWindow {
                         div()
                             .relative()
                             .overflow_hidden()
-                            .w(px(96.))
-                            .h(px(54.))
+                            .w(px(88.))
+                            .h(px(50.))
                             .rounded(px(6.))
                             .flex_shrink_0()
                             .bg(Hsla::from(theme.gray_4))
@@ -1334,10 +1413,10 @@ impl EditorWindow {
                             } else {
                                 div()
                                     .id(SharedString::from(format!("clip-title-{index}")))
-                                    .text_size(px(14.))
+                                    .text_size(px(13.))
                                     .font_weight(FontWeight::MEDIUM)
                                     .truncate()
-                                    .text_color(Hsla::from(theme.gray_12))
+                                    .text_color(Hsla::from(theme.editor.text_1))
                                     .child(title)
                                     .on_mouse_down(
                                         MouseButton::Left,
@@ -1355,7 +1434,7 @@ impl EditorWindow {
                             .child(
                                 div()
                                     .text_size(px(12.))
-                                    .text_color(Hsla::from(theme.gray_10))
+                                    .text_color(Hsla::from(theme.editor.text_3))
                                     .child(subtitle),
                             ),
                     )
@@ -1421,7 +1500,7 @@ impl EditorWindow {
     }
 
     fn begin_editor_recording(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.project_ready() || self.clips.importing {
+        if !self.project_ready() || self.asset_import_busy() {
             return false;
         }
         let session = RecordingSession::global(cx);
@@ -1692,7 +1771,7 @@ impl EditorWindow {
     /// `pickCapRecording` (`:533-539`): the `.cap` picker, rooted at the
     /// recordings directory where the platform dialog supports a root.
     fn pick_existing_recording(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.clips.importing {
+        if self.asset_import_busy() {
             return;
         }
         cx.spawn_in(window, async move |this, cx| {
@@ -1710,7 +1789,7 @@ impl EditorWindow {
     }
 
     fn pick_mp4(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.clips.importing {
+        if self.asset_import_busy() {
             return;
         }
         cx.spawn_in(window, async move |this, cx| {
@@ -1737,6 +1816,93 @@ impl EditorWindow {
         .detach();
     }
 
+    pub(crate) fn auto_import_mp4(
+        &mut self,
+        source: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.import_recording_path(source, window, cx);
+    }
+
+    pub(crate) fn pick_mp4_asset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pick_mp4(window, cx);
+    }
+
+    pub(crate) fn reuse_video_asset(
+        &mut self,
+        record: &crate::asset_library::AssetRecord,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(index) = crate::asset_library::recording_index(&self.project_path, &record.path)
+        else {
+            return false;
+        };
+        let Some(duration) = self
+            .clip_display_durations
+            .get(index as usize)
+            .copied()
+            .filter(|duration| duration.is_finite() && *duration > 0.0)
+        else {
+            return false;
+        };
+        let name = record.name.clone();
+        let Some(appended_index) = self
+            .project
+            .timeline
+            .as_ref()
+            .map(|timeline| timeline.segments.len())
+        else {
+            return false;
+        };
+        let mut changed = false;
+        self.edit_project("reuse-video-asset", window, cx, |project| {
+            changed = append_reusable_video(project, index, duration, name);
+            changed
+        });
+        if changed {
+            let Some(start) = self
+                .project
+                .timeline
+                .as_ref()
+                .and_then(|timeline| appended_video_start(timeline, appended_index))
+            else {
+                return false;
+            };
+            self.seek_to_time(start, cx);
+        }
+        changed
+    }
+
+    pub(crate) fn cancel_asset_video_import(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancelled) = self.clips.import_cancelled.take() {
+            cancelled.store(true, Ordering::Release);
+            self.clips.prepared_mp4_import = None;
+            self.clips.import_reload_subscription = None;
+            self.clips.importing = false;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn import_asset_video(
+        &mut self,
+        source: PathBuf,
+        staged: Option<crate::asset_library::StagedMedia>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.project_ready() || self.asset_import_busy() {
+            return;
+        }
+        self.stop_playback(cx);
+        if let Err(error) = self.flush_pending_saves(cx) {
+            self.show_notice(error, window, cx);
+            return;
+        }
+        self.import_mp4_owned(source, staged, window, cx);
+    }
+
     /// `importRecordingPath` (`:503-523`): stop playback, persist the live
     /// config (the `setProjectConfig` call -- the import merges into what is
     /// on disk), run the import off-thread, then reload the editor the way
@@ -1747,7 +1913,7 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.project_ready() || self.clips.importing {
+        if !self.project_ready() || self.asset_import_busy() {
             return;
         }
         if self.playing {
@@ -1811,29 +1977,53 @@ impl EditorWindow {
     }
 
     fn import_mp4(&mut self, source: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.import_mp4_owned(source, None, window, cx);
+    }
+
+    fn import_mp4_owned(
+        &mut self,
+        source: PathBuf,
+        staged: Option<crate::asset_library::StagedMedia>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(editor) = window.window_handle().downcast::<Self>() else {
             return;
         };
         let cancelled = Arc::new(AtomicBool::new(false));
         self.clips.import_cancelled = Some(cancelled.clone());
         self.clips.importing = true;
+        let progress = Arc::new(AtomicU32::new(0));
+        self.clips.import_progress = progress.clone();
         cx.notify();
         let target = self.project_path.clone();
         let in_flight = crate::import::InFlightImport::begin();
         let worker_cancelled = cancelled.clone();
         let config = self.project.clone();
         let (send, receive) = flume::bounded(1);
+        let worker_progress = progress.clone();
         let worker = std::thread::Builder::new()
             .name("cap-editor-import".to_string())
             .stack_size(crate::MEDIA_THREAD_STACK_SIZE)
             .spawn(move || {
-                let result = PreparedMp4Import::prepare(
+                let started = std::time::Instant::now();
+                let result = PreparedMp4Import::prepare_with_provenance(
                     &target,
                     &source,
                     &config,
                     worker_cancelled,
                     in_flight,
+                    staged.is_some(),
+                    &|fraction| {
+                        worker_progress.store((fraction * 1000.0) as u32, Ordering::Relaxed);
+                    },
                 );
+                tracing::info!(
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    ok = result.is_ok(),
+                    "editor MP4 import prepared"
+                );
+                drop(staged);
                 let _ = send.send(result);
             });
         if let Err(error) = worker {
@@ -1844,6 +2034,27 @@ impl EditorWindow {
                 .detach();
             return;
         }
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(200))
+                    .await;
+                let live = this
+                    .update(cx, |this, cx| {
+                        let live = this.clips.importing
+                            && Arc::ptr_eq(&this.clips.import_progress, &progress);
+                        if live {
+                            cx.notify();
+                        }
+                        live
+                    })
+                    .unwrap_or(false);
+                if !live {
+                    break;
+                }
+            }
+        })
+        .detach();
         cx.spawn(async move |_, cx| {
             let result = receive
                 .recv_async()
@@ -1930,15 +2141,27 @@ fn reload_imported_editor_if_idle(
             if phase != Phase::Idle {
                 return None;
             }
-            if view.clips.prepared_mp4_import.is_some() {
-                view.pending_save().borrow_mut().flush();
+            if view.clips.prepared_mp4_import.is_some()
+                && let Err(error) = view.flush_pending_saves(cx)
+            {
+                view.cancel_asset_video_import(cx);
+                return Some(Err(error));
             }
+            let mut restored_history = None;
             match PreparedMp4Import::commit_if_idle(
                 &mut view.clips.prepared_mp4_import,
                 phase,
                 &view.project,
             ) {
-                Ok(Some(config)) => view.project = config,
+                Ok(Some(config)) => {
+                    view.history = history_after_media_import(
+                        &view.history,
+                        &view.clip_display_durations,
+                        &config,
+                    );
+                    restored_history = Some(view.history.clone());
+                    view.project = config;
+                }
                 Ok(None) => {}
                 Err(error) => {
                     view.clips.import_cancelled = None;
@@ -1949,17 +2172,66 @@ fn reload_imported_editor_if_idle(
                     return Some(Err(error));
                 }
             }
-            Some(Ok(view.project_path.clone()))
+            Some(Ok((view.project_path.clone(), restored_history)))
         })
         .ok()
         .flatten();
     match outcome {
-        Some(Ok(target)) => app_windows::reload_editor(&target, cx),
+        Some(Ok((target, Some(history)))) => {
+            app_windows::reload_editor_with_history(&target, history, cx)
+        }
+        Some(Ok((target, None))) => app_windows::reload_editor(&target, cx),
         Some(Err(error)) => {
             cx.spawn(async move |_| show_import_error(&error)).detach();
         }
         None => {}
     }
+}
+
+fn history_after_media_import(
+    previous: &edits::ProjectHistory,
+    original_durations: &[f64],
+    imported: &ProjectConfiguration,
+) -> edits::ProjectHistory {
+    let mut history = previous.clone();
+    history.amend_all(|entry| {
+        edits::ensure_timeline(entry, original_durations);
+    });
+    history.record(imported);
+    history
+}
+
+fn appended_video_start(timeline: &TimelineConfiguration, index: usize) -> Option<f64> {
+    let effective = *clip_timeline_offsets(timeline).get(index)?;
+    let output = edits::effective_to_output(&timeline.hold_windows(), effective);
+    let fps = f64::from(crate::editor_window::EDITOR_PREVIEW_FPS);
+    let frame = (output * fps).ceil();
+    (output.is_finite() && output >= 0.0 && frame <= f64::from(u32::MAX)).then_some(frame / fps)
+}
+
+fn append_reusable_video(
+    project: &mut ProjectConfiguration,
+    index: u32,
+    duration: f64,
+    name: String,
+) -> bool {
+    let Some(timeline) = project.timeline.as_mut() else {
+        return false;
+    };
+    if !duration.is_finite() || duration <= 0.0 {
+        return false;
+    }
+    timeline.segments.push(TimelineSegment {
+        recording_clip: index,
+        timescale: 1.0,
+        start: 0.0,
+        end: duration,
+        name: Some(name),
+        speed_audio_mode: None,
+        hide_cursor: None,
+        volume: None,
+    });
+    true
 }
 
 fn import_editor_is_open(editor: WindowHandle<EditorWindow>, cx: &App) -> bool {
@@ -1991,7 +2263,7 @@ impl Drop for PendingImportDirectory {
         if entries.iter().any(|entry| {
             !matches!(
                 entry.file_name().to_str(),
-                Some("display.mp4" | "audio.ogg")
+                Some("display.mp4" | "display.mp4.asset.json" | "audio.ogg")
             ) || !entry.file_type().is_ok_and(|kind| kind.is_file())
         }) {
             tracing::warn!(path = %self.path.display(), "retaining unexpected import staging contents");
@@ -2036,6 +2308,7 @@ impl PreparedMp4Import {
             .transpose()
     }
 
+    #[cfg(test)]
     fn prepare(
         target: &Path,
         source: &Path,
@@ -2043,8 +2316,27 @@ impl PreparedMp4Import {
         cancelled: Arc<AtomicBool>,
         in_flight: crate::import::InFlightImport,
     ) -> Result<Self, String> {
+        Self::prepare_with_provenance(target, source, config, cancelled, in_flight, false, &|_| {})
+    }
+
+    fn prepare_with_provenance(
+        target: &Path,
+        source: &Path,
+        config: &ProjectConfiguration,
+        cancelled: Arc<AtomicBool>,
+        in_flight: crate::import::InFlightImport,
+        provenance_required: bool,
+        progress: &dyn Fn(f64),
+    ) -> Result<Self, String> {
         if cancelled.load(Ordering::Acquire) {
             return Err(tr::editor::clips::error::cancelled().to_string());
+        }
+        let source_record = crate::asset_library::read_record(source, provenance_required)?;
+        if source_record
+            .as_ref()
+            .is_some_and(|record| record.kind != crate::asset_library::AssetKind::Video)
+        {
+            return Err(tr::editor::assets::metadata_error().into());
         }
         let target = target.canonicalize().map_err(|error| error.to_string())?;
         let upload_lock = cap_recording::upload_resume::UploadLock::acquire(&target)
@@ -2083,11 +2375,24 @@ impl PreparedMp4Import {
             &audio_path,
             &target,
             &cancelled,
+            progress,
         )?;
         let duration = get_video_duration_secs(&display_path)?;
         if !duration.is_finite() || duration <= 0.0 {
             return Err(tr::editor::clips::error::no_duration().to_string());
         }
+        let mut record = source_record.unwrap_or_else(|| crate::asset_library::AssetRecord {
+            path: String::new(),
+            name: source.file_stem().map_or_else(
+                || tr::editor::assets::video().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            ),
+            kind: crate::asset_library::AssetKind::Video,
+            source: None,
+            rendition: None,
+        });
+        record.path = format!("{relative}/display.mp4");
+        crate::asset_library::write_record_at(&display_path, &record)?;
         let system_audio = sample_rate.map(|_| AudioMeta {
             path: format!("{relative}/audio.ogg").into(),
             start_time: Some(0.0),
@@ -2160,7 +2465,17 @@ impl PreparedMp4Import {
             volume: None,
         });
         add_clip_configs(&mut config, index, std::slice::from_ref(&self.segment));
+        config
+            .normalize_title_cards()
+            .map_err(|error| crate::editor_title_cards::card_error_message(&error))?;
         config.validate().map_err(|error| error.to_string())?;
+        let source_record = crate::asset_library::read_record(
+            &self.target.join(self.segment.display.path.as_str()),
+            true,
+        )?
+        .ok_or_else(|| tr::editor::assets::metadata_error().to_string())?;
+        let pending_source =
+            crate::asset_library::PendingAssetSource::register(&self.target, source_record)?;
         let backup_path = self
             .directory
             .path
@@ -2207,6 +2522,7 @@ impl PreparedMp4Import {
         if let Err(error) = std::fs::remove_file(&backup_path) {
             tracing::warn!(%error, path = %backup_path.display(), "could not remove completed import backup");
         }
+        pending_source.commit();
         Ok(config)
     }
 }
@@ -3595,6 +3911,10 @@ pub(crate) fn append_cap_project_to_editor(
         &source_to_target_index,
     ));
 
+    config
+        .normalize_title_cards()
+        .map_err(|error| crate::editor_title_cards::card_error_message(&error))?;
+
     target_meta
         .save_for_project()
         .map_err(|e| format!("Failed to save project metadata: {e:?}"))?;
@@ -3609,6 +3929,154 @@ pub(crate) fn append_cap_project_to_editor(
 mod tests {
     use super::*;
     use gpui::{point, size};
+
+    #[test]
+    fn reused_video_focus_lands_on_new_media_before_active_or_disabled_outro() {
+        use cap_project::{TextSegment, TimelineFrameMapping, TitleCardRole};
+
+        for (body_duration, intro, outro) in [
+            (10.0, false, None),
+            (10.0, false, Some(true)),
+            (10.0, true, Some(true)),
+            (10.0, true, Some(false)),
+            (13.44, true, Some(true)),
+        ] {
+            let mut project = ProjectConfiguration::default();
+            edits::ensure_timeline(&mut project, &[body_duration]);
+            if intro {
+                project
+                    .upsert_title_card(TextSegment::new_title_card(TitleCardRole::Intro, "Intro"))
+                    .unwrap();
+            }
+            if let Some(enabled) = outro {
+                let mut card = TextSegment::new_title_card(TitleCardRole::Outro, "Outro");
+                card.enabled = enabled;
+                project.upsert_title_card(card).unwrap();
+            }
+            let previous = project.clone();
+            let appended_index = project.timeline.as_ref().unwrap().segments.len();
+            assert!(append_reusable_video(
+                &mut project,
+                1,
+                1.0,
+                "One second".into()
+            ));
+            crate::editor_title_cards::normalize_edit(&mut project, &previous, false).unwrap();
+            let timeline = project.timeline.as_ref().unwrap();
+            let time = appended_video_start(timeline, appended_index).unwrap();
+            let expected = body_duration + if intro { 2.0 } else { 0.0 };
+            assert!(time >= expected && time < expected + 1.0 / 60.0);
+            let Some(TimelineFrameMapping::Single { source, .. }) =
+                timeline.get_frame_mapping(time)
+            else {
+                panic!("Reused media must be visible, not the outro hold");
+            };
+            assert_eq!(source.segment.recording_clip, 1);
+            assert!((source.source_time - (time - expected)).abs() < 1e-9);
+            assert!(appended_video_start(timeline, appended_index + 1).is_none());
+        }
+    }
+
+    #[test]
+    fn media_import_history_materializes_old_implicit_timeline_before_catalog_grows() {
+        let original = ProjectConfiguration::default();
+        assert!(original.timeline.is_none());
+        let mut imported = original.clone();
+        edits::ensure_timeline(&mut imported, &[3.5, 2.0]);
+        let mut history =
+            history_after_media_import(&edits::ProjectHistory::new(original), &[3.5], &imported);
+        let undone = history.undo().unwrap();
+        let timeline = undone.timeline.as_ref().unwrap();
+        assert_eq!(timeline.segments.len(), 1);
+        assert_eq!(timeline.segments[0].end, 3.5);
+        assert_eq!(
+            history
+                .redo()
+                .unwrap()
+                .timeline
+                .as_ref()
+                .unwrap()
+                .segments
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn mp4_import_history_preserves_prior_edits_and_reusable_source_on_undo() {
+        let fixture = ImportFixture::new(MP4_WITHOUT_AUDIO);
+        let mut history = edits::ProjectHistory::new(fixture.config.clone());
+        let mut latest = fixture.config.clone();
+        latest.background.padding = 41.0;
+        history.record(&latest);
+        let original_duration = latest.timeline.as_ref().unwrap().segments[0].end;
+        let result = fixture
+            .prepare(Arc::new(AtomicBool::new(false)))
+            .commit(&latest)
+            .unwrap();
+        let records = crate::asset_library::collect_records(&fixture.project).records;
+        assert_eq!(records.len(), 1);
+        let media =
+            crate::asset_library::project_asset_path(&fixture.project, &records[0].path).unwrap();
+        let mut history = history_after_media_import(&history, &[original_duration], &result);
+        let undone = history.undo().unwrap().clone();
+        assert_eq!(undone.background.padding, 41.0);
+        assert_eq!(undone.timeline.as_ref().unwrap().segments.len(), 1);
+        undone.write(&fixture.project).unwrap();
+        let reopened = ProjectConfiguration::load(&fixture.project).unwrap();
+        assert_eq!(reopened.timeline.as_ref().unwrap().segments.len(), 1);
+        assert!(media.is_file());
+        assert_eq!(
+            history.undo().unwrap().background.padding,
+            fixture.config.background.padding
+        );
+        assert_eq!(history.redo().unwrap().background.padding, 41.0);
+        assert_eq!(
+            history
+                .redo()
+                .unwrap()
+                .timeline
+                .as_ref()
+                .unwrap()
+                .segments
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn reusable_video_references_original_recording_with_its_separate_audio() {
+        let fixture = ImportFixture::new(MP4_WITH_AUDIO);
+        let mut config = fixture
+            .prepare(Arc::new(AtomicBool::new(false)))
+            .commit(&fixture.config)
+            .unwrap();
+        let records = crate::asset_library::collect_records(&fixture.project).records;
+        let index =
+            crate::asset_library::recording_index(&fixture.project, &records[0].path).unwrap();
+        let duration = config.timeline.as_ref().unwrap().segments[1].end;
+        assert!(append_reusable_video(
+            &mut config,
+            index,
+            duration,
+            records[0].name.clone()
+        ));
+        let timeline = config.timeline.as_ref().unwrap();
+        assert_eq!(timeline.segments.len(), 3);
+        assert_eq!(
+            timeline.segments[1].recording_clip,
+            timeline.segments[2].recording_clip
+        );
+        let meta = RecordingMeta::load_for_project(&fixture.project).unwrap();
+        let RecordingMetaInner::Studio(studio) = &meta.inner else {
+            panic!("Expected Studio")
+        };
+        let StudioRecordingMeta::MultipleSegments { inner } = studio.as_ref() else {
+            panic!("Expected segments")
+        };
+        assert!(inner.segments[index as usize].system_audio.is_some());
+        assert_eq!(inner.segments.len(), 2);
+    }
 
     #[test]
     fn appended_recordings_bring_their_markers_onto_the_copied_segments() {
@@ -3803,6 +4271,124 @@ mod tests {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.root).unwrap();
         }
+    }
+
+    #[test]
+    fn mp4_append_reanchors_outro_before_save_and_history_restores_original_card() {
+        let fixture = ImportFixture::new(MP4_WITHOUT_AUDIO);
+        let prepared = fixture.prepare(Arc::new(AtomicBool::new(false)));
+        let mut latest = fixture.config.clone();
+        latest
+            .upsert_title_card(cap_project::TextSegment::new_title_card(
+                cap_project::TitleCardRole::Outro,
+                "End",
+            ))
+            .unwrap();
+        let previous_start = latest
+            .title_card(cap_project::TitleCardRole::Outro)
+            .unwrap()
+            .start;
+        let result = prepared.commit(&latest).unwrap();
+        let timeline = result.timeline.as_ref().unwrap();
+        assert!(timeline.transitions.is_empty());
+        let expected = timeline
+            .segments
+            .iter()
+            .map(cap_project::TimelineSegment::duration)
+            .sum::<f64>();
+        assert!(expected > previous_start);
+        assert_eq!(
+            result
+                .title_card(cap_project::TitleCardRole::Outro)
+                .unwrap()
+                .start,
+            expected
+        );
+        assert_eq!(
+            ProjectConfiguration::load(&fixture.project)
+                .unwrap()
+                .title_card(cap_project::TitleCardRole::Outro)
+                .unwrap()
+                .start,
+            expected
+        );
+        let mut history = history_after_media_import(
+            &edits::ProjectHistory::new(latest.clone()),
+            &[0.5],
+            &result,
+        );
+        assert_eq!(
+            serde_json::to_value(history.undo().unwrap()).unwrap(),
+            serde_json::to_value(latest).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(history.redo().unwrap()).unwrap(),
+            serde_json::to_value(result).unwrap()
+        );
+    }
+
+    #[test]
+    fn invalid_title_card_aborts_mp4_publication_before_metadata_or_config_changes() {
+        let fixture = ImportFixture::new(MP4_WITHOUT_AUDIO);
+        let before = fixture.project_bytes();
+        let prepared = fixture.prepare(Arc::new(AtomicBool::new(false)));
+        let mut latest = fixture.config.clone();
+        let card =
+            cap_project::TextSegment::new_title_card(cap_project::TitleCardRole::Intro, "Intro");
+        latest
+            .timeline
+            .as_mut()
+            .unwrap()
+            .text_segments
+            .extend([card.clone(), card]);
+        assert!(prepared.commit(&latest).is_err());
+        assert_eq!(fixture.project_bytes(), before);
+    }
+
+    #[test]
+    fn cap_append_reanchors_existing_outro_before_publication() {
+        let target = ImportFixture::new(MP4_WITHOUT_AUDIO);
+        let source = target.root.join("source.cap");
+        std::fs::create_dir_all(source.join("content/segments/segment-0")).unwrap();
+        std::fs::copy(
+            target.project.join("recording-meta.json"),
+            source.join("recording-meta.json"),
+        )
+        .unwrap();
+        std::fs::write(
+            source.join("content/segments/segment-0/display.mp4"),
+            MP4_WITHOUT_AUDIO,
+        )
+        .unwrap();
+        target.config.write(&source).unwrap();
+        let mut project = target.config.clone();
+        project
+            .upsert_title_card(cap_project::TextSegment::new_title_card(
+                cap_project::TitleCardRole::Outro,
+                "End",
+            ))
+            .unwrap();
+        project.write(&target.project).unwrap();
+        assert_eq!(
+            append_cap_project_to_editor(&target.project, &source).unwrap(),
+            1
+        );
+        let result = ProjectConfiguration::load(&target.project).unwrap();
+        let timeline = result.timeline.as_ref().unwrap();
+        assert!(timeline.transitions.is_empty());
+        let expected = timeline
+            .segments
+            .iter()
+            .map(cap_project::TimelineSegment::duration)
+            .sum::<f64>();
+        assert_eq!(
+            result
+                .title_card(cap_project::TitleCardRole::Outro)
+                .unwrap()
+                .start,
+            expected
+        );
+        assert_eq!(result.timeline.as_ref().unwrap().segments.len(), 2);
     }
 
     #[test]

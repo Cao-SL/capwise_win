@@ -159,6 +159,8 @@ pub fn preset_config(project: &ProjectConfiguration) -> Value {
             captions.remove("sourceTimed");
             if let Some(settings) = captions.get_mut("settings").and_then(Value::as_object_mut) {
                 settings.remove("fillerLanguage");
+                settings.remove("translations");
+                settings.remove("displayMode");
             }
         }
     }
@@ -393,6 +395,53 @@ mod tests {
             !serde_json::to_string(&preset)
                 .unwrap()
                 .contains("Other recording")
+        );
+    }
+
+    #[test]
+    fn presets_neither_save_nor_replace_caption_translations() {
+        let mut current = captioned_project("Current recording", true);
+        let settings = &mut current.captions.as_mut().unwrap().settings;
+        settings.display_mode = cap_project::CaptionDisplayMode::Bilingual;
+        settings.set_translation(
+            "caption",
+            "Current recording",
+            "当前录制".into(),
+            "zh".into(),
+        );
+        let preset = preset_config(&current);
+        assert!(preset["captions"]["settings"].get("translations").is_none());
+        assert!(preset["captions"]["settings"].get("displayMode").is_none());
+        assert!(!preset.to_string().contains("当前录制"));
+
+        let mut stale = preset;
+        stale["captions"]["settings"]["translations"] = json!({
+            "caption": {"sourceText": "Current recording", "text": "Unrelated private translation", "language": "en"}
+        });
+        stale["captions"]["settings"]["displayMode"] = json!("translated");
+        for applied in [
+            apply_preset(&stale, &current).unwrap(),
+            default_project_config(&current),
+        ] {
+            let settings = &applied.captions.unwrap().settings;
+            assert_eq!(
+                settings.display_mode,
+                cap_project::CaptionDisplayMode::Bilingual
+            );
+            assert_eq!(
+                settings
+                    .translation_for("caption", "Current recording")
+                    .unwrap()
+                    .text,
+                "当前录制"
+            );
+        }
+        let fresh = apply_preset(&stale, &ProjectConfiguration::default()).unwrap();
+        let settings = fresh.captions.unwrap().settings;
+        assert!(settings.translations.is_empty());
+        assert_eq!(
+            settings.display_mode,
+            cap_project::CaptionDisplayMode::Original
         );
     }
 

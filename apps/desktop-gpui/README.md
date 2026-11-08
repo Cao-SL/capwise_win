@@ -1,14 +1,10 @@
-# cap-desktop-gpui
+# 灵录 Capwise 桌面开发
 
-Cap's desktop app, rewritten in [gpui](https://www.gpui.rs/). No Tauri, no
-webview — the whole UI is drawn by gpui and every pixel is Rust.
+灵录的原生桌面应用使用 Rust + [GPUI](https://www.gpui.rs/)，基于 Cap 改造。用户安装请前往 [Capwise Releases](https://github.com/joeseesun/capwise/releases)；本项目的签名、公证和自动更新使用 [Capwise 发布流程](docs/release.md)。
 
-This is the app that ships as **Cap**, from 0.6.1 on, and the only desktop app
-in this repository. It replaced the Tauri app, which last shipped in 0.6.0; see
-[Shipping and updates](#shipping-and-updates) and [The Tauri app](#the-tauri-app).
+Capwise's native desktop app is built with Rust and GPUI. This document retains the upstream development and architecture reference below. The upstream Tauri packaging discussion is historical context; Capwise distribution uses `scripts/release.sh`, bundle ID `com.capwise.app`, and the release guide linked above.
 
-The main recording window uses a fixed 330×432 layout with device controls
-and recording and screenshot browsers. The expanded view is no longer available.
+首次构建请先在仓库根目录运行 `bun install`、`bun run cap-setup` 和 `bash scripts/prepare-gpui-dependency.sh`。测试时请使用独立项目副本；不要清空已安装应用的配置目录或登录钥匙串。
 
 ## Running it
 

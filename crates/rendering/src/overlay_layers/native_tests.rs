@@ -1131,8 +1131,8 @@ async fn shapes_match_across_output_resolutions() {
 }
 
 #[tokio::test]
-async fn shape_tracks_follow_the_saved_overlay_order() {
-    use cap_project::{OverlayTrack, OverlayTrackKind, ShapeKind};
+async fn shape_tracks_follow_their_layers() {
+    use cap_project::ShapeKind;
     let directory = tempfile::tempdir().unwrap();
     let constants = constants(directory.path()).await;
     let mut layers = RendererLayers::new(&constants.device, &constants.queue);
@@ -1146,14 +1146,12 @@ async fn shape_tracks_follow_the_saved_overlay_order() {
     bottom.fill = true;
     bottom.stroke_width = 0.0;
     let mut project = with_shapes(vec![top, bottom]);
-    let shape = |track| OverlayTrack {
-        kind: OverlayTrackKind::Shape,
-        track,
-    };
-    project.set_overlay_order(vec![shape(1), shape(0)]);
     let green_on_top = render_frame(&constants, &mut layers, &project, resolution).await;
     assert!(close(green_on_top.at(0.5, 0.5), [0, 255, 0], 2));
-    project.set_overlay_order(vec![shape(0), shape(1)]);
+    if let Some(timeline) = project.timeline.as_mut() {
+        timeline.shape_segments[0].track = 0;
+        timeline.shape_segments[1].track = 1;
+    }
     let blue_on_top = render_frame(&constants, &mut layers, &project, resolution).await;
     assert!(close(blue_on_top.at(0.5, 0.5), [0, 0, 255], 2));
 
@@ -1173,7 +1171,11 @@ async fn shape_tracks_follow_the_saved_overlay_order() {
         (0.25, 0.25),
         (0.75, 0.75),
     )]);
-    mixed.set_overlay_order(vec![shape(0)]);
+    mixed.overlay_layer_version = 0;
+    mixed.set_overlay_order(vec![cap_project::OverlayTrack {
+        kind: cap_project::OverlayTrackKind::Shape,
+        track: 0,
+    }]);
     let mixed = render_frame(&constants, &mut layers, &mixed, resolution).await;
     assert_eq!(plain.pixels, mixed.pixels);
 }

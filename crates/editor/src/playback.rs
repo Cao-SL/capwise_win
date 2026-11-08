@@ -24,7 +24,7 @@ use tracing::{info, warn};
 
 use crate::{
     PreviewSpeed, PreviewSpeedHandle,
-    audio_output::{AudioOutput, PlaySpec},
+    audio_output::{AudioOutput, PlaySpec, PreparingAudioPlayTicket},
     editor,
     editor_instance::{SegmentMedia, cursor_timeline_settings},
     segments::get_audio_segments,
@@ -70,16 +70,127 @@ fn clip_audio_changed(previous: &ProjectConfiguration, next: &ProjectConfigurati
         )
     };
     match (&previous.timeline, &next.timeline) {
-        (Some(previous_timeline), Some(next_timeline)) => !previous_timeline
-            .segments
-            .iter()
-            .map(|segment| settings(previous, segment))
-            .eq(next_timeline
+        (Some(previous_timeline), Some(next_timeline)) => {
+            !previous_timeline
                 .segments
                 .iter()
-                .map(|segment| settings(next, segment))),
+                .map(|segment| settings(previous, segment))
+                .eq(next_timeline
+                    .segments
+                    .iter()
+                    .map(|segment| settings(next, segment)))
+                || music_audio_changed(
+                    &previous_timeline.audio_segments,
+                    &next_timeline.audio_segments,
+                )
+                || previous_timeline.hold_windows() != next_timeline.hold_windows()
+        }
         (None, None) => false,
         _ => true,
+    }
+}
+
+fn music_audio_changed(
+    previous: &[cap_project::AudioTrackSegment],
+    next: &[cap_project::AudioTrackSegment],
+) -> bool {
+    previous.len() != next.len()
+        || previous.iter().zip(next).any(|(before, after)| {
+            before.start != after.start
+                || before.end != after.end
+                || before.path != after.path
+                || before.enabled != after.enabled
+                || before.trim_start != after.trim_start
+                || before.volume_db != after.volume_db
+                || before.fade_in != after.fade_in
+                || before.fade_out != after.fade_out
+                || before.ducking != after.ducking
+        })
+}
+
+type MusicRequestKey = Vec<(String, (usize, usize))>;
+pub type PlaybackMusicLoader =
+    Arc<dyn Fn(&ProjectConfiguration) -> crate::MusicTracks + Send + Sync>;
+
+fn music_request_key(project: &ProjectConfiguration) -> MusicRequestKey {
+    let mut ranges = crate::music_track_ranges(project)
+        .into_iter()
+        .map(|(path, range)| (path.to_owned(), range))
+        .collect::<Vec<_>>();
+    ranges.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    ranges
+}
+
+fn music_covers_request(music: &crate::MusicTracks, key: &MusicRequestKey) -> bool {
+    key.iter().all(|(path, (start, end))| {
+        music
+            .get(path)
+            .is_some_and(|audio| audio.covers_source_range(*start, *end))
+    })
+}
+
+struct MusicReload {
+    key: MusicRequestKey,
+    result: std_mpsc::Receiver<crate::MusicTracks>,
+}
+
+#[derive(Default)]
+struct MusicStartup {
+    ticket: Option<PreparingAudioPlayTicket>,
+    requested: bool,
+}
+
+impl MusicStartup {
+    fn observe_project(
+        &mut self,
+        previous: &ProjectConfiguration,
+        next: &ProjectConfiguration,
+    ) -> bool {
+        let changed = previous.audio != next.audio || clip_audio_changed(previous, next);
+        if changed {
+            drop(self.ticket.take());
+            self.requested = true;
+        }
+        changed
+    }
+
+    fn start_if_ready(&mut self, output: &AudioOutput, spec: PlaySpec) {
+        if !self.requested || self.ticket.is_some() {
+            return;
+        }
+        let key = music_request_key(&spec.project);
+        if key.is_empty() {
+            self.requested = false;
+            return;
+        }
+        if !music_covers_request(&spec.music, &key) {
+            return;
+        }
+        self.ticket = Some(output.prepare_playback(spec));
+        self.requested = false;
+    }
+}
+
+impl MusicReload {
+    fn start(
+        project: ProjectConfiguration,
+        loader: PlaybackMusicLoader,
+        runtime: &tokio::runtime::Handle,
+    ) -> Self {
+        let key = music_request_key(&project);
+        let (sender, result) = std_mpsc::channel();
+        drop(runtime.spawn_blocking(move || {
+            let _ = sender.send(loader(&project));
+        }));
+        Self { key, result }
+    }
+
+    fn take_current(&self, current: &MusicRequestKey) -> Option<Option<crate::MusicTracks>> {
+        match self.result.try_recv() {
+            Ok(music) => Some((self.key == *current).then_some(music)),
+            Err(std_mpsc::TryRecvError::Empty) => None,
+            Err(std_mpsc::TryRecvError::Disconnected) => Some(None),
+        }
     }
 }
 
@@ -235,6 +346,7 @@ pub struct Playback {
     pub project: watch::Receiver<ProjectConfiguration>,
     pub segment_medias: Arc<Vec<SegmentMedia>>,
     pub music: crate::audio::MusicTracks,
+    pub music_loader: Option<PlaybackMusicLoader>,
     pub audio_output: Arc<AudioOutput>,
     pub telemetry: Option<PlaybackTelemetry>,
     pub preview_speed: PreviewSpeedHandle,
@@ -1465,6 +1577,14 @@ impl Playback {
             let mut clock_anchor_frame = playback_start_frame;
 
             let mut transitioned_audio = None;
+            let mut pending_music_audio = MusicStartup::default();
+            let initial_music_key = music_request_key(&cached_project);
+            let mut loaded_music_key = if music_covers_request(&self.music, &initial_music_key) {
+                initial_music_key
+            } else {
+                Vec::new()
+            };
+            let mut music_reload: Option<MusicReload> = None;
             let mut last_adopted_frame = None;
             'playback: loop {
                 if *stop_rx.borrow() {
@@ -1564,8 +1684,8 @@ impl Playback {
 
                 if self.project.has_changed().unwrap_or(false) {
                     let next_project = self.project.borrow_and_update().clone();
-                    let audio_changed = cached_project.audio != next_project.audio
-                        || clip_audio_changed(&cached_project, &next_project);
+                    let audio_changed =
+                        pending_music_audio.observe_project(&cached_project, &next_project);
                     let cursor_changed = cursor_timeline_settings(&cached_project.cursor)
                         != cursor_timeline_settings(&next_project.cursor);
                     let zoom_changed = !ZoomTransformTimeline::project_inputs_match(
@@ -1597,6 +1717,88 @@ impl Playback {
                     if zoom_changed {
                         zoom_timelines = build_zoom_timelines(&cached_project);
                         outgoing_zoom_timelines = build_outgoing_zoom_timelines(&cached_project);
+                    }
+                }
+
+                let required_music_key = music_request_key(&cached_project);
+                if let Some(result) = music_reload
+                    .as_ref()
+                    .and_then(|reload| reload.take_current(&required_music_key))
+                {
+                    if let Some(reload) = music_reload.take()
+                        && reload.key == required_music_key
+                    {
+                        loaded_music_key = required_music_key.clone();
+                    }
+                    if let Some(music) = result {
+                        self.music = music;
+                        if adopted.is_none() {
+                            let spec = PlaySpec {
+                                segments: audio_segments.clone(),
+                                music: self.music.clone(),
+                                project: (*cached_project).clone(),
+                                duration_secs: duration,
+                                start_playhead_secs: frame_number as f64 / fps_f64,
+                                playhead_rx: audio_playhead_rx.clone(),
+                                preview_speed: self.preview_speed.clone(),
+                            };
+                            if let Some(generation) = audio_generation {
+                                self.audio_output.refresh_playback(spec, generation);
+                            } else {
+                                pending_music_audio.requested = true;
+                            }
+                        }
+                    }
+                }
+                if music_reload.is_none()
+                    && loaded_music_key != required_music_key
+                    && let Some(loader) = &self.music_loader
+                {
+                    music_reload = Some(MusicReload::start(
+                        (*cached_project).clone(),
+                        loader.clone(),
+                        &runtime,
+                    ));
+                }
+
+                if adopted.is_none() && audio_generation.is_none() && pending_music_audio.requested
+                {
+                    pending_music_audio.start_if_ready(
+                        &self.audio_output,
+                        PlaySpec {
+                            segments: audio_segments.clone(),
+                            music: self.music.clone(),
+                            project: (*cached_project).clone(),
+                            duration_secs: duration,
+                            start_playhead_secs: frame_number as f64 / fps_f64,
+                            playhead_rx: audio_playhead_rx.clone(),
+                            preview_speed: self.preview_speed.clone(),
+                        },
+                    );
+                }
+
+                if let Some(ticket) = &pending_music_audio.ticket {
+                    let _ = audio_playhead_tx.send(frame_number as f64 / fps_f64);
+                    if let Some(started) = ticket.poll_started() {
+                        let ticket = pending_music_audio.ticket.take().unwrap();
+                        if started {
+                            let generation = ticket.generation();
+                            audio_generation = Some(generation);
+                            has_audio = true;
+                            self.audio_output.refresh_playback(
+                                PlaySpec {
+                                    segments: audio_segments.clone(),
+                                    music: self.music.clone(),
+                                    project: (*cached_project).clone(),
+                                    duration_secs: duration,
+                                    start_playhead_secs: frame_number as f64 / fps_f64,
+                                    playhead_rx: audio_playhead_rx.clone(),
+                                    preview_speed: self.preview_speed.clone(),
+                                },
+                                generation,
+                            );
+                            transitioned_audio = Some(ticket);
+                        }
                     }
                 }
 
@@ -2165,6 +2367,7 @@ impl Playback {
             }
 
             drop(transitioned_audio);
+            drop(pending_music_audio);
             stop_tx.send(true).ok();
 
             event_tx.send(PlaybackEvent::Stop).ok();
@@ -2330,6 +2533,257 @@ mod tests {
                 assert!(clip_audio_changed(&next, &project));
             }
         }
+    }
+
+    #[test]
+    fn music_ducking_changes_refresh_active_playback_and_ignore_audio_names() {
+        let original: ProjectConfiguration =
+            serde_json::from_value(serde_json::json!({"timeline": {
+                "segments": [{"start":0,"end":4,"timescale":1}], "zoomSegments": [],
+                "audioSegments": [{"start":0,"end":4,"path":"music.wav"}]
+            }}))
+            .unwrap();
+        let mut next = original.clone();
+        next.timeline.as_mut().unwrap().audio_segments[0].name = Some("New title".into());
+        assert!(!clip_audio_changed(&original, &next));
+        next.timeline.as_mut().unwrap().audio_segments[0].ducking = true;
+        assert!(clip_audio_changed(&original, &next));
+        assert!(clip_audio_changed(&next, &original));
+        next.timeline.as_mut().unwrap().audio_segments[0].ducking = false;
+        next.timeline.as_mut().unwrap().text_segments.push(
+            serde_json::from_value(serde_json::json!({
+                "start":1,"end":2,"layout":"fullscreen"
+            }))
+            .unwrap(),
+        );
+        assert!(clip_audio_changed(&original, &next));
+    }
+
+    #[test]
+    fn music_parameter_changes_refresh_playback_but_labels_and_lanes_do_not() {
+        let original: ProjectConfiguration =
+            serde_json::from_value(serde_json::json!({"timeline": {
+                "segments": [{"start":0,"end":4,"timescale":1}], "zoomSegments": [],
+                "audioSegments": [{"start":0,"end":4,"path":"music.wav","ducking":true}]
+            }}))
+            .unwrap();
+        let changes: [fn(&mut cap_project::AudioTrackSegment); 8] = [
+            |segment: &mut cap_project::AudioTrackSegment| segment.start = 0.5,
+            |segment: &mut cap_project::AudioTrackSegment| segment.end = 3.,
+            |segment: &mut cap_project::AudioTrackSegment| segment.trim_start = 0.5,
+            |segment: &mut cap_project::AudioTrackSegment| segment.volume_db = -9.,
+            |segment: &mut cap_project::AudioTrackSegment| segment.fade_in = 0.5,
+            |segment: &mut cap_project::AudioTrackSegment| segment.fade_out = 0.5,
+            |segment: &mut cap_project::AudioTrackSegment| segment.enabled = false,
+            |segment: &mut cap_project::AudioTrackSegment| segment.path = "other.wav".into(),
+        ];
+        for change in changes {
+            let mut changed = original.clone();
+            change(&mut changed.timeline.as_mut().unwrap().audio_segments[0]);
+            assert!(clip_audio_changed(&original, &changed));
+        }
+        let mut labels = original.clone();
+        let segment = &mut labels.timeline.as_mut().unwrap().audio_segments[0];
+        segment.track = 3;
+        segment.name = Some("Only a label".into());
+        assert!(!clip_audio_changed(&original, &labels));
+        labels.timeline.as_mut().unwrap().audio_segments.clear();
+        assert!(clip_audio_changed(&original, &labels));
+    }
+
+    #[test]
+    fn music_reload_discards_replaced_sources_and_detects_uncached_startup_music() {
+        let original: ProjectConfiguration =
+            serde_json::from_value(serde_json::json!({"timeline": {
+                "segments": [{"start":0,"end":4,"timescale":1}], "zoomSegments": [],
+                "audioSegments": [{"start":0,"end":4,"path":"a.wav"}]
+            }}))
+            .unwrap();
+        let old_key = music_request_key(&original);
+        let mut replacement = original.clone();
+        replacement.timeline.as_mut().unwrap().audio_segments[0].path = "b.wav".into();
+        let current_key = music_request_key(&replacement);
+        let old = crate::MusicTracks::from([(
+            "a.wav".into(),
+            Arc::new(cap_audio::AudioData::from_samples(vec![0.1; 4 * 48_000], 1)),
+        )]);
+        assert!(music_covers_request(&old, &old_key));
+        assert!(!music_covers_request(&old, &current_key));
+        let (sender, result) = std_mpsc::channel();
+        let pending = MusicReload {
+            key: old_key,
+            result,
+        };
+        assert!(pending.take_current(&current_key).is_none());
+        sender.send(old).unwrap();
+        assert!(matches!(pending.take_current(&current_key), Some(None)));
+        let fresh = crate::MusicTracks::from([(
+            "b.wav".into(),
+            Arc::new(cap_audio::AudioData::from_samples(vec![0.2; 4 * 48_000], 1)),
+        )]);
+        let (sender, result) = std_mpsc::channel();
+        sender.send(fresh).unwrap();
+        let pending = MusicReload {
+            key: current_key.clone(),
+            result,
+        };
+        let accepted = pending.take_current(&current_key).unwrap().unwrap();
+        assert!(music_covers_request(&accepted, &current_key));
+        assert_eq!(accepted["b.wav"].samples()[0], 0.2);
+        let prior_key = current_key;
+        replacement.timeline.as_mut().unwrap().audio_segments[0].trim_start = 2.;
+        assert_ne!(music_request_key(&replacement), prior_key);
+    }
+
+    #[test]
+    fn music_reload_failure_and_cancel_do_not_publish_a_result() {
+        let key = vec![("missing.wav".to_string(), (0, 48_000))];
+        let (sender, result) = std_mpsc::channel();
+        let failed = MusicReload {
+            key: key.clone(),
+            result,
+        };
+        drop(sender);
+        assert!(matches!(failed.take_current(&key), Some(None)));
+
+        let (sender, result) = std_mpsc::channel();
+        let cancelled = MusicReload { key, result };
+        drop(cancelled);
+        assert!(sender.send(crate::MusicTracks::new()).is_err());
+    }
+
+    fn music_startup_spec(path: &str, sample: f32) -> PlaySpec {
+        let project = serde_json::from_value(serde_json::json!({"timeline": {
+            "segments": [{"start": 0.0, "end": 4.0, "timescale": 1.0}],
+            "zoomSegments": [],
+            "audioSegments": [{"start": 0.0, "end": 4.0, "path": path}]
+        }}))
+        .unwrap();
+        PlaySpec {
+            segments: Vec::new(),
+            music: crate::MusicTracks::from([(
+                path.into(),
+                Arc::new(cap_audio::AudioData::from_samples(
+                    vec![sample; 4 * 48_000],
+                    1,
+                )),
+            )]),
+            project,
+            duration_secs: 4.0,
+            start_playhead_secs: 0.0,
+            playhead_rx: watch::channel(0.0).1,
+            preview_speed: PreviewSpeedHandle::default(),
+        }
+    }
+
+    fn gated_music_output() -> (
+        AudioOutput,
+        std_mpsc::Sender<()>,
+        std_mpsc::Receiver<(f32, f32)>,
+    ) {
+        let (entered_tx, entered_rx) = std_mpsc::channel();
+        let (release_tx, release_rx) = std_mpsc::channel();
+        let (samples_tx, samples_rx) = std_mpsc::channel();
+        let mut first = true;
+        let output = AudioOutput::new_headless(Box::new(move |samples, _| {
+            if first {
+                first = false;
+                let _ = entered_tx.send(());
+                let _ = release_rx.recv();
+            }
+            let extrema = samples
+                .iter()
+                .fold((0.0_f32, 0.0_f32), |(low, high), sample| {
+                    (low.min(*sample), high.max(*sample))
+                });
+            let _ = samples_tx.send(extrema);
+        }));
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        (output, release_tx, samples_rx)
+    }
+
+    #[test]
+    fn music_startup_removed_or_muted_before_first_callback_never_becomes_audible() {
+        for remove in [true, false] {
+            let (output, release, samples) = gated_music_output();
+            let spec = music_startup_spec("music.wav", 0.25);
+            let previous = spec.project.clone();
+            let mut startup = MusicStartup {
+                requested: true,
+                ..Default::default()
+            };
+            startup.start_if_ready(&output, spec);
+            assert!(startup.ticket.is_some());
+            std::thread::sleep(Duration::from_millis(100));
+            assert_eq!(startup.ticket.as_ref().unwrap().poll_started(), None);
+            let mut latest = music_startup_spec("music.wav", 0.25);
+            if remove {
+                latest
+                    .project
+                    .timeline
+                    .as_mut()
+                    .unwrap()
+                    .audio_segments
+                    .clear();
+            } else {
+                latest.project.timeline.as_mut().unwrap().audio_segments[0].volume_db = -120.0;
+            }
+            assert!(startup.observe_project(&previous, &latest.project));
+            assert!(startup.ticket.is_none());
+            startup.start_if_ready(&output, latest);
+            assert!(startup.ticket.is_none());
+            assert!(!startup.requested);
+            release.send(()).unwrap();
+            for _ in 0..30 {
+                assert_eq!(
+                    samples.recv_timeout(Duration::from_secs(2)).unwrap(),
+                    (0.0, 0.0)
+                );
+            }
+            output.shutdown();
+        }
+    }
+
+    #[test]
+    fn music_startup_replacement_waits_for_current_samples_and_only_plays_the_new_source() {
+        let (output, release, samples) = gated_music_output();
+        let old = music_startup_spec("old.wav", 0.25);
+        let previous = old.project.clone();
+        let old_music = old.music.clone();
+        let mut startup = MusicStartup {
+            requested: true,
+            ..Default::default()
+        };
+        startup.start_if_ready(&output, old);
+        let ready = music_startup_spec("new.wav", -0.4);
+        assert!(startup.observe_project(&previous, &ready.project));
+        assert!(startup.ticket.is_none());
+        let mut not_ready = music_startup_spec("new.wav", -0.4);
+        not_ready.music = old_music;
+        startup.start_if_ready(&output, not_ready);
+        assert!(startup.ticket.is_none());
+        assert!(startup.requested);
+        startup.start_if_ready(&output, ready);
+        assert!(startup.ticket.is_some());
+        release.send(()).unwrap();
+        let mut heard_new = false;
+        for _ in 0..120 {
+            let (low, high) = samples.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert!(
+                high <= 0.00001,
+                "The superseded positive-valued source was audible"
+            );
+            if low < -0.1 {
+                heard_new = true;
+                break;
+            }
+        }
+        assert!(
+            heard_new,
+            "The current music never reached the production headless sink"
+        );
+        assert_eq!(startup.ticket.as_ref().unwrap().poll_started(), Some(true));
+        output.shutdown();
     }
 
     #[test]

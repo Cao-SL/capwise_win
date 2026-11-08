@@ -752,46 +752,89 @@ fn set_mode(mode: Mode, cx: &mut App) {
     mode_changed(mode, cx);
 }
 
-/// `handle_previous_item_click`.
-pub(crate) fn open_previous_item(path: PathBuf, cx: &mut App) {
+#[derive(Debug, PartialEq, Eq)]
+enum OpenItem {
+    Screenshot,
+    Studio,
+    InstantLink(String),
+    InstantVideo(PathBuf),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum OpenItemError {
+    Unsupported,
+    Missing,
+    Unreadable,
+    InstantVideoMissing,
+}
+
+impl OpenItemError {
+    fn message(&self) -> &'static str {
+        match self {
+            Self::Unsupported => tr::menu::file::open_unsupported(),
+            Self::Missing => tr::menu::file::open_missing(),
+            Self::Unreadable => tr::menu::file::open_unreadable(),
+            Self::InstantVideoMissing => tr::menu::file::open_instant_missing(),
+        }
+    }
+}
+
+fn read_open_item(path: &Path) -> Result<OpenItem, OpenItemError> {
     use cap_project::{RecordingMeta, RecordingMetaInner};
 
-    let screenshots_dir = library::screenshots_dir();
-    let is_screenshot = (path.extension().and_then(|ext| ext.to_str()) == Some("cap")
-        && path
-            .parent()
-            .map(|parent| parent == screenshots_dir)
-            .unwrap_or(false))
-        || library::is_screenshot_bundle(&path);
-
-    if is_screenshot {
-        app_windows::open_screenshot_editor(path, cx);
-        cx.activate(true);
-        return;
-    }
-
-    let meta = match RecordingMeta::load_for_project(&path) {
-        Ok(meta) => meta,
-        Err(error) => {
-            tracing::error!("Failed to load recording meta for previous item: {error}");
-            return;
+    let metadata = std::fs::metadata(path).map_err(|error| {
+        tracing::error!(path = %path.display(), %error, "Could not inspect project");
+        if error.kind() == std::io::ErrorKind::NotFound {
+            OpenItemError::Missing
+        } else {
+            OpenItemError::Unreadable
         }
-    };
+    })?;
+    if !metadata.is_dir() {
+        return Err(OpenItemError::Unsupported);
+    }
+    if library::is_screenshot_bundle(path) {
+        return Ok(OpenItem::Screenshot);
+    }
+    let meta = RecordingMeta::load_for_project(path).map_err(|error| {
+        tracing::error!(path = %path.display(), %error, "Could not read recording metadata");
+        OpenItemError::Unreadable
+    })?;
+    match meta.inner {
+        RecordingMetaInner::Studio(_) => Ok(OpenItem::Studio),
+        RecordingMetaInner::Instant(_) => {
+            if let Some(sharing) = meta.sharing {
+                Ok(OpenItem::InstantLink(sharing.link))
+            } else {
+                let mp4 = path.join("content/output.mp4");
+                if mp4.is_file() {
+                    Ok(OpenItem::InstantVideo(mp4))
+                } else {
+                    Err(OpenItemError::InstantVideoMissing)
+                }
+            }
+        }
+    }
+}
 
-    match &meta.inner {
-        RecordingMetaInner::Studio(_) => {
+pub(crate) fn open_previous_item(path: PathBuf, cx: &mut App) {
+    match read_open_item(&path) {
+        Ok(OpenItem::Screenshot) => {
+            app_windows::open_screenshot_editor(path, cx);
+            cx.activate(true);
+        }
+        Ok(OpenItem::Studio) => {
             app_windows::open_editor(path, cx);
             cx.activate(true);
         }
-        RecordingMetaInner::Instant(_) => {
-            if let Some(sharing) = &meta.sharing {
-                cx.open_url(&sharing.link);
-            } else {
-                let mp4 = path.join("content/output.mp4");
-                if mp4.exists() {
-                    library::open_with_system(&mp4, cx);
-                }
-            }
+        Ok(OpenItem::InstantLink(link)) => cx.open_url(&link),
+        Ok(OpenItem::InstantVideo(mp4)) => library::open_with_system(&mp4, cx),
+        Err(error) => {
+            tracing::error!(path = %path.display(), ?error, "Project could not be opened");
+            cx.spawn(async move |_| {
+                crate::platform::alert_dialog(tr::menu::file::open_failed_title(), error.message());
+            })
+            .detach();
         }
     }
 }
@@ -1897,6 +1940,104 @@ fn _global_bound<T: Global>() {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_item_rejects_non_project_files_without_changing_them() {
+        let root = tempfile::tempdir().unwrap();
+        for extension in ["mp4", "png", "txt", "cap"] {
+            let path = root.path().join(format!("selected.{extension}"));
+            let original = b"not a project";
+            std::fs::write(&path, original).unwrap();
+            assert_eq!(read_open_item(&path), Err(OpenItemError::Unsupported));
+            assert_eq!(std::fs::read(&path).unwrap(), original);
+        }
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 4);
+    }
+
+    #[test]
+    fn open_item_reports_missing_corrupt_and_unreadable_projects() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("unavailable.cap");
+        assert_eq!(read_open_item(&path), Err(OpenItemError::Missing));
+        std::fs::create_dir(&path).unwrap();
+        assert_eq!(read_open_item(&path), Err(OpenItemError::Unreadable));
+        let metadata = path.join("recording-meta.json");
+        std::fs::write(&metadata, b"{broken").unwrap();
+        assert_eq!(read_open_item(&path), Err(OpenItemError::Unreadable));
+        assert_eq!(std::fs::read(&metadata).unwrap(), b"{broken");
+        std::fs::remove_file(&metadata).unwrap();
+        std::fs::create_dir(&metadata).unwrap();
+        assert_eq!(read_open_item(&path), Err(OpenItemError::Unreadable));
+        assert!(metadata.is_dir());
+    }
+
+    #[test]
+    fn open_item_accepts_studio_bundles_and_legacy_directories() {
+        let root = tempfile::tempdir().unwrap();
+        for name in ["录制.cap", "legacy-recording"] {
+            let path = root.path().join(name);
+            std::fs::create_dir(&path).unwrap();
+            for meta in [
+                r#"{"pretty_name":"Legacy","display":{"path":"content/display.mp4"}}"#,
+                r#"{"pretty_name":"Studio","segments":[],"status":{"status":"Complete"}}"#,
+            ] {
+                let metadata = path.join("recording-meta.json");
+                std::fs::write(&metadata, meta).unwrap();
+                assert_eq!(read_open_item(&path), Ok(OpenItem::Studio));
+                assert_eq!(std::fs::read_to_string(&metadata).unwrap(), meta);
+            }
+        }
+    }
+
+    #[test]
+    fn open_item_preserves_screenshot_bundles() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("截图.cap");
+        std::fs::create_dir(&path).unwrap();
+        let original = path.join("original.png");
+        image::RgbaImage::new(2, 2).save(&original).unwrap();
+        assert_eq!(read_open_item(&path), Ok(OpenItem::Screenshot));
+        assert!(!path.join("recording-meta.json").exists());
+        std::fs::remove_file(original).unwrap();
+        assert_eq!(read_open_item(&path), Err(OpenItemError::Unreadable));
+    }
+
+    #[test]
+    fn open_item_handles_instant_link_local_video_and_missing_video() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("instant.cap");
+        std::fs::create_dir(&path).unwrap();
+        let metadata = path.join("recording-meta.json");
+        std::fs::write(&metadata, r#"{"pretty_name":"Instant","fps":30}"#).unwrap();
+        assert_eq!(
+            read_open_item(&path),
+            Err(OpenItemError::InstantVideoMissing)
+        );
+        let output = path.join("content/output.mp4");
+        std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+        std::fs::write(&output, b"routing fixture").unwrap();
+        assert_eq!(
+            read_open_item(&path),
+            Ok(OpenItem::InstantVideo(output.clone()))
+        );
+        std::fs::remove_file(&output).unwrap();
+        std::fs::create_dir(&output).unwrap();
+        assert_eq!(
+            read_open_item(&path),
+            Err(OpenItemError::InstantVideoMissing)
+        );
+        std::fs::write(
+            &metadata,
+            r#"{"pretty_name":"Shared","fps":30,"sharing":{"id":"fixture","link":"https://example.com/recording"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_open_item(&path),
+            Ok(OpenItem::InstantLink(
+                "https://example.com/recording".into()
+            ))
+        );
+    }
 
     #[test]
     fn titles_truncate_at_thirty_characters() {

@@ -16,7 +16,8 @@ use cap_export::settings::ExportSettings;
 use cap_export::{ExporterBase, make_cursor_only_project};
 use cap_project::{BackgroundSource, RecordingMeta, XY};
 use cap_utils::export_resources::{
-    DiskBudget, ExportResources, estimated_working_bytes, is_resource_stop,
+    DiskBudget, ExportResources, ResourceMessage, estimated_working_bytes, is_resource_stop,
+    resource_error_message,
 };
 use gpui::{
     Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseDownEvent, MouseMoveEvent,
@@ -163,6 +164,7 @@ impl ExportResolution {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportPhase {
     Idle,
+    WaitingCaptions,
     ChoosingFile,
     Starting,
     Rendering,
@@ -176,7 +178,12 @@ impl ExportPhase {
     pub(crate) fn is_busy(self) -> bool {
         matches!(
             self,
-            Self::ChoosingFile | Self::Starting | Self::Rendering | Self::Copying | Self::Uploading
+            Self::WaitingCaptions
+                | Self::ChoosingFile
+                | Self::Starting
+                | Self::Rendering
+                | Self::Copying
+                | Self::Uploading
         )
     }
 
@@ -190,6 +197,78 @@ pub struct PreviewStats {
     pub height: u32,
     pub total_frames: u32,
     pub estimated_size_mb: f64,
+}
+
+struct CaptionExportWait {
+    attempt: Arc<()>,
+    project_path: PathBuf,
+    advanced: std::collections::HashSet<String>,
+    message: String,
+    active: bool,
+    task: Option<gpui::Task<()>>,
+}
+
+impl CaptionExportWait {
+    fn new(project_path: PathBuf) -> Self {
+        Self {
+            attempt: Arc::new(()),
+            project_path,
+            advanced: Default::default(),
+            message: String::new(),
+            active: false,
+            task: None,
+        }
+    }
+
+    fn matches(&self, attempt: &Arc<()>, path: &Path) -> bool {
+        Arc::ptr_eq(&self.attempt, attempt) && self.project_path == path
+    }
+
+    fn advance_once(&mut self, checkpoint: String) -> bool {
+        self.advanced.insert(checkpoint)
+    }
+}
+
+struct PreparedExport {
+    project: cap_project::ProjectConfiguration,
+    guard: Arc<ExportSnapshotGuard>,
+}
+
+impl PreparedExport {
+    fn after_save(
+        path: &Path,
+        project: &cap_project::ProjectConfiguration,
+        current: bool,
+        saved: Result<(), String>,
+    ) -> Result<Self, String> {
+        saved?;
+        let value = if current {
+            None
+        } else {
+            Some(serde_json::to_value(project).map_err(|error| error.to_string())?)
+        };
+        Ok(Self {
+            project: project.clone(),
+            guard: Arc::new(ExportSnapshotGuard {
+                project_path: path.to_path_buf(),
+                project: value,
+            }),
+        })
+    }
+}
+
+struct ExportSnapshotGuard {
+    project_path: PathBuf,
+    project: Option<serde_json::Value>,
+}
+
+impl ExportSnapshotGuard {
+    fn matches(&self, path: &Path, project: &cap_project::ProjectConfiguration) -> bool {
+        self.project_path == path
+            && self.project.as_ref().is_none_or(|snapshot| {
+                serde_json::to_value(project).is_ok_and(|current| current == *snapshot)
+            })
+    }
 }
 
 pub struct ExportUi {
@@ -213,6 +292,7 @@ pub struct ExportUi {
     estimate_loading: bool,
     estimate_cancel: Arc<AtomicBool>,
     pub phase: ExportPhase,
+    caption_wait: Option<CaptionExportWait>,
     close_requested: bool,
     pub rendered: u32,
     pub total_frames: u32,
@@ -245,6 +325,46 @@ const BPP_MAX: f32 = 0.5;
 const BPP_STEP: f32 = 0.01;
 
 impl ExportUi {
+    fn cancel_caption_wait(&mut self) -> bool {
+        let cancelled = self.caption_wait.take().is_some();
+        if cancelled && self.phase == ExportPhase::WaitingCaptions {
+            self.phase = ExportPhase::Idle;
+        }
+        cancelled
+    }
+
+    fn matches_attempt(&self, attempt: &Arc<AtomicBool>) -> bool {
+        Arc::ptr_eq(&self.cancel, attempt)
+    }
+
+    fn accepts_result(&self, attempt: &Arc<AtomicBool>) -> bool {
+        self.matches_attempt(attempt) && !self.close_requested && !attempt.load(Ordering::Acquire)
+    }
+
+    fn begin_upload(&mut self, attempt: &Arc<AtomicBool>, path: PathBuf) -> bool {
+        if !self.matches_attempt(attempt) {
+            return false;
+        }
+        if !self.accepts_result(attempt) {
+            self.phase = ExportPhase::Idle;
+            return false;
+        }
+        self.phase = ExportPhase::Uploading;
+        self.output_path = Some(path);
+        self.upload_progress = 0.0;
+        true
+    }
+
+    fn complete_file_export(&mut self, path: PathBuf, notify: impl FnOnce()) {
+        self.output_path = Some(path);
+        if self.close_requested || self.cancel.load(Ordering::Acquire) {
+            self.phase = ExportPhase::Idle;
+            return;
+        }
+        self.phase = ExportPhase::Done;
+        notify();
+    }
+
     fn pick_default_organization(&mut self) {
         let organizations = store::auth_snapshot().organizations;
         if self
@@ -305,6 +425,7 @@ impl ExportUi {
             estimate_loading: false,
             estimate_cancel: Arc::new(AtomicBool::new(false)),
             phase: ExportPhase::Idle,
+            caption_wait: None,
             close_requested: false,
             rendered: 0,
             total_frames: 0,
@@ -594,6 +715,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn close_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_caption_export_wait(cx);
         if let Some(ui) = self.export.as_mut() {
             if ui.phase.is_busy() {
                 ui.close_requested = true;
@@ -829,7 +951,194 @@ impl EditorWindow {
         }));
     }
 
+    pub(crate) fn cancel_caption_export_wait(&mut self, cx: &mut Context<Self>) {
+        if let Some(ui) = self.export.as_mut()
+            && ui.cancel_caption_wait()
+        {
+            cx.notify();
+        }
+    }
+
     pub(crate) fn start_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.project_ready() {
+            return;
+        }
+        let Some(ui) = self.export.as_mut() else {
+            return;
+        };
+        if ui.phase.is_busy() || ui.close_requested {
+            return;
+        }
+        if ui.destination == ExportDestination::Link {
+            let sign_in = SignIn::global(cx);
+            if sign_in.read(cx).is_pending() {
+                sign_in.update(cx, |sign_in, cx| sign_in.cancel(cx));
+                return;
+            }
+            if ui.auth_rejected || !store::auth_snapshot().signed_in() {
+                sign_in.update(cx, |sign_in, cx| sign_in.start(SignInOrigin::Editor, cx));
+                return;
+            }
+        }
+        let wait = CaptionExportWait::new(self.project_path.clone());
+        let attempt = wait.attempt.clone();
+        ui.caption_wait = Some(wait);
+        ui.phase = ExportPhase::WaitingCaptions;
+        ui.error = None;
+        if self.advance_export_wait(&attempt, window, cx) {
+            let token = attempt.clone();
+            let task = cx.spawn_in(window, async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(200))
+                        .await;
+                    if !this
+                        .update_in(cx, |this, window, cx| {
+                            this.advance_export_wait(&token, window, cx)
+                        })
+                        .unwrap_or(false)
+                    {
+                        break;
+                    }
+                }
+            });
+            if let Some(wait) = self.export.as_mut().and_then(|ui| ui.caption_wait.as_mut())
+                && Arc::ptr_eq(&wait.attempt, &attempt)
+            {
+                wait.task = Some(task);
+            }
+        }
+    }
+
+    fn export_wait_matches(&self, attempt: &Arc<()>) -> bool {
+        self.export.as_ref().is_some_and(|ui| {
+            !ui.close_requested
+                && ui.phase == ExportPhase::WaitingCaptions
+                && ui
+                    .caption_wait
+                    .as_ref()
+                    .is_some_and(|wait| wait.matches(attempt, &self.project_path))
+        })
+    }
+
+    fn block_export_wait(&mut self, message: String, cx: &mut Context<Self>) {
+        if let Some(wait) = self.export.as_mut().and_then(|ui| ui.caption_wait.as_mut()) {
+            wait.message = message;
+            wait.active = false;
+            wait.task = None;
+        }
+        cx.notify();
+    }
+
+    fn advance_export_wait(
+        &mut self,
+        attempt: &Arc<()>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        use crate::caption_review::CaptionExportReadiness;
+        if !self.export_wait_matches(attempt) {
+            return false;
+        }
+        for _ in 0..8 {
+            let cursor_only = self.export.as_ref().is_some_and(|ui| ui.cursor_only);
+            let state = if cursor_only {
+                CaptionExportReadiness::Ready
+            } else {
+                self.caption_export_readiness()
+            };
+            match state {
+                CaptionExportReadiness::Ready => {
+                    if let Err(error) = self.flush_pending_saves(cx) {
+                        self.block_export_wait(error, cx);
+                        return false;
+                    }
+                    if !cursor_only
+                        && self.caption_export_readiness() != CaptionExportReadiness::Ready
+                    {
+                        continue;
+                    }
+                    self.prepare_caption_export(attempt, false, window, cx);
+                    return false;
+                }
+                CaptionExportReadiness::Active(stage) => {
+                    if let Some(wait) = self.export.as_mut().and_then(|ui| ui.caption_wait.as_mut())
+                    {
+                        wait.message = stage.label().into();
+                        wait.active = true;
+                    }
+                    cx.notify();
+                    return true;
+                }
+                CaptionExportReadiness::Blocked(error) => {
+                    self.block_export_wait(error, cx);
+                    return false;
+                }
+                CaptionExportReadiness::Advance { step, checkpoint } => {
+                    let advanced = self
+                        .export
+                        .as_mut()
+                        .and_then(|ui| ui.caption_wait.as_mut())
+                        .is_some_and(|wait| wait.advance_once(checkpoint));
+                    if !advanced {
+                        break;
+                    }
+                    if let Err(error) = self.advance_caption_export(step, window, cx) {
+                        self.block_export_wait(error, cx);
+                        return false;
+                    }
+                    if !self.export_wait_matches(attempt) {
+                        return false;
+                    }
+                }
+            }
+        }
+        self.block_export_wait(tr::editor::export::captions::not_started().into(), cx);
+        false
+    }
+
+    fn export_current_captions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(attempt) = self
+            .export
+            .as_ref()
+            .and_then(|ui| ui.caption_wait.as_ref())
+            .map(|wait| wait.attempt.clone())
+        else {
+            return;
+        };
+        self.prepare_caption_export(&attempt, true, window, cx);
+    }
+
+    fn prepare_caption_export(
+        &mut self,
+        attempt: &Arc<()>,
+        current: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.export_wait_matches(attempt) {
+            return;
+        }
+        let current = current || self.export.as_ref().is_some_and(|ui| ui.cursor_only);
+        let saved = self.flush_pending_saves(cx);
+        let prepared =
+            match PreparedExport::after_save(&self.project_path, &self.project, current, saved) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    self.block_export_wait(error, cx);
+                    return;
+                }
+            };
+        self.cancel_caption_export_wait(cx);
+        self.start_prepared_export(prepared, window, cx);
+    }
+
+    fn start_prepared_export(
+        &mut self,
+        prepared: PreparedExport,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let pretty_name = self
             .summary()
             .map(|summary| summary.pretty_name.clone())
@@ -852,7 +1161,7 @@ impl EditorWindow {
                 sign_in.update(cx, |sign_in, cx| sign_in.start(SignInOrigin::Editor, cx));
                 return;
             }
-            self.start_link_export(window, cx);
+            self.start_link_export(prepared, window, cx);
             return;
         }
 
@@ -878,7 +1187,8 @@ impl EditorWindow {
         let turbo = ui.turbo;
         let force = ui.force_ffmpeg;
         let project_path = self.project_path.clone();
-        let project = self.project.clone();
+        let project = prepared.project;
+        let guard = prepared.guard;
         ui.cancel = Arc::new(AtomicBool::new(false));
         let cancel = ui.cancel.clone();
         ui.phase = if destination == ExportDestination::File {
@@ -941,11 +1251,11 @@ impl EditorWindow {
             };
 
             let output = save_path.clone().unwrap_or_else(|| project_path.join("output"));
-            let resources = ExportResources::new(vec![DiskBudget {
+            let resources = ExportResources::new_with_messages(vec![DiskBudget {
                 path: output,
-                description: "your export drive",
+                description: tr::editor::export::resource_detail::export_drive(),
                 estimated_bytes: estimate,
-            }]);
+            }], tr::editor::export::resource_detail::system_drive(), format_export_resource_message);
             if !confirm_export_resources(&this, cx, &resources, &cancel).await {
                 let _ = this.update_in(cx, |this, window, cx| this.finish_requested_export_close(window, cx));
                 return;
@@ -955,11 +1265,15 @@ impl EditorWindow {
                 let Some(ui) = this.export.as_mut() else {
                     return false;
                 };
-                if !Arc::ptr_eq(&ui.cancel, &cancel) {
+                if !Arc::ptr_eq(&ui.cancel, &cancel) { return false; }
+                if cancel.load(Ordering::Relaxed) || ui.close_requested {
+                    ui.phase = ExportPhase::Idle;
+                    cx.notify();
                     return false;
                 }
-                if cancel.load(Ordering::Relaxed) {
-                    ui.phase = ExportPhase::Idle;
+                if !guard.matches(&this.project_path, &this.project) {
+                    ui.phase = ExportPhase::Failed;
+                    ui.error = Some(tr::editor::export::captions::project_changed().into());
                     cx.notify();
                     return false;
                 }
@@ -1005,7 +1319,10 @@ impl EditorWindow {
                 }
                 if let Some((rendered, total)) = latest {
                     let _ = this.update(cx, |this, cx| {
-                        if let Some(ui) = this.export.as_mut() {
+                        if let Some(ui) = this.export.as_mut()
+                            && ui.matches_attempt(&cancel)
+                        {
+                            if !ui.accepts_result(&cancel) { return; }
                             ui.rendered = rendered;
                             ui.total_frames = total;
                             ui.phase = ExportPhase::Rendering;
@@ -1026,7 +1343,9 @@ impl EditorWindow {
                     tracing::info!(path = %path.display(), "editor export completed");
                     if destination == ExportDestination::Clipboard {
                         let _ = this.update(cx, |this, cx| {
-                            if let Some(ui) = this.export.as_mut() {
+                            if let Some(ui) = this.export.as_mut()
+                            && ui.matches_attempt(&cancel)
+                        {
                                 ui.copy_completed_export(path, |path| {
                                     let result = platform::copy_file_to_clipboard(path, cx);
                                     crate::app_sounds::play_notification();
@@ -1036,13 +1355,13 @@ impl EditorWindow {
                             cx.notify();
                         });
                     } else {
-                        if notify_file_save {
-                            crate::app_sounds::play_notification();
-                        }
                         let _ = this.update(cx, |this, cx| {
-                            if let Some(ui) = this.export.as_mut() {
-                                ui.phase = ExportPhase::Done;
-                                ui.output_path = Some(path);
+                            if let Some(ui) = this.export.as_mut()
+                            && ui.matches_attempt(&cancel)
+                        {
+                                ui.complete_file_export(path, || {
+                                    if notify_file_save { crate::app_sounds::play_notification(); }
+                                });
                             }
                             cx.notify();
                         });
@@ -1052,12 +1371,14 @@ impl EditorWindow {
                     tracing::error!(error, "editor export failed");
                     let cancelled = !is_resource_stop(&error) && (error == "Export cancelled" || cancel.load(Ordering::Relaxed));
                     let _ = this.update(cx, |this, cx| {
-                        if let Some(ui) = this.export.as_mut() {
+                        if let Some(ui) = this.export.as_mut()
+                            && ui.matches_attempt(&cancel)
+                        {
                             if cancelled {
                                 ui.phase = ExportPhase::Idle;
                             } else {
                                 ui.phase = ExportPhase::Failed;
-                                ui.error = Some(error);
+                                ui.error = Some(resource_error_message(&error).to_string());
                             }
                         }
                         cx.notify();
@@ -1066,7 +1387,9 @@ impl EditorWindow {
                 Err(error) => {
                     tracing::error!(%error, "editor export task ended without a result");
                     let _ = this.update(cx, |this, cx| {
-                        if let Some(ui) = this.export.as_mut() {
+                        if let Some(ui) = this.export.as_mut()
+                            && ui.matches_attempt(&cancel)
+                        {
                             ui.phase = ExportPhase::Failed;
                             ui.error = Some(tr::editor::export::task_failed().into());
                         }
@@ -1132,7 +1455,12 @@ impl EditorWindow {
         }
     }
 
-    fn start_link_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn start_link_export(
+        &mut self,
+        prepared: PreparedExport,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let duration = self.total_duration();
         let Some(ui) = self.export.as_mut() else {
             return;
@@ -1168,7 +1496,8 @@ impl EditorWindow {
         let turbo = ui.turbo;
         let force = ui.force_ffmpeg;
         let project_path = self.project_path.clone();
-        let project = self.project.clone();
+        let project = prepared.project;
+        let guard = prepared.guard;
         let organization_id = ui.organization_id.clone().or_else(|| {
             store::auth_snapshot()
                 .organizations
@@ -1196,13 +1525,17 @@ impl EditorWindow {
                 let _ = std::fs::create_dir_all(parent);
             }
 
-            let resources = ExportResources::new(vec![DiskBudget {
-                path: save_path
-                    .clone()
-                    .unwrap_or_else(|| project_path.join("output")),
-                description: "your recording drive",
-                estimated_bytes: estimate,
-            }]);
+            let resources = ExportResources::new_with_messages(
+                vec![DiskBudget {
+                    path: save_path
+                        .clone()
+                        .unwrap_or_else(|| project_path.join("output")),
+                    description: tr::editor::export::resource_detail::recording_drive(),
+                    estimated_bytes: estimate,
+                }],
+                tr::editor::export::resource_detail::system_drive(),
+                format_export_resource_message,
+            );
             if !confirm_export_resources(&this, cx, &resources, &cancel).await {
                 let _ = this.update_in(cx, |this, window, cx| {
                     this.finish_requested_export_close(window, cx)
@@ -1210,12 +1543,36 @@ impl EditorWindow {
                 return;
             }
 
-            let _ = this.update(cx, |this, cx| {
-                if let Some(ui) = this.export.as_mut() {
+            let started = this
+                .update(cx, |this, cx| {
+                    let Some(ui) = this.export.as_mut() else {
+                        return false;
+                    };
+                    if !Arc::ptr_eq(&ui.cancel, &cancel) {
+                        return false;
+                    }
+                    if cancel.load(Ordering::Relaxed) || ui.close_requested {
+                        ui.phase = ExportPhase::Idle;
+                        cx.notify();
+                        return false;
+                    }
+                    if !guard.matches(&this.project_path, &this.project) {
+                        ui.phase = ExportPhase::Failed;
+                        ui.error = Some(tr::editor::export::captions::project_changed().into());
+                        cx.notify();
+                        return false;
+                    }
                     ui.phase = ExportPhase::Rendering;
-                }
-                cx.notify();
-            });
+                    cx.notify();
+                    true
+                })
+                .unwrap_or(false);
+            if !started {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.finish_requested_export_close(window, cx)
+                });
+                return;
+            }
 
             let (progress_tx, progress_rx) = flume::unbounded::<(u32, u32)>();
             let export_cancel = cancel.clone();
@@ -1253,7 +1610,12 @@ impl EditorWindow {
                 }
                 if let Some((rendered, total)) = latest {
                     let _ = this.update(cx, |this, cx| {
-                        if let Some(ui) = this.export.as_mut() {
+                        if let Some(ui) = this.export.as_mut()
+                            && ui.matches_attempt(&cancel)
+                        {
+                            if !ui.accepts_result(&cancel) {
+                                return;
+                            }
                             ui.rendered = rendered;
                             ui.total_frames = total;
                             ui.phase = ExportPhase::Rendering;
@@ -1271,14 +1633,22 @@ impl EditorWindow {
 
             match export.await {
                 Ok(Ok(path)) => {
-                    let _ = this.update(cx, |this, cx| {
-                        if let Some(ui) = this.export.as_mut() {
-                            ui.phase = ExportPhase::Uploading;
-                            ui.output_path = Some(path);
-                            ui.upload_progress = 0.0;
-                        }
-                        cx.notify();
-                    });
+                    let upload_allowed = this
+                        .update(cx, |this, cx| {
+                            let allowed = this
+                                .export
+                                .as_mut()
+                                .is_some_and(|ui| ui.begin_upload(&cancel, path));
+                            cx.notify();
+                            allowed
+                        })
+                        .unwrap_or(false);
+                    if !upload_allowed {
+                        let _ = this.update_in(cx, |this, window, cx| {
+                            this.finish_requested_export_close(window, cx)
+                        });
+                        return;
+                    }
 
                     let (upload_tx, upload_rx) = flume::unbounded::<f64>();
                     let upload_cancel = cancel.clone();
@@ -1302,7 +1672,12 @@ impl EditorWindow {
                         }
                         if let Some(progress) = latest {
                             let _ = this.update(cx, |this, cx| {
-                                if let Some(ui) = this.export.as_mut() {
+                                if let Some(ui) = this.export.as_mut()
+                                    && ui.matches_attempt(&cancel)
+                                {
+                                    if !ui.accepts_result(&cancel) {
+                                        return;
+                                    }
                                     ui.upload_progress = progress as f32;
                                     ui.phase = ExportPhase::Uploading;
                                 }
@@ -1320,12 +1695,21 @@ impl EditorWindow {
                     match upload.await {
                         Ok(Ok(crate::upload::UploadResult::Success(link))) => {
                             let _ = this.update(cx, |this, cx| {
+                                if !this
+                                    .export
+                                    .as_ref()
+                                    .is_some_and(|ui| ui.matches_attempt(&cancel))
+                                {
+                                    return;
+                                }
                                 if let Ok(meta) =
                                     RecordingMeta::load_for_project(&this.project_path)
                                 {
                                     this.sharing = meta.sharing;
                                 }
-                                if let Some(ui) = this.export.as_mut() {
+                                if let Some(ui) = this.export.as_mut()
+                                    && ui.matches_attempt(&cancel)
+                                {
                                     ui.complete_share_export(link, |link| {
                                         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
                                             link,
@@ -1338,42 +1722,55 @@ impl EditorWindow {
                         }
                         Ok(Ok(crate::upload::UploadResult::NotAuthenticated)) => {
                             let _ = this.update(cx, |this, _| {
-                                if let Some(ui) = this.export.as_mut() {
+                                if let Some(ui) = this.export.as_mut()
+                                    && ui.matches_attempt(&cancel)
+                                {
                                     ui.auth_rejected = true;
                                 }
                             });
                             show_upload_failure(
                                 &this,
                                 cx,
+                                &cancel,
                                 tr::editor::export::sign_in_required(),
                                 true,
                             );
                         }
                         Ok(Ok(crate::upload::UploadResult::UpgradeRequired)) => {
                             let _ = this.update(cx, |this, cx| {
-                                if let Some(ui) = this.export.as_mut() {
+                                if let Some(ui) = this.export.as_mut()
+                                    && ui.matches_attempt(&cancel)
+                                {
                                     ui.phase = ExportPhase::Idle;
                                 }
                                 cx.notify();
                             });
-                            let _ = this.update(cx, |_, cx| {
-                                cx.open_url(crate::auth::PRICING_URL);
+                            let _ = this.update(cx, |this, cx| {
+                                if this
+                                    .export
+                                    .as_ref()
+                                    .is_some_and(|ui| ui.accepts_result(&cancel))
+                                {
+                                    cx.open_url(crate::auth::PRICING_URL);
+                                    platform::alert_dialog(
+                                        tr::editor::export::upgrade_title(),
+                                        tr::editor::export::upgrade_message(),
+                                    );
+                                }
                             });
-                            platform::alert_dialog(
-                                tr::editor::export::upgrade_title(),
-                                tr::editor::export::upgrade_message(),
-                            );
                         }
                         Ok(Err(error)) => {
                             if error == "Export cancelled" || cancel.load(Ordering::Relaxed) {
                                 let _ = this.update(cx, |this, cx| {
-                                    if let Some(ui) = this.export.as_mut() {
+                                    if let Some(ui) = this.export.as_mut()
+                                        && ui.matches_attempt(&cancel)
+                                    {
                                         ui.phase = ExportPhase::Idle;
                                     }
                                     cx.notify();
                                 });
                             } else {
-                                show_upload_failure(&this, cx, &error, true);
+                                show_upload_failure(&this, cx, &cancel, &error, true);
                             }
                         }
                         Err(error) => {
@@ -1381,6 +1778,7 @@ impl EditorWindow {
                             show_upload_failure(
                                 &this,
                                 cx,
+                                &cancel,
                                 tr::editor::export::upload_failed(),
                                 true,
                             );
@@ -1396,23 +1794,42 @@ impl EditorWindow {
                         tracing::error!(error, "share export failed");
                     }
                     let _ = this.update(cx, |this, cx| {
-                        if let Some(ui) = this.export.as_mut() {
+                        if let Some(ui) = this.export.as_mut()
+                            && ui.matches_attempt(&cancel)
+                        {
                             if cancelled {
                                 ui.phase = ExportPhase::Idle;
                             } else {
                                 ui.phase = ExportPhase::Failed;
-                                ui.error = Some(error.clone());
+                                ui.error = Some(resource_error_message(&error).to_string());
                             }
                         }
                         cx.notify();
                     });
                     if !cancelled {
-                        platform::alert_dialog(tr::editor::export::failed(), &error);
+                        let _ = this.update(cx, |this, _| {
+                            if this
+                                .export
+                                .as_ref()
+                                .is_some_and(|ui| ui.accepts_result(&cancel))
+                            {
+                                platform::alert_dialog(
+                                    tr::editor::export::failed(),
+                                    resource_error_message(&error),
+                                );
+                            }
+                        });
                     }
                 }
                 Err(error) => {
                     tracing::error!(%error, "share export task ended without a result");
-                    show_upload_failure(&this, cx, tr::editor::export::task_failed(), false);
+                    show_upload_failure(
+                        &this,
+                        cx,
+                        &cancel,
+                        tr::editor::export::task_failed(),
+                        false,
+                    );
                 }
             }
             let _ = this.update_in(cx, |this, window, cx| {
@@ -2583,7 +3000,95 @@ impl EditorWindow {
         cx.notify();
     }
 
-    fn render_export_overlay(&self, ui: &ExportUi, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_caption_export_wait(
+        &self,
+        ui: &ExportUi,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme;
+        let wait = ui.caption_wait.as_ref();
+        let active = wait.is_some_and(|wait| wait.active);
+        div()
+            .absolute()
+            .inset_0()
+            .occlude()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(16.))
+            .p(px(24.))
+            .bg(Hsla::from(theme.editor.window))
+            .child(
+                div()
+                    .text_size(px(18.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(if active {
+                        tr::editor::export::captions::waiting()
+                    } else {
+                        tr::editor::export::captions::needs_attention()
+                    }),
+            )
+            .child(
+                div()
+                    .max_w(px(440.))
+                    .text_center()
+                    .text_size(px(13.))
+                    .child(wait.map(|wait| wait.message.clone()).unwrap_or_default()),
+            )
+            .child(
+                div()
+                    .max_w(px(440.))
+                    .text_center()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(tr::editor::export::captions::current_note()),
+            )
+            .child(
+                ui::Button::plain(
+                    &theme,
+                    "export-current-captions",
+                    ui::ButtonVariant::Gray,
+                    ui::ButtonSize::Md,
+                )
+                .label(tr::editor::export::captions::current())
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.export_current_captions(window, cx)),
+                ),
+            )
+            .when(!active, |view| {
+                view.child(
+                    ui::Button::plain(
+                        &theme,
+                        "export-check-captions",
+                        ui::ButtonVariant::Gray,
+                        ui::ButtonSize::Md,
+                    )
+                    .label(tr::editor::export::captions::check())
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.close_export(window, cx);
+                        this.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+                        this.invalidate_sidebar(cx);
+                    })),
+                )
+            })
+            .child(
+                ui::Button::plain(
+                    &theme,
+                    "export-cancel-caption-wait",
+                    ui::ButtonVariant::Gray,
+                    ui::ButtonSize::Md,
+                )
+                .label(tr::editor::export::captions::cancel_wait())
+                .on_click(cx.listener(|this, _, _, cx| this.cancel_caption_export_wait(cx))),
+            )
+            .into_any_element()
+    }
+
+    fn render_export_overlay(&self, ui: &ExportUi, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if ui.phase == ExportPhase::WaitingCaptions {
+            return self.render_caption_export_wait(ui, cx);
+        }
         let theme = self.theme;
         let editor = theme.editor;
         let fraction = if ui.phase == ExportPhase::Uploading {
@@ -2622,7 +3127,7 @@ impl EditorWindow {
                 tr::editor::export::phase::clipboard_failed()
             }
             ExportPhase::Failed => tr::editor::export::failed(),
-            ExportPhase::Idle | ExportPhase::ChoosingFile => "",
+            ExportPhase::Idle | ExportPhase::ChoosingFile | ExportPhase::WaitingCaptions => "",
         };
 
         let mut wash: Hsla = editor.window.into();
@@ -2757,14 +3262,6 @@ impl EditorWindow {
                         .detach();
                     })),
                 )
-                .child(
-                    div()
-                        .max_w(px(320.))
-                        .text_size(px(12.))
-                        .text_color(Hsla::from(editor.text_2))
-                        .text_center()
-                        .child(tr::editor::export::done::instant_hint()),
-                )
             })
             .when(
                 ui.phase == ExportPhase::Done || ui.phase == ExportPhase::Failed,
@@ -2865,6 +3362,7 @@ impl EditorWindow {
                     )
                 },
             )
+            .into_any_element()
     }
 }
 
@@ -2879,6 +3377,24 @@ fn preview_fit(avail_w: f32, avail_h: f32, image: Option<(f32, f32)>) -> (f32, f
     };
     let scale = (avail_w / iw).min(avail_h / ih);
     ((iw * scale).floor(), (ih * scale).floor())
+}
+
+fn format_export_resource_message(message: ResourceMessage<'_>) -> String {
+    use tr::editor::export::resource_detail as text;
+    match message {
+        ResourceMessage::DiskWarning {
+            description,
+            free_gib,
+        } => text::disk_warning(description, format!("{free_gib:.2}")),
+        ResourceMessage::DiskEstimate { gib } => text::disk_estimate(format!("{gib:.2}")),
+        ResourceMessage::MemoryCritical => text::memory_critical().into(),
+        ResourceMessage::WarningFooter => text::warning_footer().into(),
+        ResourceMessage::DiskStop {
+            description,
+            free_gib,
+        } => text::disk_stop(description, format!("{free_gib:.2}")),
+        ResourceMessage::MemoryStop => text::memory_stop().into(),
+    }
 }
 
 async fn confirm_export_resources(
@@ -2975,7 +3491,7 @@ async fn confirm_export_resources(
             match result {
                 Err(error) if !ui.close_requested && !cancel.load(Ordering::Acquire) => {
                     ui.phase = ExportPhase::Failed;
-                    ui.error = Some(error);
+                    ui.error = Some(resource_error_message(&error).to_string());
                 }
                 _ => ui.phase = ExportPhase::Idle,
             }
@@ -2995,19 +3511,32 @@ fn cancel_matching_export(current: &Arc<AtomicBool>, requested: &Arc<AtomicBool>
 fn show_upload_failure(
     this: &gpui::WeakEntity<EditorWindow>,
     cx: &mut gpui::AsyncWindowContext,
+    attempt: &Arc<AtomicBool>,
     message: &str,
     dialog: bool,
 ) {
     tracing::error!(error = message, "share upload failed");
     let message = message.to_string();
-    let _ = this.update(cx, |this, cx| {
-        if let Some(ui) = this.export.as_mut() {
+    let accepted = this
+        .update(cx, |this, cx| {
+            let Some(ui) = this.export.as_mut() else {
+                return false;
+            };
+            if !ui.matches_attempt(attempt) {
+                return false;
+            }
+            if !ui.accepts_result(attempt) {
+                ui.phase = ExportPhase::Idle;
+                cx.notify();
+                return false;
+            }
             ui.phase = ExportPhase::Failed;
             ui.error = Some(message.clone());
-        }
-        cx.notify();
-    });
-    if dialog {
+            cx.notify();
+            true
+        })
+        .unwrap_or(false);
+    if dialog && accepted {
         platform::alert_dialog(tr::editor::export::upload_failed(), &message);
     }
 }
@@ -3252,6 +3781,145 @@ mod tests {
             organization_id: None,
             turbo: false,
         })
+    }
+
+    fn caption_export_project(text: &str) -> cap_project::ProjectConfiguration {
+        cap_project::ProjectConfiguration {
+            captions: Some(cap_project::CaptionsData {
+                segments: vec![cap_project::CaptionSegment {
+                    id: "one".into(),
+                    start: 0.,
+                    end: 1.,
+                    text: text.into(),
+                    words: Vec::new(),
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn caption_export_all_destinations_use_latest_saved_configuration_and_refuse_failed_save() {
+        let path = std::path::Path::new("test.cap");
+        for destination in [
+            ExportDestination::File,
+            ExportDestination::Clipboard,
+            ExportDestination::Link,
+        ] {
+            let mut ui = clipboard_export();
+            ui.destination = destination;
+            let final_project = caption_export_project("校对并翻译后的字幕");
+            let mut dispatched = Vec::new();
+            let failed = super::PreparedExport::after_save(
+                path,
+                &final_project,
+                false,
+                Err("disk full".into()),
+            );
+            if let Ok(prepared) = failed {
+                dispatched.push((ui.destination, prepared.project));
+            }
+            assert!(dispatched.is_empty());
+            let ready =
+                super::PreparedExport::after_save(path, &final_project, false, Ok(())).unwrap();
+            dispatched.push((ui.destination, ready.project));
+            assert_eq!(dispatched.len(), 1);
+            assert_eq!(dispatched[0].0, destination);
+            assert_eq!(
+                dispatched[0].1.captions.as_ref().unwrap().segments[0].text,
+                "校对并翻译后的字幕"
+            );
+        }
+    }
+
+    #[test]
+    fn caption_export_explicit_current_snapshot_preserves_background_work_and_saved_records() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path();
+        let request = crate::recording_autocaptions::Request::Running {
+            model: "small".into(),
+        };
+        crate::recording_autocaptions::write(path, &request).unwrap();
+        let marker = path.join("caption-processing.json");
+        std::fs::write(&marker, b"{\"status\":\"translating\"}").unwrap();
+        let before = std::fs::read(&marker).unwrap();
+        assert!(crate::transcription::begin_generation(path));
+        let mut project = caption_export_project("当前字幕");
+        project.write(path).unwrap();
+        let current = super::PreparedExport::after_save(path, &project, true, Ok(())).unwrap();
+        project.captions.as_mut().unwrap().segments[0].text = "后台完成后的字幕".into();
+        assert!(current.guard.matches(path, &project));
+        assert_eq!(
+            current.project.captions.as_ref().unwrap().segments[0].text,
+            "当前字幕"
+        );
+        assert!(!crate::transcription::begin_generation(path));
+        assert_eq!(
+            crate::recording_autocaptions::read_checked(path).unwrap(),
+            Some(request)
+        );
+        assert_eq!(std::fs::read(&marker).unwrap(), before);
+        crate::transcription::finish_generation(path, None);
+    }
+
+    #[test]
+    fn caption_export_default_snapshot_rejects_changed_configuration_and_foreign_project() {
+        let path = std::path::Path::new("test.cap");
+        let mut project = caption_export_project("before");
+        let prepared = super::PreparedExport::after_save(path, &project, false, Ok(())).unwrap();
+        assert!(prepared.guard.matches(path, &project));
+        project.captions.as_mut().unwrap().segments[0].text = "after".into();
+        assert!(!prepared.guard.matches(path, &project));
+        assert!(
+            !prepared
+                .guard
+                .matches(std::path::Path::new("other.cap"), &prepared.project)
+        );
+    }
+
+    #[test]
+    fn caption_export_cancel_and_reopen_reject_previous_wait_and_stalled_checkpoints() {
+        let path = PathBuf::from("test.cap");
+        let mut ui = clipboard_export();
+        let mut wait = super::CaptionExportWait::new(path.clone());
+        let previous = wait.attempt.clone();
+        assert!(wait.advance_once("queued".into()));
+        for _ in 0..100 {
+            assert!(!wait.advance_once("queued".into()));
+        }
+        assert!(wait.advance_once("reviewed".into()));
+        ui.caption_wait = Some(wait);
+        ui.phase = ExportPhase::WaitingCaptions;
+        assert!(ui.cancel_caption_wait());
+        assert_eq!(ui.phase, ExportPhase::Idle);
+        assert!(ui.caption_wait.is_none());
+        let fresh = super::CaptionExportWait::new(path.clone());
+        assert!(!fresh.matches(&previous, &path));
+        assert!(!fresh.matches(&fresh.attempt, std::path::Path::new("other.cap")));
+        assert!(fresh.matches(&fresh.attempt, &path));
+    }
+
+    #[test]
+    fn caption_export_cancelled_or_late_render_cannot_start_upload_or_notify() {
+        for closing in [false, true] {
+            let mut ui = clipboard_export();
+            ui.destination = ExportDestination::Link;
+            ui.close_requested = closing;
+            ui.cancel.store(!closing, Ordering::Release);
+            let attempt = ui.cancel.clone();
+            assert!(!ui.begin_upload(&attempt, PathBuf::from("finished.mp4")));
+            ui.complete_file_export(PathBuf::from("finished.mp4"), || {
+                panic!("cancelled render must not notify")
+            });
+            assert_eq!(ui.phase, ExportPhase::Idle);
+        }
+        let mut ui = clipboard_export();
+        let previous = ui.cancel.clone();
+        ui.cancel = Arc::new(AtomicBool::new(false));
+        assert!(!ui.begin_upload(&previous, PathBuf::from("old.mp4")));
+        assert!(!ui.matches_attempt(&previous));
+        assert!(ui.output_path.is_none());
     }
 
     #[test]

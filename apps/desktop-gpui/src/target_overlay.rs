@@ -473,6 +473,40 @@ enum Arrangement {
 /// Focus records a window by itself, which only macOS and Windows capture.
 const FOCUS_SUPPORTED: bool = cfg!(any(target_os = "macos", windows));
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowCaptureScope {
+    Window,
+    Region,
+    InstantCameraRegion,
+}
+
+impl WindowCaptureScope {
+    fn for_selection(focus: bool, mode: Mode, camera: bool) -> Self {
+        if mode == Mode::Instant && camera {
+            Self::InstantCameraRegion
+        } else if focus {
+            Self::Window
+        } else {
+            Self::Region
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Window => tr::overlay::window::focus_on(),
+            Self::Region | Self::InstantCameraRegion => tr::overlay::window::focus_off(),
+        }
+    }
+
+    fn explanation(self) -> Option<&'static str> {
+        match self {
+            Self::Window => None,
+            Self::Region => Some(tr::overlay::window::region_body()),
+            Self::InstantCameraRegion => Some(tr::overlay::window::focus_body_instant_camera()),
+        }
+    }
+}
+
 fn saved_focus() -> bool {
     FOCUS_SUPPORTED
         && crate::store::GeneralSettings::load().window_capture_style
@@ -2437,6 +2471,7 @@ impl OverlayWindow {
                                     .child(SharedString::from(active.app_name.clone())),
                             )
                             .child(self.render_window_size(target, cx))
+                            .children(self.render_window_capture_scope(bounds.width, cx))
                             .children(self.render_focus_toggle(cx)),
                     )
                     .child(self.render_controls_cluster(self.target(cx), false, cx)),
@@ -2501,6 +2536,43 @@ impl OverlayWindow {
             })
     }
 
+    fn window_capture_scope(&self, cx: &App) -> WindowCaptureScope {
+        let select = self.select.read(cx);
+        let camera = cx
+            .global::<app_windows::AppWindows>()
+            .main
+            .read(cx)
+            .is_ok_and(|view| view.camera_selection().is_some());
+        WindowCaptureScope::for_selection(select.focus_window, select.recording_mode, camera)
+    }
+
+    fn render_window_capture_scope(&self, width: f32, cx: &App) -> Option<impl IntoElement> {
+        if !FOCUS_SUPPORTED {
+            return None;
+        }
+        let scope = self.window_capture_scope(cx);
+        Some(
+            self.glass_surface()
+                .id("window-capture-scope")
+                .w(px((width - 24.).clamp(1., 300.)))
+                .mb(px(8.))
+                .px(px(10.))
+                .py(px(8.))
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .text_size(px(12.))
+                .line_height(px(16.))
+                .text_color(self.theme.gray_12)
+                .child(div().font_weight(FontWeight::MEDIUM).child(scope.label()))
+                .children(
+                    scope
+                        .explanation()
+                        .map(|explanation| div().text_color(self.theme.gray_11).child(explanation)),
+                ),
+        )
+    }
+
     fn render_focus_toggle(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         if !FOCUS_SUPPORTED || !crate::foreign_window::can_arrange() {
             return None;
@@ -2508,19 +2580,13 @@ impl OverlayWindow {
         let theme = self.theme;
         let select = self.select.read(cx);
         let (focus, center) = (select.focus_window, select.focus_center);
-        // Instant records the camera bubble off the screen, so with a camera
-        // it keeps the screen region (see `instant_capture_window`).
-        let camera = cx
-            .global::<app_windows::AppWindows>()
-            .main
-            .read(cx)
-            .is_ok_and(|view| view.camera_selection().is_some());
+        let scope = self.window_capture_scope(cx);
         let title = if focus {
             tr::overlay::window::focus_disable()
         } else {
             tr::overlay::window::focus_enable()
         };
-        let explanation = if select.recording_mode == Mode::Instant && camera {
+        let explanation = if scope == WindowCaptureScope::InstantCameraRegion {
             tr::overlay::window::focus_body_instant_camera()
         } else {
             tr::overlay::window::focus_body()
@@ -2597,11 +2663,7 @@ impl OverlayWindow {
                             .line_height(px(15.))
                             .font_weight(FontWeight::NORMAL)
                             .text_color(theme.gray_11)
-                            .child(if focus {
-                                tr::overlay::window::focus_on()
-                            } else {
-                                tr::overlay::window::focus_off()
-                            }),
+                            .child(scope.label()),
                     ),
             )
             .child(
@@ -4700,6 +4762,43 @@ fn request_media_access(permission: crate::permissions::OSPermission, cx: &mut A
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_scope_reports_the_actual_capture_with_or_without_a_camera() {
+        assert_eq!(
+            WindowCaptureScope::for_selection(true, Mode::Studio, false),
+            WindowCaptureScope::Window
+        );
+        assert_eq!(
+            WindowCaptureScope::for_selection(true, Mode::Studio, true),
+            WindowCaptureScope::Window
+        );
+        assert_eq!(
+            WindowCaptureScope::for_selection(false, Mode::Studio, true),
+            WindowCaptureScope::Region
+        );
+        assert_eq!(
+            WindowCaptureScope::for_selection(true, Mode::Instant, false),
+            WindowCaptureScope::Window
+        );
+        assert_eq!(
+            WindowCaptureScope::for_selection(false, Mode::Instant, false),
+            WindowCaptureScope::Region
+        );
+        for focus in [false, true] {
+            assert_eq!(
+                WindowCaptureScope::for_selection(focus, Mode::Instant, true),
+                WindowCaptureScope::InstantCameraRegion
+            );
+        }
+        assert!(WindowCaptureScope::Window.explanation().is_none());
+        assert!(WindowCaptureScope::Region.explanation().is_some());
+        assert!(
+            WindowCaptureScope::InstantCameraRegion
+                .explanation()
+                .is_some()
+        );
+    }
 
     #[test]
     fn windows_display_and_window_pickers_take_no_backdrop() {

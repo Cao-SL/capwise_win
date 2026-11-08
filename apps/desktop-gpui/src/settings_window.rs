@@ -96,6 +96,7 @@ pub enum Page {
     Screenshots,
     Automations,
     Transcription,
+    Assets,
     Integrations,
     License,
     Experimental,
@@ -105,22 +106,51 @@ pub enum Page {
 }
 
 impl Page {
-    /// Capwise's sidebar, in groups split at [`Self::GROUP_BREAKS`]. The
-    /// cloud, screenshot and Cap-account pages are left out.
+    /// Capwise's sidebar, in groups split at [`Self::starts_group`]. The
+    /// cloud, screenshot and Cap-account pages are left out, and so is
+    /// Automations: the app never ran its rules, and the rule engine stays
+    /// with the CLI.
     pub const ALL: &'static [Page] = &[
         Page::General,
         Page::Quality,
         Page::Shortcuts,
         Page::Recordings,
         Page::Transcription,
-        Page::Automations,
+        Page::Assets,
         Page::Cli,
         Page::Experimental,
         Page::About,
     ];
 
-    /// Pages that start a new sidebar group.
-    const GROUP_BREAKS: &'static [Page] = &[Page::Recordings, Page::Experimental];
+    /// Whether the sidebar lists the page. CLI and Experimental wait for the
+    /// About page's advanced switch, and Experimental also for something to
+    /// show.
+    pub fn in_sidebar(self, advanced: bool) -> bool {
+        match self {
+            Self::Cli => advanced,
+            Self::Experimental => advanced && crate::settings_pages::experimental_has_items(),
+            _ => true,
+        }
+    }
+
+    /// The sidebar pages in order, given the advanced switch.
+    pub fn sidebar(advanced: bool) -> Vec<Page> {
+        Self::ALL
+            .iter()
+            .copied()
+            .filter(|page| page.in_sidebar(advanced))
+            .collect()
+    }
+
+    /// Pages that start a new sidebar group: Recordings, and whichever of the
+    /// trailing CLI / Experimental / About group comes first.
+    fn starts_group(self, visible: &[Page]) -> bool {
+        self == Page::Recordings
+            || visible
+                .iter()
+                .find(|page| matches!(page, Page::Cli | Page::Experimental | Page::About))
+                == Some(&self)
+    }
 
     /// The `name` field. Note "Shortcuts" for the `hotkeys` route -- the label
     /// and the route disagree in the shipping app.
@@ -134,6 +164,7 @@ impl Page {
             Self::Screenshots => tr::settings::nav::screenshots(),
             Self::Automations => tr::settings::nav::automations(),
             Self::Transcription => tr::settings::nav::transcription(),
+            Self::Assets => tr::settings::stock::title(),
             Self::Integrations => tr::settings::nav::integrations(),
             Self::License => tr::settings::nav::license(),
             Self::Experimental => tr::settings::nav::experimental(),
@@ -154,6 +185,7 @@ impl Page {
             Self::Screenshots => "screenshots",
             Self::Automations => "automations",
             Self::Transcription => "transcription",
+            Self::Assets => "assets",
             Self::Integrations => "integrations",
             Self::License => "license",
             Self::Experimental => "experimental",
@@ -173,11 +205,12 @@ impl Page {
             Self::Experimental => "icons/settings-2.svg",
             Self::Shortcuts => "icons/hotkeys.svg",
             Self::Cli => "icons/terminal.svg",
-            Self::Quality => "icons/gauge.svg",
-            Self::Recordings => "icons/square-play.svg",
+            Self::Quality => "icons/sliders-horizontal.svg",
+            Self::Recordings => "icons/folder-open.svg",
             Self::Screenshots => "icons/image.svg",
             Self::Automations => "icons/zap.svg",
             Self::Transcription => "icons/sparkles.svg",
+            Self::Assets => "icons/image.svg",
             Self::Integrations => "icons/unplug.svg",
             Self::License => "icons/gift.svg",
             Self::Feedback => "icons/message-square-plus.svg",
@@ -200,6 +233,8 @@ impl Page {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MenuKind {
     Countdown,
+    WorkflowPreset,
+    WorkflowSpeed,
     MainWindowStart,
     WindowCapture,
     PostDeletion,
@@ -225,6 +260,8 @@ pub(crate) enum MenuKind {
     AutomationPreset(usize, usize),
     AiRecognizer,
     AiModel,
+    CoverProvider,
+    CoverModel,
     AiLlmAdd,
     AiLlmDefault,
 }
@@ -734,6 +771,7 @@ pub struct SettingsWindow {
     pub(crate) plan_refresh_failed: bool,
     instant_quality_notice: Option<InstantQualityNotice>,
     studio_quality_save_failed: bool,
+    export_folder_save_failed: bool,
     /// Everything the pages in `settings_pages.rs` own -- their fetch state,
     /// drafts and text-input entities.
     pub(crate) pages: crate::settings_pages::PagesState,
@@ -746,6 +784,7 @@ pub struct SettingsWindow {
     /// Save/Update are the commit, not Return.
     project_name_input: Entity<ui::TextInputState>,
     server_url_input: Entity<ui::TextInputState>,
+    workflow_name_input: Entity<ui::TextInputState>,
     _field_events: [gpui::Subscription; 4],
     /// The Recordings page.
     recordings: Recordings,
@@ -807,6 +846,15 @@ impl SettingsWindow {
         let server_url_input = cx.new(|cx| {
             let mut input = ui::TextInputState::single_line(window, cx);
             input.set_text(settings.server_url.clone(), cx);
+            input
+        });
+        let workflow_name_input = cx.new(|cx| {
+            let mut input = ui::TextInputState::single_line(window, cx);
+            let catalog = crate::workflow_presets::WorkflowPresets::load();
+            input.set_text(
+                catalog.selected().map_or("", |preset| preset.name.as_str()),
+                cx,
+            );
             input
         });
         let recordings_search = cx.new(|cx| ui::TextInputState::single_line(window, cx));
@@ -886,8 +934,10 @@ impl SettingsWindow {
             plan_refresh_failed: false,
             instant_quality_notice: None,
             studio_quality_save_failed: false,
+            export_folder_save_failed: false,
             project_name_input,
             server_url_input,
+            workflow_name_input,
             _field_events: field_events,
             recordings: Recordings::new(recordings_search),
             screenshots: Screenshots::new(screenshots_search),
@@ -931,6 +981,13 @@ impl SettingsWindow {
 
     /// Re-target an already-open window, the way `showWindow({ Settings: {
     /// page } })` navigates a live one.
+    pub(crate) fn reset_ai_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.page_scroll = ScrollHandle::new();
+        self.menu = None;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
     pub fn set_page(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         if self.page != page {
             self.page_scroll = ScrollHandle::new();
@@ -1496,7 +1553,7 @@ impl SettingsWindow {
             .flatten();
         let focus = self.focus.clone();
         window.focus(&focus, cx);
-        let items = self.menu_items(kind);
+        let items = self.menu_items(kind, cx);
         self.menu = Some(OpenMenu {
             kind,
             return_focus,
@@ -1541,8 +1598,32 @@ impl SettingsWindow {
     }
 
     /// One row per option, check-marked when it is the value in force.
-    fn menu_items(&self, kind: MenuKind) -> Vec<ui::MenuItem> {
+    fn menu_items(&self, kind: MenuKind, cx: &gpui::App) -> Vec<ui::MenuItem> {
         match kind {
+            MenuKind::CoverProvider | MenuKind::CoverModel => self.cover_menu_items(kind, cx),
+            MenuKind::WorkflowPreset => {
+                let catalog = crate::workflow_presets::WorkflowPresets::load();
+                catalog
+                    .presets
+                    .iter()
+                    .map(|preset| {
+                        ui::MenuItem::new(preset.name.clone(), preset.id == catalog.selected_id)
+                    })
+                    .collect()
+            }
+            MenuKind::WorkflowSpeed => {
+                let catalog = crate::workflow_presets::WorkflowPresets::load();
+                let speed = catalog.selected().map_or(1.0, |preset| preset.speed);
+                crate::workflow_presets::SPEEDS
+                    .iter()
+                    .map(|value| {
+                        ui::MenuItem::new(
+                            format!("{value}×"),
+                            (*value - speed).abs() < f64::EPSILON,
+                        )
+                    })
+                    .collect()
+            }
             MenuKind::Countdown => {
                 let current = self.settings.recording_countdown.unwrap_or(0);
                 COUNTDOWN_OPTIONS
@@ -1583,6 +1664,24 @@ impl SettingsWindow {
     ) {
         self.close_menu(window, cx);
         match kind {
+            MenuKind::WorkflowPreset => self.update_workflow(
+                move |catalog| {
+                    if let Some(preset) = catalog.presets.get(index) {
+                        catalog.selected_id = preset.id.clone();
+                    }
+                },
+                cx,
+            ),
+            MenuKind::WorkflowSpeed => self.update_workflow(
+                move |catalog| {
+                    if let Some(speed) = crate::workflow_presets::SPEEDS.get(index)
+                        && let Some(preset) = catalog.selected_mut()
+                    {
+                        preset.speed = *speed;
+                    }
+                },
+                cx,
+            ),
             MenuKind::Countdown => {
                 if let Some((value, _)) = COUNTDOWN_OPTIONS.get(index) {
                     self.settings.recording_countdown = Some(*value);
@@ -1999,6 +2098,7 @@ impl SettingsWindow {
 
     fn render_nav(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
+        let visible = Page::sidebar(self.settings.show_advanced_settings);
 
         div()
             .id("settings-nav")
@@ -2013,10 +2113,10 @@ impl SettingsWindow {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .children(Page::ALL.iter().copied().map(|page| {
+            .children(visible.iter().copied().map(|page| {
                 let selected = page == self.page;
                 div()
-                    .when(Page::GROUP_BREAKS.contains(&page), |this| this.mt(px(14.)))
+                    .when(page.starts_group(&visible), |this| this.mt(px(14.)))
                     .id(SharedString::from(page.slug()))
                     .when(self.keyboard_nav, ui::keyboard_nav::stop)
                     .role(gpui::Role::Tab)
@@ -2348,6 +2448,15 @@ impl SettingsWindow {
             // `var(--macos-settings-border)` under Liquid Glass.
             .border_l_1()
             .border_color(theme.settings_divider())
+            .when(self.page == Page::Transcription, |pane| {
+                pane.child(
+                    div()
+                        .px(px(CONTENT_PADDING_X))
+                        .pt(px(18.))
+                        .pb(px(8.))
+                        .child(self.render_ai_tabs(cx)),
+                )
+            })
             .child(
                 div()
                     .id("settings-page")
@@ -2373,6 +2482,7 @@ impl SettingsWindow {
                         Page::Cli => self.render_cli(cx),
                         Page::Automations => self.render_automations(cx),
                         Page::Transcription => self.render_ai_models(cx),
+                        Page::Assets => self.render_stock_services(cx),
                         Page::Integrations => self.render_integrations(cx),
                         Page::License => self.render_license(cx),
                         Page::Experimental => self.render_experimental(cx),
@@ -3162,18 +3272,250 @@ impl SettingsWindow {
 
     // -- The General page --------------------------------------------------
 
+    /// Appearance, language, countdown with what follows a recording, and
+    /// where recordings go. Everything else waits for the About page's
+    /// advanced switch.
     fn render_general(&self, window: &Window, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let mut sections = Vec::with_capacity(10);
         sections.push(self.render_appearance(cx).into_any_element());
         sections.push(self.render_language(cx).into_any_element());
-        sections.extend([
-            self.render_app_section(cx).into_any_element(),
-            self.render_recording(cx).into_any_element(),
-            self.render_storage(cx).into_any_element(),
-            self.render_project_name(window, cx).into_any_element(),
-            self.render_excluded_windows(cx).into_any_element(),
-        ]);
+        sections.extend([self.render_recording(cx).into_any_element()]);
+        if self.settings.show_advanced_settings {
+            sections.extend([
+                self.render_recording_advanced(cx).into_any_element(),
+                self.render_app_section(cx).into_any_element(),
+                self.render_workflow_presets(cx).into_any_element(),
+                self.render_project_name(window, cx).into_any_element(),
+                self.render_excluded_windows(cx).into_any_element(),
+            ]);
+        }
         sections
+    }
+
+    fn update_workflow(
+        &mut self,
+        change: impl FnOnce(&mut crate::workflow_presets::WorkflowPresets),
+        cx: &mut Context<Self>,
+    ) {
+        let mut catalog = crate::workflow_presets::WorkflowPresets::load();
+        change(&mut catalog);
+        if !catalog.save() {
+            tracing::warn!("Could not save workflow preset settings");
+            return;
+        }
+        let name = catalog.selected().map_or("", |preset| preset.name.as_str());
+        self.workflow_name_input
+            .update(cx, |input, cx| input.set_text(name, cx));
+        cx.notify();
+    }
+
+    fn render_workflow_presets(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use tr::settings::workflow as text;
+        let catalog = crate::workflow_presets::WorkflowPresets::load();
+        let preset = catalog.selected().cloned().unwrap_or_default();
+        let rows = vec![
+            self.setting_row(
+                text::enabled(),
+                None,
+                self.toggle(
+                    "workflow-enabled",
+                    text::enabled(),
+                    catalog.enabled,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(|catalog| catalog.enabled = !catalog.enabled, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::selected(),
+                None,
+                self.select(
+                    "workflow-selected",
+                    preset.name.clone(),
+                    MenuKind::WorkflowPreset,
+                    cx,
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::name(),
+                None,
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .child(
+                        ui::TextInput::settings(
+                            &self.theme,
+                            "workflow-name",
+                            &self.workflow_name_input,
+                        )
+                        .width(px(180.))
+                        .flex(false),
+                    )
+                    .child(self.button(
+                        "workflow-rename",
+                        (ui::ButtonVariant::Gray, None),
+                        text::rename(),
+                        false,
+                        cx,
+                        |this, _, cx| {
+                            let name = this.workflow_name_input.read(cx).text().trim().to_string();
+                            if !name.is_empty() {
+                                this.update_workflow(
+                                    move |catalog| {
+                                        if let Some(preset) = catalog.selected_mut() {
+                                            preset.name = name;
+                                        }
+                                    },
+                                    cx,
+                                );
+                            }
+                        },
+                    ))
+                    .into_any_element(),
+            ),
+            self.setting_row(
+                text::speed(),
+                Some(text::speed_note()),
+                self.select(
+                    "workflow-speed",
+                    format!("{}×", preset.speed),
+                    MenuKind::WorkflowSpeed,
+                    cx,
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::review(),
+                None,
+                self.toggle(
+                    "workflow-review",
+                    text::review(),
+                    preset.ai_caption_review,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.ai_caption_review = !preset.ai_caption_review;
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::bilingual(),
+                None,
+                self.toggle(
+                    "workflow-bilingual",
+                    text::bilingual(),
+                    preset.bilingual_english,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.bilingual_english = !preset.bilingual_english;
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::voice(),
+                None,
+                self.toggle(
+                    "workflow-voice",
+                    text::voice(),
+                    preset.enhance_voice,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.enhance_voice = !preset.enhance_voice;
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                text::beauty(),
+                Some(text::beauty_note()),
+                self.toggle(
+                    "workflow-beauty",
+                    text::beauty(),
+                    preset.camera_beauty > 0.0,
+                    cx,
+                    |this, cx| {
+                        this.update_workflow(
+                            |catalog| {
+                                if let Some(preset) = catalog.selected_mut() {
+                                    preset.camera_beauty =
+                                        if preset.camera_beauty > 0.0 { 0.0 } else { 1.0 };
+                                }
+                            },
+                            cx,
+                        );
+                    },
+                )
+                .into_any_element(),
+            ),
+        ];
+        self.section(
+            text::title(),
+            Some(text::description()),
+            None,
+            vec![
+                self.rows(rows).into_any_element(),
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .child(self.button(
+                        "workflow-copy",
+                        (ui::ButtonVariant::Gray, None),
+                        text::duplicate(),
+                        false,
+                        cx,
+                        |this, _, cx| {
+                            this.update_workflow(
+                                |catalog| {
+                                    let name = text::copy_name(
+                                        catalog
+                                            .selected()
+                                            .map_or("", |preset| preset.name.as_str()),
+                                        catalog.presets.len(),
+                                    );
+                                    catalog.duplicate_selected(name);
+                                },
+                                cx,
+                            );
+                        },
+                    ))
+                    .child(self.button(
+                        "workflow-delete",
+                        (ui::ButtonVariant::Gray, None),
+                        text::delete(),
+                        catalog.selected_id == crate::workflow_presets::QIAOMU_ID,
+                        cx,
+                        |this, _, cx| {
+                            this.update_workflow(|catalog| catalog.delete_selected(), cx);
+                        },
+                    ))
+                    .into_any_element(),
+            ],
+        )
     }
 
     /// `AppearanceSection` -- `theme`.
@@ -3356,7 +3698,11 @@ impl SettingsWindow {
     }
 
     fn render_recording_quality(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
-        vec![self.render_studio_quality(cx).into_any_element()]
+        vec![
+            self.render_studio_quality(cx).into_any_element(),
+            self.render_storage(cx).into_any_element(),
+            self.render_export_storage(cx).into_any_element(),
+        ]
     }
 
     fn effective_instant_resolution(&self) -> u32 {
@@ -3582,9 +3928,8 @@ impl SettingsWindow {
         )
     }
 
-    /// The Recording card: thirteen rows, in TSX order.
+    /// Countdown, then what follows a stopped recording.
     fn render_recording(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
         let settings = &self.settings;
 
         let countdown_label = COUNTDOWN_OPTIONS
@@ -3592,12 +3937,6 @@ impl SettingsWindow {
             .find(|(value, _)| *value == settings.recording_countdown.unwrap_or(0))
             .map(|(_, label)| label().to_string())
             .unwrap_or_else(|| settings.recording_countdown.unwrap_or(0).to_string());
-        let fps_label = MAX_FPS_OPTIONS
-            .iter()
-            .find(|(value, _)| *value == settings.max_fps)
-            .map(|(_, label)| label().to_string())
-            .unwrap_or_else(|| settings.max_fps.to_string());
-        let zoom = settings.default_zoom_amount.unwrap_or(1.5);
 
         self.section(
             tr::settings::general::recording::title(),
@@ -3611,6 +3950,31 @@ impl SettingsWindow {
                         self.select("countdown", countdown_label, MenuKind::Countdown, cx)
                             .into_any_element(),
                     ),
+                    self.render_post_studio_panel(cx),
+                ])
+                .into_any_element(),
+            ],
+        )
+    }
+
+    /// The recording rows that keep a choice but no longer need one up front.
+    fn render_recording_advanced(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let settings = &self.settings;
+
+        let fps_label = MAX_FPS_OPTIONS
+            .iter()
+            .find(|(value, _)| *value == settings.max_fps)
+            .map(|(_, label)| label().to_string())
+            .unwrap_or_else(|| settings.max_fps.to_string());
+        let zoom = settings.default_zoom_amount.unwrap_or(1.5);
+
+        self.section(
+            tr::settings::about::advanced_recording(),
+            Some(tr::settings::about::advanced_recording_hint()),
+            None,
+            vec![
+                self.rows(vec![
                     self.setting_row(
                         tr::settings::general::recording::confirm_without_mic::label(),
                         Some(tr::settings::general::recording::confirm_without_mic::description()),
@@ -3675,11 +4039,6 @@ impl SettingsWindow {
                         )
                         .into_any_element(),
                     ),
-                    // "After a Studio recording" lives on the Shortcuts page,
-                    // next to the shortcuts it shapes. There is no
-                    // post-capture overlay in this app, so a stored
-                    // `showOverlay` means "reshow the main window"
-                    // (`app_windows.rs`) and is labelled "Show Cap".
                     self.setting_row(
                         tr::settings::general::recording::post_deletion::label(),
                         Some(tr::settings::general::recording::post_deletion::description()),
@@ -3692,52 +4051,18 @@ impl SettingsWindow {
                         .into_any_element(),
                     ),
                     self.setting_row(
-                        tr::settings::general::recording::crash_recovery::label(),
-                        Some(tr::settings::general::recording::crash_recovery::description()),
+                        tr::settings::general::recording::auto_captions::label(),
+                        Some(tr::settings::general::recording::auto_captions::description()),
                         self.toggle(
-                            "crash-recovery",
-                            tr::settings::general::recording::crash_recovery::label(),
-                            settings.crash_recovery_recording,
+                            "auto-captions",
+                            tr::settings::general::recording::auto_captions::label(),
+                            settings.auto_captions_after_recording,
                             cx,
                             |this, cx| {
-                                this.settings.crash_recovery_recording =
-                                    !this.settings.crash_recovery_recording;
-                                let value = this.settings.crash_recovery_recording;
-                                this.write_bool("crashRecoveryRecording", value, cx);
-                            },
-                        )
-                        .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::recording::custom_cursor::label(),
-                        Some(tr::settings::general::recording::custom_cursor::description()),
-                        self.toggle(
-                            "custom-cursor",
-                            tr::settings::general::recording::custom_cursor::label(),
-                            settings.custom_cursor_capture,
-                            cx,
-                            |this, cx| {
-                                this.settings.custom_cursor_capture =
-                                    !this.settings.custom_cursor_capture;
-                                let value = this.settings.custom_cursor_capture;
-                                this.write_bool("custom_cursor_capture2", value, cx);
-                            },
-                        )
-                        .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::recording::auto_zoom::label(),
-                        Some(tr::settings::general::recording::auto_zoom::description()),
-                        self.toggle(
-                            "auto-zoom",
-                            tr::settings::general::recording::auto_zoom::label(),
-                            settings.auto_zoom_on_clicks,
-                            cx,
-                            |this, cx| {
-                                this.settings.auto_zoom_on_clicks =
-                                    !this.settings.auto_zoom_on_clicks;
-                                let value = this.settings.auto_zoom_on_clicks;
-                                this.write_bool("autoZoomOnClicks", value, cx);
+                                this.settings.auto_captions_after_recording =
+                                    !this.settings.auto_captions_after_recording;
+                                let value = this.settings.auto_captions_after_recording;
+                                this.write_bool("autoCaptionsAfterRecording", value, cx);
                             },
                         )
                         .into_any_element(),
@@ -3762,23 +4087,6 @@ impl SettingsWindow {
                                     .child(format!("{zoom:.1}x")),
                             )
                             .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::recording::capture_keyboard::label(),
-                        Some(tr::settings::general::recording::capture_keyboard::description()),
-                        self.toggle(
-                            "capture-keyboard",
-                            tr::settings::general::recording::capture_keyboard::label(),
-                            settings.capture_keyboard_events,
-                            cx,
-                            |this, cx| {
-                                this.settings.capture_keyboard_events =
-                                    !this.settings.capture_keyboard_events;
-                                let value = this.settings.capture_keyboard_events;
-                                this.write_bool("captureKeyboardEvents", value, cx);
-                            },
-                        )
-                        .into_any_element(),
                     ),
                     self.setting_row(
                         tr::settings::general::recording::marker_sound::label(),
@@ -3828,6 +4136,81 @@ impl SettingsWindow {
                 .into_any_element(),
             ],
         )
+    }
+
+    /// Switches Capwise pinned on in `GeneralSettings::load`. No page renders
+    /// them; they stay so merges from Cap's General page keep applying.
+    #[allow(dead_code)]
+    fn render_pinned_recording_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let settings = &self.settings;
+        vec![
+            self.setting_row(
+                tr::settings::general::recording::crash_recovery::label(),
+                Some(tr::settings::general::recording::crash_recovery::description()),
+                self.toggle(
+                    "crash-recovery",
+                    tr::settings::general::recording::crash_recovery::label(),
+                    settings.crash_recovery_recording,
+                    cx,
+                    |this, cx| {
+                        this.settings.crash_recovery_recording =
+                            !this.settings.crash_recovery_recording;
+                        let value = this.settings.crash_recovery_recording;
+                        this.write_bool("crashRecoveryRecording", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                tr::settings::general::recording::custom_cursor::label(),
+                Some(tr::settings::general::recording::custom_cursor::description()),
+                self.toggle(
+                    "custom-cursor",
+                    tr::settings::general::recording::custom_cursor::label(),
+                    settings.custom_cursor_capture,
+                    cx,
+                    |this, cx| {
+                        this.settings.custom_cursor_capture = !this.settings.custom_cursor_capture;
+                        let value = this.settings.custom_cursor_capture;
+                        this.write_bool("custom_cursor_capture2", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                tr::settings::general::recording::auto_zoom::label(),
+                Some(tr::settings::general::recording::auto_zoom::description()),
+                self.toggle(
+                    "auto-zoom",
+                    tr::settings::general::recording::auto_zoom::label(),
+                    settings.auto_zoom_on_clicks,
+                    cx,
+                    |this, cx| {
+                        this.settings.auto_zoom_on_clicks = !this.settings.auto_zoom_on_clicks;
+                        let value = this.settings.auto_zoom_on_clicks;
+                        this.write_bool("autoZoomOnClicks", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+            self.setting_row(
+                tr::settings::general::recording::capture_keyboard::label(),
+                Some(tr::settings::general::recording::capture_keyboard::description()),
+                self.toggle(
+                    "capture-keyboard",
+                    tr::settings::general::recording::capture_keyboard::label(),
+                    settings.capture_keyboard_events,
+                    cx,
+                    |this, cx| {
+                        this.settings.capture_keyboard_events =
+                            !this.settings.capture_keyboard_events;
+                        let value = this.settings.capture_keyboard_events;
+                        this.write_bool("captureKeyboardEvents", value, cx);
+                    },
+                )
+                .into_any_element(),
+            ),
+        ]
     }
 
     /// `StorageSection` -- `recordingsPath`.
@@ -3926,6 +4309,111 @@ impl SettingsWindow {
                                     ),
                             )
                             .child(actions),
+                    )
+                    .into_any_element(),
+            ],
+        )
+    }
+
+    fn render_export_storage(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let path = self.settings.export_path.clone();
+        let is_custom = path.is_some();
+        let display =
+            path.unwrap_or_else(|| tr::settings::export_folder::default_location().to_string());
+
+        let mut actions = div().flex().flex_row().justify_end().gap(px(8.));
+        if is_custom {
+            actions = actions.child(self.button(
+                "export-folder-reset",
+                (ui::ButtonVariant::Gray, None),
+                tr::common::reset_to_default(),
+                false,
+                cx,
+                |this, _window, cx| {
+                    this.export_folder_save_failed = !store::set_export_path(None);
+                    if !this.export_folder_save_failed {
+                        this.settings = GeneralSettings::load();
+                    }
+                    cx.notify();
+                },
+            ));
+        }
+        actions = actions.child(self.button(
+            "export-folder-pick",
+            (ui::ButtonVariant::Dark, None),
+            tr::settings::general::storage::choose_folder(),
+            false,
+            cx,
+            |_, window, cx| {
+                let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+                    files: false,
+                    directories: true,
+                    multiple: false,
+                    prompt: None,
+                });
+                cx.spawn_in(window, async move |this, cx| {
+                    let Ok(Ok(Some(paths))) = paths.await else {
+                        return;
+                    };
+                    let Some(path) = paths.into_iter().next() else {
+                        return;
+                    };
+                    this.update(cx, |this, cx| {
+                        let path = path.to_string_lossy().to_string();
+                        this.export_folder_save_failed = !store::set_export_path(Some(&path));
+                        if !this.export_folder_save_failed {
+                            this.settings = GeneralSettings::load();
+                        }
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .detach();
+            },
+        ));
+
+        self.section(
+            tr::settings::export_folder::title(),
+            Some(tr::settings::export_folder::description()),
+            None,
+            vec![
+                self.card(true)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(12.))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .px(px(12.))
+                                    .py(px(8.))
+                                    .min_w_0()
+                                    .rounded(px(8.))
+                                    .bg(theme.settings_fill())
+                                    .border_1()
+                                    .border_color(theme.settings_border())
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(px(12.))
+                                            .child(display),
+                                    ),
+                            )
+                            .child(actions)
+                            .when(self.export_folder_save_failed, |column| {
+                                column.child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .child(tr::settings::export_folder::save_failed()),
+                                )
+                            }),
                     )
                     .into_any_element(),
             ],
@@ -4896,7 +5384,7 @@ impl SettingsWindow {
     fn render_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let menu = self.menu.as_ref()?;
         let kind = menu.kind;
-        let items = self.menu_items(kind);
+        let items = self.menu_items(kind, cx);
 
         Some(
             ui::Menu::settings(&self.theme, "settings-menu", items, &menu.state)
@@ -4961,11 +5449,37 @@ mod tests {
         for page in Page::ALL {
             assert_eq!(Page::from_slug(page.slug()), Some(*page));
         }
-        for removed in ["license", "integrations", "screenshots", "feedback", "changelog"] {
+        for removed in [
+            "automations",
+            "license",
+            "integrations",
+            "screenshots",
+            "feedback",
+            "changelog",
+        ] {
             assert_eq!(Page::from_slug(removed), None);
         }
         assert_eq!(Page::Shortcuts.slug(), "hotkeys");
         assert_eq!(Page::from_slug("nope"), None);
+    }
+
+    #[test]
+    fn advanced_pages_wait_for_the_about_switch() {
+        let basic = Page::sidebar(false);
+        assert!(!basic.contains(&Page::Cli));
+        assert!(!basic.contains(&Page::Experimental));
+        assert!(!basic.contains(&Page::Automations));
+        assert!(Page::About.starts_group(&basic));
+        assert!(Page::Recordings.starts_group(&basic));
+
+        let advanced = Page::sidebar(true);
+        assert!(advanced.contains(&Page::Cli));
+        assert_eq!(
+            advanced.contains(&Page::Experimental),
+            crate::settings_pages::experimental_has_items()
+        );
+        assert!(Page::Cli.starts_group(&advanced));
+        assert!(!Page::About.starts_group(&advanced));
     }
 
     #[test]

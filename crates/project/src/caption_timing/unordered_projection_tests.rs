@@ -46,6 +46,7 @@ fn fixture(
                         text: format!("word{word}"),
                         start: start + word as f32 * 0.4,
                         end: start + word as f32 * 0.4 + 0.3,
+                        hidden: false,
                     })
                     .collect(),
             }
@@ -312,6 +313,7 @@ fn baseline_projection(
                         text: word.text.clone(),
                         start: start as f32,
                         end: end as f32,
+                        hidden: false,
                     });
                 }
 

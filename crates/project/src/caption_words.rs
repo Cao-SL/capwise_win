@@ -100,6 +100,7 @@ pub fn normalize_caption_words(words: Vec<CaptionWord>) -> Vec<CaptionWord> {
                 text: text.to_string(),
                 start: word.start,
                 end: word.end,
+                hidden: word.hidden,
             });
         }
     }
@@ -253,26 +254,24 @@ fn chunk_spans(len: usize, weak: impl Fn(usize) -> bool) -> Vec<std::ops::Range<
     chunks
 }
 
-/// The caption as it should be drawn: with `hide_fillers`, hesitation fillers
-/// leave its words and text, and a filler at either edge no longer holds the
-/// caption on screen. `None` when nothing but fillers is left.
+/// The caption as it should be drawn: words the transcript hid, and with
+/// `hide_fillers` hesitation fillers, leave its words and text, and one at
+/// either edge no longer holds the caption on screen. `None` when nothing else
+/// is left.
 pub fn caption_display_segment(
     segment: &CaptionTrackSegment,
     hide_fillers: bool,
 ) -> Option<Cow<'_, CaptionTrackSegment>> {
-    if !hide_fillers
-        || (!segment
-            .words
-            .iter()
-            .any(|word| is_hesitation_filler(&word.text))
-            && !segment.text.split_whitespace().any(is_hesitation_filler))
-    {
+    let leaves =
+        |word: &CaptionWord| word.hidden || (hide_fillers && is_hesitation_filler(&word.text));
+    let filler_token = |token: &str| hide_fillers && is_hesitation_filler(token);
+    if !segment.words.iter().any(leaves) && !segment.text.split_whitespace().any(filler_token) {
         return Some(Cow::Borrowed(segment));
     }
     let words: Vec<CaptionWord> = segment
         .words
         .iter()
-        .filter(|word| !is_hesitation_filler(&word.text))
+        .filter(|word| !leaves(word))
         .cloned()
         .collect();
     let text_follows_words = segment
@@ -285,7 +284,7 @@ pub fn caption_display_segment(
         segment
             .text
             .split_whitespace()
-            .filter(|token| !is_hesitation_filler(token))
+            .filter(|token| !filler_token(token))
             .collect::<Vec<_>>()
             .join(" ")
     };
@@ -295,18 +294,10 @@ pub fn caption_display_segment(
     let mut start = segment.start;
     let mut end = segment.end;
     if let (Some(first), Some(last)) = (words.first(), words.last()) {
-        if segment
-            .words
-            .first()
-            .is_some_and(|word| is_hesitation_filler(&word.text))
-        {
+        if segment.words.first().is_some_and(leaves) {
             start = start.max(f64::from(first.start));
         }
-        if segment
-            .words
-            .last()
-            .is_some_and(|word| is_hesitation_filler(&word.text))
-        {
+        if segment.words.last().is_some_and(leaves) {
             end = end.min(f64::from(last.end)).max(start);
         }
     }
@@ -358,6 +349,7 @@ mod tests {
             text: text.to_string(),
             start: index as f32,
             end: index as f32 + 0.5,
+            hidden: false,
         }
     }
 
@@ -380,6 +372,7 @@ mod tests {
             text: "seconds.".to_string(),
             start: 53.92,
             end: 70.16,
+            hidden: false,
         }]);
 
         assert_eq!(words.len(), 1);
@@ -392,6 +385,7 @@ mod tests {
             text: "hello".to_string(),
             start: 1.0,
             end: 1.4,
+            hidden: false,
         }]);
 
         assert_eq!(words.len(), 1);
@@ -553,6 +547,7 @@ mod tests {
                     text: (*text).into(),
                     start: *start,
                     end: *end,
+                    hidden: false,
                 })
                 .collect(),
             fade_duration_override: Some(0.3),
@@ -562,6 +557,29 @@ mod tests {
             background_color_override: None,
             font_size_override: Some(40),
         }
+    }
+
+    #[test]
+    fn hidden_words_leave_the_caption_without_any_filler_setting() {
+        let mut segment = track(
+            "然后好的",
+            &[
+                ("然", 0.0, 0.2),
+                ("后", 0.2, 0.4),
+                ("好", 0.4, 0.6),
+                ("的", 0.6, 0.8),
+            ],
+        );
+        segment.words[0].hidden = true;
+        segment.words[1].hidden = true;
+        let shown = caption_display_segment(&segment, false).unwrap();
+        assert_eq!(shown.text, "好的");
+        assert_eq!(shown.words.len(), 2);
+        assert!((shown.start - 0.4).abs() < 1e-5);
+
+        let mut all_hidden = track("嗯", &[("嗯", 0.0, 0.2)]);
+        all_hidden.words[0].hidden = true;
+        assert!(caption_display_segment(&all_hidden, false).is_none());
     }
 
     #[test]
@@ -661,10 +679,14 @@ mod tests {
                 text: (*text).to_string(),
                 start: index as f32,
                 end: index as f32 + 0.5,
+                hidden: false,
             })
             .collect();
         assert_eq!(caption_text_from_words(&words), "然后用豆包的 API key。");
-        assert_eq!(caption_display_text("然 后 用  豆 包 的 API key ，好"), "然后用豆包的 API key，好");
+        assert_eq!(
+            caption_display_text("然 后 用  豆 包 的 API key ，好"),
+            "然后用豆包的 API key，好"
+        );
         assert_eq!(caption_display_text("Hello   world"), "Hello world");
     }
 }

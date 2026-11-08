@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use cap_project::disfluency::{Disfluency, DisfluencyKind, normalize_word};
+use cap_project::filler_review::{DisfluencyKindOrder, FillerAction, FillerOccurrence, FillerTerm};
 use gpui::{
     AnyElement, AppContext, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla,
     InteractiveElement, IntoElement, KeyDownEvent, ListOffset, MouseButton, MouseDownEvent,
@@ -15,7 +16,7 @@ use gpui::{
 };
 
 use super::cuts::{self, CutReport, RestoreBlocker};
-use super::model::{TranscriptDoc, TranscriptEdl};
+use super::model::{TranscriptDoc, TranscriptEdl, set_captions_hidden};
 use super::{
     CleanupTab, DragUnit, FOLLOW_PAUSE, MAX_PLAYER_SHARE, MIN_PLAYER_SHARE, PAUSE_KEEP_RANGE,
     PAUSE_LONGER_RANGE, SearchState, WordDrag, WordSelection, category_index,
@@ -36,7 +37,11 @@ const LISTEN_AFTER: f64 = 1.0;
 /// Chinese and Japanese have no spaces between words, and a transcript word
 /// there is a character or two, so a query is found in the running text.
 fn find_text_matches(doc: &TranscriptDoc, query: &str) -> Vec<Range<usize>> {
-    let needle: String = query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let needle: String = query
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
     if needle.is_empty() {
         return Vec::new();
     }
@@ -142,15 +147,6 @@ fn kind_label(kind: DisfluencyKind) -> &'static str {
     }
 }
 
-fn kind_hint(kind: DisfluencyKind) -> &'static str {
-    match kind {
-        DisfluencyKind::Hesitation => tr::editor::transcript::fillers::hesitation_hint(),
-        DisfluencyKind::Repetition => tr::editor::transcript::fillers::repetition_hint(),
-        DisfluencyKind::FalseStart => tr::editor::transcript::fillers::false_start_hint(),
-        DisfluencyKind::Discourse => tr::editor::transcript::fillers::discourse_hint(),
-    }
-}
-
 fn seconds_label(value: f64) -> String {
     tr::editor::transcript::seconds(crate::i18n::decimal(format!("{value:.1}"))).to_string()
 }
@@ -165,7 +161,6 @@ struct Palette {
     active_bg: Hsla,
     filler_bg: Hsla,
     filler_text: Hsla,
-    filler_line: Hsla,
     match_bg: Hsla,
     current_match_bg: Hsla,
     restore_bg: Hsla,
@@ -184,7 +179,6 @@ impl Palette {
             active_bg: accent.opacity(0.12),
             filler_bg: Hsla::from(theme.amber_3),
             filler_text: Hsla::from(theme.amber_11),
-            filler_line: Hsla::from(theme.amber_11).opacity(0.7),
             match_bg: Hsla::from(theme.amber_6).opacity(0.55),
             current_match_bg: Hsla::from(theme.amber_6),
             restore_bg: accent.opacity(0.14),
@@ -238,19 +232,18 @@ impl ParagraphPainter {
                 style.background_color = Some(palette.restore_bg);
                 style.color = Some(palette.text_2);
             }
-        } else if let Some(filler) = self.doc.filler(word)
-            && !self.ignored.contains(&filler.words.start)
+        } else if self.doc.is_hidden(word) {
+            style.color = Some(palette.text_3);
+            style.underline = Some(UnderlineStyle {
+                thickness: px(1.),
+                color: Some(palette.text_3),
+                wavy: true,
+            });
+        } else if let Some(occurrence) = self.doc.marked_occurrence(word)
+            && !self.ignored.contains(&occurrence.words.start)
         {
-            if filler.kind == DisfluencyKind::Discourse {
-                style.underline = Some(UnderlineStyle {
-                    thickness: px(1.5),
-                    color: Some(palette.filler_line),
-                    wavy: false,
-                });
-            } else {
-                style.background_color = Some(palette.filler_bg);
-                style.color = Some(palette.filler_text);
-            }
+            style.background_color = Some(palette.filler_bg);
+            style.color = Some(palette.filler_text);
         }
         if kept && self.active == Some(word) {
             style.color = Some(palette.accent);
@@ -383,24 +376,28 @@ const MAX_VISIBLE_ROWS: usize = 8;
 
 fn snippet_around(doc: &TranscriptDoc, words: Range<usize>) -> (String, Range<usize>) {
     let paragraph = &doc.paragraphs[doc.paragraph_of(words.start)].words;
-    let before_start = paragraph.start.max(words.start.saturating_sub(4));
+    let before_start = paragraph.start.max(words.start.saturating_sub(7));
     let after_end = doc.paragraphs[doc.paragraph_of(words.end - 1)]
         .words
         .end
-        .min(words.end + 4);
+        .min(words.end + 7);
     let phrase = doc.text_of(words.clone());
+    let push = |snippet: &mut String, text: &str| {
+        if !snippet.is_empty() && !cap_project::joins_without_space(snippet, text) {
+            snippet.push(' ');
+        }
+        snippet.push_str(text);
+    };
     let mut snippet = String::new();
     if before_start < words.start {
-        snippet.push_str("… ");
-        snippet.push_str(&doc.text_of(before_start..words.start));
-        snippet.push(' ');
+        snippet.push('…');
+        push(&mut snippet, &doc.text_of(before_start..words.start));
     }
-    let highlight = snippet.len()..snippet.len() + phrase.len();
-    snippet.push_str(&phrase);
+    push(&mut snippet, &phrase);
+    let highlight = snippet.len() - phrase.len()..snippet.len();
     if words.end < after_end {
-        snippet.push(' ');
-        snippet.push_str(&doc.text_of(words.end..after_end));
-        snippet.push_str(" …");
+        push(&mut snippet, &doc.text_of(words.end..after_end));
+        snippet.push('…');
     }
     (snippet, highlight)
 }
@@ -473,7 +470,18 @@ fn filler_row(
                 .ok();
         }
     };
-    let on_remove = move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut gpui::App| {
+    let on_hide = {
+        let editor = editor.clone();
+        let words = words.clone();
+        move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut gpui::App| {
+            editor
+                .update(cx, |this, cx| {
+                    this.transcript_set_hidden(&[words.clone()], true, window, cx);
+                })
+                .ok();
+        }
+    };
+    let on_cut = move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut gpui::App| {
         editor
             .update(cx, |this, cx| {
                 this.transcript_remove_filler(words.clone(), window, cx);
@@ -512,15 +520,18 @@ fn filler_row(
         )
         .child(
             ui::EditorButton::plain(theme, ("transcript-filler-keep", index))
-                .left_icon("icons/check.svg")
-                .tooltip(theme, tr::editor::transcript::fillers::keep())
+                .label(tr::editor::transcript::fillers::action_keep())
                 .on_click(on_keep),
         )
         .child(
-            ui::EditorButton::plain(theme, ("transcript-filler-remove", index))
-                .left_icon("icons/x.svg")
-                .tooltip(theme, tr::editor::transcript::fillers::remove())
-                .on_click(on_remove),
+            ui::EditorButton::plain(theme, ("transcript-filler-hide", index))
+                .label(tr::editor::transcript::fillers::action_hide())
+                .on_click(on_hide),
+        )
+        .child(
+            ui::EditorButton::plain(theme, ("transcript-filler-cut", index))
+                .label(tr::editor::transcript::fillers::action_cut())
+                .on_click(on_cut),
         )
         .into_any_element()
 }
@@ -585,10 +596,21 @@ fn byte_at(layout: &TextLayout, position: Point<Pixels>) -> usize {
 impl EditorWindow {
     /// Opens the transcript panel with its find-and-replace bar focused.
     pub(crate) fn open_transcript_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.transcript.caption_only = true;
+        self.transcript.cleanup.open = false;
         if !self.transcript.open {
             self.toggle_transcript(window, cx);
         }
         self.transcript_open_search(window, cx);
+    }
+
+    pub(crate) fn open_transcript_cleanup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.transcript.caption_only = false;
+        if !self.transcript.open {
+            self.toggle_transcript(window, cx);
+        }
+        self.transcript.cleanup.open = true;
+        cx.notify();
     }
 
     /// Debug-build screenshot harness: the transcript panel open with its search
@@ -610,7 +632,11 @@ impl EditorWindow {
     }
 
     /// Debug-build screenshot harness: press "Replace all".
-    pub(crate) fn harness_transcript_replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn harness_transcript_replace_all(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.transcript_replace(true, window, cx);
     }
 
@@ -627,6 +653,7 @@ impl EditorWindow {
             if self.clips.open {
                 self.close_clips(window, cx);
             }
+            self.dismiss_sidebar_panels(cx);
             self.transcript.open = true;
             self.transcript.dirty = true;
             let started = Instant::now();
@@ -793,6 +820,14 @@ impl EditorWindow {
             return;
         }
 
+        if doc.is_hidden(word) && !event.modifiers.shift && event.click_count == 1 {
+            let words = doc
+                .occurrence_at(word)
+                .map_or(word..word + 1, |occurrence| occurrence.words.clone());
+            self.transcript_set_hidden(&[words], false, window, cx);
+            return;
+        }
+
         let unit = match event.click_count {
             2 => DragUnit::Sentence,
             count if count >= 3 => DragUnit::Paragraph,
@@ -906,6 +941,15 @@ impl EditorWindow {
         if ui::text_input_has_focus(window, cx) {
             return;
         }
+        if event.keystroke.key == "escape"
+            && self.transcript.search.is_none()
+            && self.transcript.selection.is_none()
+            && !self.transcript.cleanup.open
+        {
+            self.open_captions_settings(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         let Some((doc, edl)) = self.transcript_doc() else {
             return;
         };
@@ -940,6 +984,19 @@ impl EditorWindow {
                     false
                 }
             }
+            "h" if !command && !modifiers.alt => {
+                let Some(selection) = self.transcript.selection else {
+                    return;
+                };
+                let words = selection.range();
+                let hide = !self
+                    .transcript
+                    .doc
+                    .as_ref()
+                    .is_some_and(|doc| doc.is_range_hidden(words.clone()));
+                self.transcript_set_hidden(&[words], hide, window, cx);
+                true
+            }
             "enter" if !command => {
                 self.transcript_play_selection(cx);
                 true
@@ -954,7 +1011,8 @@ impl EditorWindow {
                     self.transcript.cleanup.open = false;
                     true
                 } else {
-                    false
+                    self.open_captions_settings(window, cx);
+                    true
                 }
             }
             "left" | "right" | "up" | "down" | "home" | "end" if !modifiers.alt => {
@@ -1111,6 +1169,27 @@ impl EditorWindow {
         self.transcript_apply_cuts(&cuts, reason, window, cx)
     }
 
+    fn transcript_cut_filler_runs(
+        &mut self,
+        runs: &[Range<usize>],
+        reason: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> CutReport {
+        let Some(doc) = self.transcript.doc.clone() else {
+            return CutReport::default();
+        };
+        let energy = self.transcript.energy.clone();
+        let edl = self.transcript.edl.clone();
+        let cuts = cuts::plan_filler_cuts(
+            &doc,
+            energy.as_deref(),
+            edl.as_ref().map(|edl| edl.kept.as_slice()),
+            runs,
+        );
+        self.transcript_apply_cuts(&cuts, reason, window, cx)
+    }
+
     fn transcript_apply_cuts(
         &mut self,
         cuts: &[Range<f64>],
@@ -1118,7 +1197,7 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> CutReport {
-        if cuts.is_empty() {
+        if self.transcript.caption_only || cuts.is_empty() {
             return CutReport::default();
         }
         let started = Instant::now();
@@ -1216,6 +1295,9 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.transcript.caption_only {
+            return;
+        }
         let Some(doc) = self.transcript.doc.clone() else {
             return;
         };
@@ -1301,9 +1383,10 @@ impl EditorWindow {
             &replace,
             window,
             |this: &mut Self, _, event: &ui::TextInputEvent, window, cx| match event {
+                ui::TextInputEvent::Changed => this.invalidate_transcript(cx),
                 ui::TextInputEvent::Confirmed => this.transcript_replace(false, window, cx),
                 ui::TextInputEvent::Cancelled => this.transcript_close_search(window, cx),
-                _ => {}
+                ui::TextInputEvent::Blurred => {}
             },
         );
         self.push_text_subscription(subscription);
@@ -1409,7 +1492,7 @@ impl EditorWindow {
         let replaced = std::rc::Rc::new(std::cell::Cell::new(0));
         let counted = replaced.clone();
         let (find_for_edit, replacement_for_edit) = (find.clone(), replacement.clone());
-        self.edit_project("transcript-replace", window, cx, move |project| {
+        self.edit_project_global("transcript-replace", window, cx, move |project| {
             let Some(captions) = project.captions.as_mut() else {
                 return false;
             };
@@ -1425,8 +1508,11 @@ impl EditorWindow {
             counted.set(count);
             let segments = captions.segments.clone();
             if let Some(timeline) = project.timeline.as_mut() {
-                timeline.caption_segments =
-                    cap_project::derive_caption_track_segments(&segments, timeline, &recording_durations);
+                timeline.caption_segments = cap_project::derive_caption_track_segments(
+                    &segments,
+                    timeline,
+                    &recording_durations,
+                );
             }
             true
         });
@@ -1476,6 +1562,148 @@ impl EditorWindow {
             .collect()
     }
 
+    /// Occurrences nothing has been decided about: still in the video, still
+    /// in the captions, and not set aside.
+    fn transcript_pending_occurrences(&self) -> Vec<(usize, FillerOccurrence)> {
+        let (Some(doc), Some(edl)) = (&self.transcript.doc, &self.transcript.edl) else {
+            return Vec::new();
+        };
+        doc.review
+            .iter()
+            .enumerate()
+            .filter(|(_, occurrence)| {
+                !self
+                    .transcript
+                    .cleanup
+                    .ignored
+                    .contains(&occurrence.words.start)
+                    && occurrence.words.clone().all(|word| edl.is_kept(word))
+                    && !doc.is_range_hidden(occurrence.words.clone())
+            })
+            .map(|(index, occurrence)| (index, occurrence.clone()))
+            .collect()
+    }
+
+    pub(super) fn transcript_set_hidden(
+        &mut self,
+        runs: &[Range<usize>],
+        hidden: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(doc) = self.transcript.doc.clone() else {
+            return;
+        };
+        let spans: Vec<Range<f64>> = runs
+            .iter()
+            .flat_map(|run| run.clone())
+            .map(|word| doc.words[word].start..doc.words[word].end)
+            .collect();
+        let recording_durations = self
+            .summary()
+            .map(|summary| summary.clip_display_durations.clone())
+            .unwrap_or_default();
+        self.edit_project_global("transcript-hide-captions", window, cx, move |project| {
+            let Some(captions) = project.captions.as_mut() else {
+                return false;
+            };
+            if !set_captions_hidden(captions, &spans, hidden) {
+                return false;
+            }
+            let segments = captions.segments.clone();
+            if let Some(timeline) = project.timeline.as_mut() {
+                timeline.caption_segments = cap_project::derive_caption_track_segments(
+                    &segments,
+                    timeline,
+                    &recording_durations,
+                );
+            }
+            true
+        });
+        self.transcript.dirty = true;
+        self.transcript_refresh();
+        self.invalidate_transcript(cx);
+    }
+
+    pub(super) fn transcript_apply_suggestions(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pending = self.transcript_pending_occurrences();
+        let runs_for = |action: FillerAction| -> Vec<Range<usize>> {
+            pending
+                .iter()
+                .filter(|(_, occurrence)| !occurrence.review && occurrence.suggestion == action)
+                .map(|(_, occurrence)| occurrence.words.clone())
+                .collect()
+        };
+        let (hide, cut) = (
+            runs_for(FillerAction::HideCaption),
+            runs_for(FillerAction::Cut),
+        );
+        if !hide.is_empty() {
+            self.transcript_set_hidden(&hide, true, window, cx);
+        }
+        if !cut.is_empty() {
+            self.transcript.selection = None;
+            self.transcript_cut_filler_runs(
+                &cut,
+                "transcript-apply-filler-suggestions",
+                window,
+                cx,
+            );
+        }
+        self.invalidate_transcript(cx);
+    }
+
+    /// Applies one action to every occurrence of `term`, whatever was done to
+    /// each before, so the by-word control can be changed back and forth.
+    fn transcript_set_term_action(
+        &mut self,
+        term: &FillerTerm,
+        action: FillerAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(doc) = self.transcript.doc.clone() else {
+            return;
+        };
+        let runs: Vec<Range<usize>> = doc
+            .review
+            .iter()
+            .filter(|occurrence| occurrence.term == *term)
+            .map(|occurrence| occurrence.words.clone())
+            .collect();
+        for run in &runs {
+            if action == FillerAction::Keep {
+                self.transcript.cleanup.ignored.insert(run.start);
+            } else {
+                self.transcript.cleanup.ignored.remove(&run.start);
+            }
+        }
+        self.transcript_set_hidden(&runs, action == FillerAction::HideCaption, window, cx);
+        if action == FillerAction::Cut {
+            self.transcript.selection = None;
+            self.transcript_cut_filler_runs(&runs, "transcript-cut-filler-term", window, cx);
+        } else {
+            let cut: Vec<Range<usize>> = {
+                let edl = self.transcript.edl.clone();
+                runs.iter()
+                    .filter(|run| {
+                        edl.as_ref()
+                            .is_some_and(|edl| (*run).clone().any(|word| !edl.is_kept(word)))
+                    })
+                    .cloned()
+                    .collect()
+            };
+            for run in cut {
+                self.transcript_restore(run, window, cx);
+            }
+        }
+        self.invalidate_transcript(cx);
+    }
+
     pub(super) fn transcript_remove_fillers(
         &mut self,
         window: &mut Window,
@@ -1500,7 +1728,7 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) {
         self.transcript.selection = None;
-        self.transcript_cut_runs(&[words], "transcript-remove-filler", window, cx);
+        self.transcript_cut_filler_runs(&[words], "transcript-remove-filler", window, cx);
         self.invalidate_transcript(cx);
     }
 
@@ -1712,10 +1940,24 @@ impl EditorWindow {
                 }
             }))
             .child(self.render_transcript_header(cx))
+            .child(
+                div()
+                    .px(px(12.))
+                    .py(px(6.))
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(if self.transcript.caption_only {
+                        tr::editor::workbench::search_safe_hint()
+                    } else {
+                        tr::editor::workbench::video_edit_hint()
+                    }),
+            )
             .children(self.render_transcript_search(cx))
             .children(self.render_transcript_cleanup(cx))
             .child(body)
-            .child(self.render_transcript_footer())
+            .when(!self.transcript.caption_only, |panel| {
+                panel.child(self.render_transcript_footer())
+            })
             .into_any_element()
     }
 
@@ -1746,15 +1988,16 @@ impl EditorWindow {
                 div()
                     .flex()
                     .flex_row()
-                    .items_baseline()
+                    .items_center()
                     .gap(px(8.))
                     .min_w_0()
                     .child(
-                        div()
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.editor.text_1))
-                            .child(tr::editor::transcript::title()),
+                        ui::EditorButton::plain(&theme, "transcript-back-to-captions")
+                            .left_icon("icons/chevron-left.svg")
+                            .label(tr::editor::transcript::back_to_captions())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_captions_settings(window, cx);
+                            })),
                     )
                     .children(words.filter(|_| has_doc).map(|count| {
                         div()
@@ -1784,18 +2027,20 @@ impl EditorWindow {
                                 }
                             })),
                     )
-                    .child(
-                        ui::EditorButton::plain(&theme, "transcript-cleanup")
-                            .left_icon("icons/scissors.svg")
-                            .label(tr::editor::transcript::cleanup())
-                            .tooltip(&theme, tr::editor::transcript::cleanup_tooltip())
-                            .disabled(!has_doc)
-                            .pressed(self.transcript.cleanup.open)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.transcript.cleanup.open = !this.transcript.cleanup.open;
-                                this.invalidate_transcript(cx);
-                            })),
-                    ),
+                    .when(!self.transcript.caption_only, |row| {
+                        row.child(
+                            ui::EditorButton::plain(&theme, "transcript-cleanup")
+                                .left_icon("icons/scissors.svg")
+                                .label(tr::editor::transcript::cleanup())
+                                .tooltip(&theme, tr::editor::transcript::cleanup_tooltip())
+                                .disabled(!has_doc)
+                                .pressed(self.transcript.cleanup.open)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.transcript.cleanup.open = !this.transcript.cleanup.open;
+                                    this.invalidate_transcript(cx);
+                                })),
+                        )
+                    }),
             )
     }
 
@@ -1813,43 +2058,44 @@ impl EditorWindow {
                 count,
             ))
         };
-        let replaced = search.replaced.map(|count| {
-            SharedString::from(tr::editor::transcript::replaced(count))
-        });
+        let replaced = search
+            .replaced
+            .map(|count| SharedString::from(tr::editor::transcript::replaced(count)));
         let find_row = div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(6.))
-                .child(
-                    div().flex_1().min_w_0().child(
-                        ui::TextInput::plain(&theme, "transcript-search-input", &search.input)
-                            .height(px(28.))
-                            .text_size(px(13.)),
-                    ),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(px(12.))
-                        .text_color(Hsla::from(theme.editor.text_3))
-                        .child(label),
-                )
-                .child(
-                    ui::EditorButton::plain(&theme, "transcript-search-previous")
-                        .left_icon("icons/chevron-up.svg")
-                        .tooltip(&theme, tr::editor::transcript::previous_match())
-                        .disabled(count == 0)
-                        .on_click(cx.listener(|this, _, _, cx| this.transcript_step_match(-1, cx))),
-                )
-                .child(
-                    ui::EditorButton::plain(&theme, "transcript-search-next")
-                        .left_icon("icons/chevron-down.svg")
-                        .tooltip(&theme, tr::editor::transcript::next_match())
-                        .disabled(count == 0)
-                        .on_click(cx.listener(|this, _, _, cx| this.transcript_step_match(1, cx))),
-                )
-                .child(
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.))
+            .child(
+                div().flex_1().min_w_0().child(
+                    ui::TextInput::plain(&theme, "transcript-search-input", &search.input)
+                        .height(px(28.))
+                        .text_size(px(13.)),
+                ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.editor.text_3))
+                    .child(label),
+            )
+            .child(
+                ui::EditorButton::plain(&theme, "transcript-search-previous")
+                    .left_icon("icons/chevron-up.svg")
+                    .tooltip(&theme, tr::editor::transcript::previous_match())
+                    .disabled(count == 0)
+                    .on_click(cx.listener(|this, _, _, cx| this.transcript_step_match(-1, cx))),
+            )
+            .child(
+                ui::EditorButton::plain(&theme, "transcript-search-next")
+                    .left_icon("icons/chevron-down.svg")
+                    .tooltip(&theme, tr::editor::transcript::next_match())
+                    .disabled(count == 0)
+                    .on_click(cx.listener(|this, _, _, cx| this.transcript_step_match(1, cx))),
+            )
+            .when(!self.transcript.caption_only, |row| {
+                row.child(
                     ui::EditorButton::plain(&theme, "transcript-search-delete")
                         .left_icon("icons/trash.svg")
                         .label(tr::editor::transcript::delete_matches())
@@ -1858,7 +2104,8 @@ impl EditorWindow {
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.transcript_delete_matches(window, cx);
                         })),
-                );
+                )
+            });
         let replace_row = div()
             .flex()
             .flex_row()
@@ -1912,7 +2159,7 @@ impl EditorWindow {
     }
 
     fn render_transcript_cleanup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.transcript.cleanup.open {
+        if self.transcript.caption_only || !self.transcript.cleanup.open {
             return None;
         }
         let doc = self.transcript.doc.clone()?;
@@ -1920,15 +2167,14 @@ impl EditorWindow {
         let theme = self.theme;
         let palette = Palette::new(&theme);
         let cleanup = &self.transcript.cleanup;
-        let fillers = self.transcript_live_fillers();
-        let mut counts = [0usize; 4];
-        for (_, filler) in &fillers {
-            counts[category_index(filler.kind)] += 1;
-        }
-        let listed: Vec<(usize, Disfluency)> = fillers
-            .into_iter()
-            .filter(|(_, filler)| cleanup.category_enabled(filler.kind))
-            .collect();
+        let pending = self.transcript_pending_occurrences();
+        let suggested = |action: FillerAction| {
+            pending
+                .iter()
+                .filter(|(_, occurrence)| !occurrence.review && occurrence.suggestion == action)
+                .count()
+        };
+        let actionable = suggested(FillerAction::HideCaption) + suggested(FillerAction::Cut);
         let pauses = self.transcript_pause_plan();
         let saved: f64 = pauses.iter().map(|pause| pause.saves).sum();
         let on_pauses = cleanup.tab == CleanupTab::Pauses;
@@ -1965,16 +2211,14 @@ impl EditorWindow {
         } else {
             ui::Button::plain(
                 &theme,
-                "transcript-remove-fillers",
+                "transcript-apply-filler-suggestions",
                 ui::ButtonVariant::Primary,
                 ui::ButtonSize::Sm,
             )
-            .label(SharedString::from(
-                tr::editor::transcript::fillers::remove_all(listed.len()),
-            ))
-            .disabled(listed.is_empty())
+            .label(tr::editor::transcript::fillers::apply_suggestions())
+            .disabled(actionable == 0)
             .on_click(cx.listener(|this, _, window, cx| {
-                this.transcript_remove_fillers(window, cx);
+                this.transcript_apply_suggestions(window, cx);
             }))
         };
 
@@ -1993,7 +2237,7 @@ impl EditorWindow {
         let body = if on_pauses {
             self.render_transcript_pause_list(&doc, pauses, saved, palette, cx)
         } else {
-            self.render_transcript_filler_list(&doc, &edl, listed, counts, palette, cx)
+            self.render_transcript_filler_list(&doc, &edl, pending, palette, cx)
         };
 
         Some(
@@ -2024,90 +2268,67 @@ impl EditorWindow {
         &self,
         doc: &Arc<TranscriptDoc>,
         edl: &Arc<TranscriptEdl>,
-        listed: Vec<(usize, Disfluency)>,
-        counts: [usize; 4],
+        pending: Vec<(usize, FillerOccurrence)>,
         palette: Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = self.theme;
         let cleanup = &self.transcript.cleanup;
-        let categories = DisfluencyKind::ALL.into_iter().map(|kind| {
-            let index = category_index(kind);
-            let checked = cleanup.categories[index];
-            div()
-                .id(("transcript-category", index))
-                .flex()
-                .flex_row()
-                .flex_none()
-                .items_center()
-                .gap(px(8.))
-                .h(px(28.))
-                .px(px(6.))
-                .rounded(px(6.))
-                .cursor_pointer()
-                .hover(|style| style.bg(Hsla::from(theme.editor.ctl)))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.transcript.cleanup.categories[index] =
-                        !this.transcript.cleanup.categories[index];
-                    this.invalidate_transcript(cx);
-                }))
-                .child(
-                    div()
-                        .flex_none()
-                        .size(px(14.))
-                        .rounded(px(4.))
-                        .border_1()
-                        .border_color(if checked {
-                            palette.accent
-                        } else {
-                            Hsla::from(theme.editor.line_strong)
-                        })
-                        .when(checked, |this| this.bg(palette.accent))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(checked, |this| {
-                            this.child(
-                                svg()
-                                    .path("icons/check.svg")
-                                    .size(px(10.))
-                                    .text_color(gpui::white()),
-                            )
-                        }),
+        let count_of = |action: FillerAction, in_list: &[(usize, FillerOccurrence)]| {
+            in_list
+                .iter()
+                .filter(|(_, occurrence)| !occurrence.review && occurrence.suggestion == action)
+                .count()
+        };
+        let (cut, hide, keep) = (
+            count_of(FillerAction::Cut, &pending),
+            count_of(FillerAction::HideCaption, &pending),
+            count_of(FillerAction::Keep, &pending),
+        );
+        let cut_runs: Vec<Range<usize>> = pending
+            .iter()
+            .filter(|(_, occurrence)| {
+                !occurrence.review && occurrence.suggestion == FillerAction::Cut
+            })
+            .map(|(_, occurrence)| occurrence.words.clone())
+            .collect();
+        let saved: f64 = cuts::plan_filler_cuts(
+            doc,
+            self.transcript.energy.as_deref(),
+            Some(edl.kept.as_slice()),
+            &cut_runs,
+        )
+        .iter()
+        .map(|cut| cut.end - cut.start)
+        .sum();
+        let count_review = pending.iter().filter(|(_, o)| o.review).count();
+        let summary = div()
+            .flex_none()
+            .px(px(6.))
+            .pb(px(6.))
+            .text_size(px(12.))
+            .text_color(palette.text_2)
+            .child(SharedString::from(if pending.is_empty() {
+                tr::editor::transcript::fillers::none().to_string()
+            } else if cut + hide == 0 {
+                tr::editor::transcript::fillers::needs_review(count_review).to_string()
+            } else if cut > 0 {
+                format!(
+                    "{} · {}",
+                    tr::editor::transcript::fillers::suggestion_summary(cut, hide, keep),
+                    tr::editor::transcript::fillers::shorter_by(crate::i18n::decimal(format!(
+                        "{saved:.1}"
+                    ))),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_row()
-                        .items_baseline()
-                        .gap(px(6.))
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_size(px(13.))
-                                .text_color(palette.text_1)
-                                .child(kind_label(kind)),
-                        )
-                        .child(
-                            div()
-                                .min_w_0()
-                                .text_size(px(12.))
-                                .text_color(palette.text_3)
-                                .truncate()
-                                .child(kind_hint(kind)),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(px(12.))
-                        .text_color(palette.text_2)
-                        .child(SharedString::from(counts[index].to_string())),
-                )
-        });
+            } else {
+                tr::editor::transcript::fillers::suggestion_summary(cut, hide, keep).to_string()
+            }));
 
+        let listed: Vec<(usize, FillerOccurrence)> = pending
+            .iter()
+            .filter(|(_, occurrence)| occurrence.review)
+            .cloned()
+            .collect();
         let count = listed.len();
         let rows = {
             let doc = doc.clone();
@@ -2118,15 +2339,15 @@ impl EditorWindow {
             gpui::uniform_list("transcript-filler-rows", count, move |range, _, _| {
                 range
                     .filter_map(|row| listed.get(row))
-                    .map(|(index, filler)| {
+                    .map(|(index, occurrence)| {
                         filler_row(
                             &theme,
                             palette,
                             &doc,
                             &edl,
                             *index,
-                            filler.words.clone(),
-                            selection.as_ref() == Some(&filler.words),
+                            occurrence.words.clone(),
+                            selection.as_ref() == Some(&occurrence.words),
                             editor.clone(),
                         )
                     })
@@ -2137,39 +2358,177 @@ impl EditorWindow {
             .h(px(ROW_HEIGHT * count.min(MAX_VISIBLE_ROWS) as f32))
         };
 
+        let mut terms: Vec<FillerTerm> = doc
+            .review
+            .iter()
+            .map(|occurrence| occurrence.term.clone())
+            .collect();
+        terms.sort();
+        terms.dedup();
+        let term_rows = cleanup.by_term_open.then(|| {
+            terms
+                .into_iter()
+                .enumerate()
+                .map(|(row, term)| self.render_filler_term_row(doc, edl, row, term, palette, cx))
+                .collect::<Vec<_>>()
+        });
+        let by_term_open = cleanup.by_term_open;
+
         div()
             .flex()
             .flex_col()
             .flex_1()
             .min_h_0()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_none()
-                    .pb(px(4.))
-                    .children(categories),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .h(px(1.))
-                    .mx(px(6.))
-                    .mb(px(4.))
-                    .bg(Hsla::from(theme.editor.line)),
-            )
-            .when(count == 0, |this| {
+            .child(summary)
+            .when(count > 0 && !by_term_open, |this| {
+                this.when(cut + hide > 0, |this| {
+                    this.child(
+                        div()
+                            .flex_none()
+                            .px(px(6.))
+                            .pb(px(2.))
+                            .text_size(px(12.))
+                            .text_color(palette.text_3)
+                            .child(SharedString::from(
+                                tr::editor::transcript::fillers::needs_review(count),
+                            )),
+                    )
+                })
+                .child(rows)
+            })
+            .when(!doc.review.is_empty(), |this| {
                 this.child(
                     div()
+                        .id("transcript-filler-by-term")
+                        .flex()
+                        .flex_row()
                         .flex_none()
+                        .items_center()
+                        .gap(px(4.))
+                        .mt(px(4.))
+                        .h(px(26.))
                         .px(px(6.))
-                        .py(px(6.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
                         .text_size(px(12.))
-                        .text_color(palette.text_3)
-                        .child(tr::editor::transcript::fillers::none()),
+                        .text_color(palette.text_2)
+                        .hover(|style| style.bg(Hsla::from(theme.editor.ctl)))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.transcript.cleanup.by_term_open =
+                                !this.transcript.cleanup.by_term_open;
+                            this.invalidate_transcript(cx);
+                        }))
+                        .child(tr::editor::transcript::fillers::by_term())
+                        .child(if by_term_open { "⌃" } else { "›" }),
                 )
             })
-            .child(rows)
+            .when_some(term_rows, |this, rows| {
+                this.child(
+                    div()
+                        .id("transcript-filler-terms")
+                        .flex()
+                        .flex_col()
+                        .flex_none()
+                        .max_h(px(ROW_HEIGHT * MAX_VISIBLE_ROWS as f32))
+                        .overflow_y_scroll()
+                        .children(rows),
+                )
+            })
+            .into_any_element()
+    }
+
+    fn render_filler_term_row(
+        &self,
+        doc: &Arc<TranscriptDoc>,
+        edl: &Arc<TranscriptEdl>,
+        row: usize,
+        term: FillerTerm,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = self.theme;
+        let ignored = &self.transcript.cleanup.ignored;
+        let occurrences: Vec<&FillerOccurrence> = doc
+            .review
+            .iter()
+            .filter(|occurrence| occurrence.term == term)
+            .collect();
+        let suggested = |action: FillerAction| {
+            occurrences
+                .iter()
+                .filter(|occurrence| occurrence.suggestion == action)
+                .count()
+        };
+        let all = |test: &dyn Fn(&FillerOccurrence) -> bool| {
+            occurrences.iter().all(|occurrence| test(occurrence))
+        };
+        let all_cut = all(&|occurrence| occurrence.words.clone().all(|word| !edl.is_kept(word)));
+        let all_hidden = all(&|occurrence| doc.is_range_hidden(occurrence.words.clone()));
+        let all_kept = all(&|occurrence| ignored.contains(&occurrence.words.start));
+        let label: SharedString = match &term {
+            FillerTerm::Word(word) => word.clone().into(),
+            FillerTerm::Kind(DisfluencyKindOrder::Repetition) => {
+                kind_label(DisfluencyKind::Repetition).into()
+            }
+            FillerTerm::Kind(DisfluencyKindOrder::FalseStart) => {
+                kind_label(DisfluencyKind::FalseStart).into()
+            }
+            FillerTerm::Kind(DisfluencyKindOrder::Discourse) => {
+                kind_label(DisfluencyKind::Discourse).into()
+            }
+        };
+        let control = ui::SegmentedControl::editor(
+            &theme,
+            ("transcript-filler-term", row),
+            vec![
+                ui::SegmentOption::new(tr::editor::transcript::fillers::action_keep(), all_kept),
+                ui::SegmentOption::new(tr::editor::transcript::fillers::action_hide(), all_hidden),
+                ui::SegmentOption::new(tr::editor::transcript::fillers::action_cut(), all_cut),
+            ],
+        )
+        .on_select(cx.listener(move |this, index: &usize, window, cx| {
+            let action = match index {
+                0 => FillerAction::Keep,
+                1 => FillerAction::HideCaption,
+                _ => FillerAction::Cut,
+            };
+            this.transcript_set_term_action(&term, action, window, cx);
+        }));
+        div()
+            .flex()
+            .flex_row()
+            .flex_none()
+            .items_center()
+            .justify_between()
+            .gap(px(8.))
+            .px(px(6.))
+            .py(px(3.))
+            .child(
+                div()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(div().text_size(px(13.)).text_color(palette.text_1).child(
+                        SharedString::from(format!(
+                            "{label} · {}",
+                            tr::editor::transcript::fillers::occurrences(occurrences.len())
+                        )),
+                    ))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(palette.text_3)
+                            .truncate()
+                            .child(SharedString::from(
+                                tr::editor::transcript::fillers::term_suggestion(
+                                    suggested(FillerAction::Cut),
+                                    suggested(FillerAction::HideCaption),
+                                    suggested(FillerAction::Keep),
+                                ),
+                            )),
+                    ),
+            )
+            .child(div().flex_none().child(control))
             .into_any_element()
     }
 

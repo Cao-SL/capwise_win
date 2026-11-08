@@ -867,6 +867,7 @@ pub(crate) fn transcode_editor_video(
     audio_output_path: &Path,
     project_path: &Path,
     cancelled: &AtomicBool,
+    progress: &dyn Fn(f64),
 ) -> Result<(u32, Option<u32>), String> {
     check_editor_import_cancelled(project_path, Some(cancelled))?;
     if !source_path.is_file() || !has_supported_extension(source_path, &["mp4"]) {
@@ -877,7 +878,7 @@ pub(crate) fn transcode_editor_video(
         output_path,
         Some(audio_output_path),
         project_path,
-        &|_| {},
+        progress,
         Some(cancelled),
     )
 }
@@ -928,7 +929,503 @@ fn next_import_packet(
     }
 }
 
+const COPY_MAX_KEYFRAME_GAP_SECS: f64 = 10.0;
+const COPY_CHECKED_TAIL_SECS: f64 = 3.0;
+
 fn transcode_video(
+    source_path: &Path,
+    output_path: &Path,
+    audio_output_path: Option<&Path>,
+    project_path: &Path,
+    report_converting: &dyn Fn(f64),
+    cancelled: Option<&AtomicBool>,
+) -> Result<(u32, Option<u32>), String> {
+    let started = std::time::Instant::now();
+    if let Some(result) = copy_video_stream(
+        source_path,
+        output_path,
+        audio_output_path,
+        project_path,
+        report_converting,
+        cancelled,
+    )? {
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "import copied the source video stream"
+        );
+        return Ok(result);
+    }
+    for path in [Some(output_path), audio_output_path].into_iter().flatten() {
+        if path.is_file()
+            && let Err(error) = std::fs::remove_file(path)
+        {
+            return Err(format!("Failed to discard partial import: {error}"));
+        }
+    }
+    let result = reencode_video(
+        source_path,
+        output_path,
+        audio_output_path,
+        project_path,
+        report_converting,
+        cancelled,
+    );
+    tracing::info!(
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "import re-encoded the source video"
+    );
+    result
+}
+
+fn copyable_video(stream: &ffmpeg::Stream) -> bool {
+    let parameters = stream.parameters();
+    if parameters.id() != avcodec::Id::H264 {
+        return false;
+    }
+    let Ok(decoder) =
+        avcodec::Context::from_parameters(parameters).and_then(|context| context.decoder().video())
+    else {
+        return false;
+    };
+    matches!(
+        decoder.format(),
+        avformat::Pixel::YUV420P | avformat::Pixel::YUVJ420P
+    ) && decoder.width() > 0
+        && decoder.height() > 0
+        && decoder.width() % 2 == 0
+        && decoder.height() % 2 == 0
+}
+
+fn copy_video_stream(
+    source_path: &Path,
+    output_path: &Path,
+    audio_output_path: Option<&Path>,
+    project_path: &Path,
+    report_converting: &dyn Fn(f64),
+    cancelled: Option<&AtomicBool>,
+) -> Result<Option<(u32, Option<u32>)>, String> {
+    check_editor_import_cancelled(project_path, cancelled)?;
+    let strict = cancelled.is_some();
+    let mut input = match cancelled {
+        Some(cancelled) => {
+            avformat::input_with_interrupt(source_path, || cancelled.load(Ordering::Acquire))
+        }
+        None => avformat::input(source_path),
+    }
+    .map_err(|error| format!("Failed to open video file: {error}"))?;
+    check_editor_import_cancelled(project_path, cancelled)?;
+
+    let Some(stream) = input.streams().best(ffmpeg::media::Type::Video) else {
+        return Ok(None);
+    };
+    if !copyable_video(&stream) {
+        return Ok(None);
+    }
+    let video_stream_index = stream.index();
+    let video_time_base = stream.time_base();
+    let frame_rate = stream.avg_frame_rate();
+    let video_parameters = stream.parameters();
+    let fps = if frame_rate.denominator() > 0 && frame_rate.numerator() > 0 {
+        ((f64::from(frame_rate.numerator()) / f64::from(frame_rate.denominator())).round() as u32)
+            .clamp(1, 120)
+    } else {
+        30
+    };
+    let seconds_per_tick =
+        f64::from(video_time_base.numerator()) / f64::from(video_time_base.denominator().max(1));
+    if seconds_per_tick <= 0.0 {
+        return Ok(None);
+    }
+    let frame_ticks = ((1.0 / f64::from(fps)) / seconds_per_tick).round().max(1.0) as i64;
+    let duration_secs = (input.duration() > 0).then(|| input.duration() as f64 / 1_000_000.0);
+    let tail_start = duration_secs.map_or(0.0, |duration| duration - COPY_CHECKED_TAIL_SECS);
+
+    let mut checker = avcodec::Context::from_parameters(video_parameters.clone())
+        .map_err(|e| format!("Failed to create decoder: {e}"))?;
+    checker.set_threading(ffmpeg::threading::Config {
+        kind: ffmpeg::threading::Type::Frame,
+        count: import_decode_threads(),
+    });
+    let mut checker = checker
+        .decoder()
+        .video()
+        .map_err(|e| format!("Failed to create decoder: {e}"))?;
+    if strict {
+        checker.check(ffmpeg::codec::decoder::Check::EXPLODE);
+    }
+
+    let mut audio = ImportAudio::open(&input, strict)?;
+
+    check_editor_import_cancelled(project_path, cancelled)?;
+    if let Some(parent) = output_path.parent() {
+        if cancelled.is_some() {
+            if !parent.is_dir() {
+                return Err(IMPORT_CANCELLED.to_string());
+            }
+        } else {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create project directory: {e}"))?;
+        }
+    }
+
+    let mut output =
+        avformat::output(output_path).map_err(|e| format!("Failed to create output: {e}"))?;
+    {
+        let mut stream = output
+            .add_stream(ffmpeg::encoder::find(avcodec::Id::None))
+            .map_err(|e| format!("Failed to create output: {e}"))?;
+        stream.set_parameters(video_parameters);
+        unsafe {
+            (*stream.parameters().as_mut_ptr()).codec_tag = 0;
+        }
+        stream.set_time_base(video_time_base);
+        stream.set_rate((fps as i32, 1));
+    }
+    audio.open_output(audio_output_path)?;
+    let sample_rate = audio.sample_rate;
+    output
+        .write_header()
+        .map_err(|e| format!("Failed to write header: {e}"))?;
+    let output_time_base = output
+        .stream(0)
+        .ok_or("Output video stream disappeared")?
+        .time_base();
+
+    let mut frame = ffmpeg::frame::Video::empty();
+    let mut decoded_frames = 0u64;
+    let mut decode = |decoder: &mut ffmpeg::decoder::Video,
+                      packet: &ffmpeg::Packet,
+                      decoded_frames: &mut u64|
+     -> Result<(), String> {
+        decoder
+            .send_packet(packet)
+            .map_err(|e| format!("Video decode failed: {e}"))?;
+        while receive_import_output(decoder.receive_frame(&mut frame), strict, "Video decode")? {
+            if strict && frame.is_corrupt() {
+                return Err("Imported video contains a corrupt frame".to_string());
+            }
+            *decoded_frames += 1;
+        }
+        Ok(())
+    };
+
+    let mut first_ts = None;
+    let mut last_key_secs: Option<f64> = None;
+    let mut last_packet_secs = 0.0f64;
+    let mut longest_gop = 0.0f64;
+    let mut checking_head = true;
+    let mut seen_key = false;
+    let mut checking_tail = false;
+    let mut pending: Vec<ffmpeg::Packet> = Vec::new();
+    let mut last_written_dts = None;
+    let mut copied_packets = 0u64;
+    let mut last_progress = 0.0;
+
+    while let Some(mut packet) = next_import_packet(&mut input, project_path, cancelled)? {
+        let stream_index = packet.stream();
+        if strict
+            && packet.is_corrupt()
+            && (stream_index == video_stream_index || audio.stream_index == Some(stream_index))
+        {
+            return Err("Imported media contains a corrupt packet".to_string());
+        }
+        if stream_index == video_stream_index {
+            let Some(ts) = packet.dts().or(packet.pts()) else {
+                return Ok(None);
+            };
+            let origin = *first_ts.get_or_insert(ts);
+            let secs = (packet.pts().unwrap_or(ts) - origin) as f64 * seconds_per_tick;
+            last_packet_secs = last_packet_secs.max(secs);
+            let key = packet.is_key();
+            if key {
+                if let Some(previous) = last_key_secs {
+                    longest_gop = longest_gop.max(secs - previous);
+                }
+                last_key_secs = Some(secs);
+            }
+            if longest_gop > COPY_MAX_KEYFRAME_GAP_SECS || last_key_secs.is_none() {
+                return Ok(None);
+            }
+
+            if checking_head && key && seen_key && secs < tail_start {
+                checking_head = false;
+            }
+            seen_key |= key;
+            if checking_head || checking_tail {
+                decode(&mut checker, &packet, &mut decoded_frames)?;
+            } else if secs >= tail_start {
+                checking_tail = true;
+                checker.flush();
+                for buffered in pending.drain(..) {
+                    decode(&mut checker, &buffered, &mut decoded_frames)?;
+                }
+                decode(&mut checker, &packet, &mut decoded_frames)?;
+            } else {
+                if key {
+                    pending.clear();
+                }
+                pending.push(packet.clone());
+            }
+
+            packet.set_pts(packet.pts().map(|pts| pts - origin));
+            packet.set_dts(packet.dts().map(|dts| dts - origin));
+            if packet.duration() <= 0 {
+                packet.set_duration(frame_ticks);
+            }
+            packet.set_position(-1);
+            packet.set_stream(0);
+            packet.rescale_ts(video_time_base, output_time_base);
+            fix_packet_timestamps(&mut packet, &mut last_written_dts);
+            packet
+                .write_interleaved(&mut output)
+                .map_err(|e| format!("Failed to copy video: {e}"))?;
+            copied_packets += 1;
+
+            if let Some(duration) = duration_secs {
+                let progress = (secs / duration).clamp(0.0, 0.99);
+                if progress - last_progress >= 0.01 {
+                    last_progress = progress;
+                    report_converting(progress);
+                }
+            }
+        } else if audio.owns(stream_index) {
+            audio.send(&packet, project_path, cancelled)?;
+        }
+    }
+    if let Some(previous) = last_key_secs
+        && last_packet_secs - previous > COPY_MAX_KEYFRAME_GAP_SECS
+    {
+        return Ok(None);
+    }
+
+    check_editor_import_cancelled(project_path, cancelled)?;
+    checker
+        .send_eof()
+        .map_err(|e| format!("Video decode failed: {e}"))?;
+    while receive_import_output(
+        checker.receive_frame(&mut frame),
+        strict,
+        "Video decode flush",
+    )? {
+        if strict && frame.is_corrupt() {
+            return Err("Imported video contains a corrupt frame".to_string());
+        }
+        decoded_frames += 1;
+    }
+    audio.finish_decoding(project_path, cancelled)?;
+
+    check_editor_import_cancelled(project_path, cancelled)?;
+    if copied_packets == 0 || (strict && (decoded_frames == 0 || audio.is_empty())) {
+        return Err("Imported media has an empty video or audio track".to_string());
+    }
+    audio.finish()?;
+    output
+        .write_trailer()
+        .map_err(|e| format!("Failed to write trailer: {e}"))?;
+    drop(output);
+    sync_import_outputs(output_path, audio_output_path, sample_rate, strict)?;
+
+    check_editor_import_cancelled(project_path, cancelled)?;
+    Ok(Some((fps, sample_rate)))
+}
+
+fn sync_import_outputs(
+    output_path: &Path,
+    audio_output_path: Option<&Path>,
+    sample_rate: Option<u32>,
+    strict: bool,
+) -> Result<(), String> {
+    if strict {
+        for path in [
+            Some(output_path),
+            audio_output_path.filter(|_| sample_rate.is_some()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .and_then(|file| file.sync_all())
+                .map_err(|error| format!("Failed to save imported media: {error}"))?;
+        }
+    } else {
+        if let Ok(file) = std::fs::File::open(output_path) {
+            let _ = file.sync_all();
+        }
+        if let Some(audio_path) = audio_output_path
+            && let Ok(file) = std::fs::File::open(audio_path)
+        {
+            let _ = file.sync_all();
+        }
+    }
+    Ok(())
+}
+
+struct ImportAudio {
+    strict: bool,
+    stream_index: Option<usize>,
+    decoder: Option<(usize, ffmpeg::decoder::Audio)>,
+    output: Option<(avformat::context::Output, OpusOutput)>,
+    sample_rate: Option<u32>,
+    frame: ffmpeg::frame::Audio,
+    samples: u64,
+}
+
+impl ImportAudio {
+    fn open(input: &avformat::context::Input, strict: bool) -> Result<Self, String> {
+        let stream_index = input
+            .streams()
+            .best(ffmpeg::media::Type::Audio)
+            .map(|stream| stream.index());
+        if strict
+            && stream_index.is_none()
+            && input
+                .streams()
+                .any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
+        {
+            return Err("The imported audio track cannot be decoded".to_string());
+        }
+        let decoder = stream_index
+            .map(|index| {
+                let stream = input.stream(index).ok_or("Audio stream disappeared")?;
+                let decoder_ctx = avcodec::Context::from_parameters(stream.parameters())
+                    .map_err(|error| format!("Failed to create audio decoder: {error}"))?;
+                let mut decoder = decoder_ctx
+                    .decoder()
+                    .audio()
+                    .map_err(|error| format!("Failed to open audio decoder: {error}"))?;
+                if strict {
+                    decoder.check(ffmpeg::codec::decoder::Check::EXPLODE);
+                }
+                if decoder.channel_layout().is_empty() {
+                    decoder
+                        .set_channel_layout(ChannelLayout::default(i32::from(decoder.channels())));
+                }
+                decoder.set_packet_time_base(stream.time_base());
+                Ok::<_, String>((index, decoder))
+            })
+            .transpose();
+        let decoder = if strict {
+            decoder?
+        } else {
+            decoder.unwrap_or(None)
+        };
+        Ok(Self {
+            strict,
+            stream_index,
+            decoder,
+            output: None,
+            sample_rate: None,
+            frame: ffmpeg::frame::Audio::empty(),
+            samples: 0,
+        })
+    }
+
+    fn open_output(&mut self, path: Option<&Path>) -> Result<(), String> {
+        let (Some((_, decoder)), Some(path)) = (&self.decoder, path) else {
+            return Ok(());
+        };
+        let mut audio_output =
+            avformat::output(path).map_err(|e| format!("Failed to create audio output: {e}"))?;
+        let mut opus = open_opus_encoder(
+            &mut audio_output,
+            decoder.format(),
+            decoder.channel_layout(),
+            decoder.rate(),
+        )?;
+        opus.strict = self.strict;
+        audio_output
+            .write_header()
+            .map_err(|e| format!("Failed to write audio header: {e}"))?;
+        self.sample_rate = Some(decoder.rate());
+        self.output = Some((audio_output, opus));
+        Ok(())
+    }
+
+    fn owns(&self, stream_index: usize) -> bool {
+        self.output.is_some()
+            && self
+                .decoder
+                .as_ref()
+                .is_some_and(|(index, _)| *index == stream_index)
+    }
+
+    fn send(
+        &mut self,
+        packet: &ffmpeg::Packet,
+        project_path: &Path,
+        cancelled: Option<&AtomicBool>,
+    ) -> Result<(), String> {
+        let Some((_, decoder)) = self.decoder.as_mut() else {
+            return Ok(());
+        };
+        decoder
+            .send_packet(packet)
+            .map_err(|e| format!("Transcoding failed: {e}"))?;
+        self.receive(project_path, cancelled, "Audio decode")
+    }
+
+    fn finish_decoding(
+        &mut self,
+        project_path: &Path,
+        cancelled: Option<&AtomicBool>,
+    ) -> Result<(), String> {
+        let Some((_, decoder)) = self.decoder.as_mut() else {
+            return Ok(());
+        };
+        decoder
+            .send_eof()
+            .map_err(|e| format!("Transcoding failed: {e}"))?;
+        self.receive(project_path, cancelled, "Audio decode flush")
+    }
+
+    fn receive(
+        &mut self,
+        project_path: &Path,
+        cancelled: Option<&AtomicBool>,
+        operation: &str,
+    ) -> Result<(), String> {
+        let Self {
+            strict,
+            decoder,
+            output,
+            frame,
+            samples,
+            ..
+        } = self;
+        let Some((_, decoder)) = decoder.as_mut() else {
+            return Ok(());
+        };
+        while receive_import_output(decoder.receive_frame(frame), *strict, operation)? {
+            check_editor_import_cancelled(project_path, cancelled)?;
+            if *strict && frame.is_corrupt() {
+                return Err("Imported audio contains a corrupt frame".to_string());
+            }
+            *samples += frame.samples() as u64;
+            if let Some((audio_output, opus)) = output.as_mut() {
+                opus.queue_frame(frame, audio_output)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.stream_index.is_some() && self.samples == 0
+    }
+
+    fn finish(&mut self) -> Result<(), String> {
+        if let Some((mut audio_output, mut opus)) = self.output.take() {
+            opus.flush(&mut audio_output)?;
+            audio_output
+                .write_trailer()
+                .map_err(|e| format!("Failed to write audio trailer: {e}"))?;
+        }
+        Ok(())
+    }
+}
+
+fn reencode_video(
     source_path: &Path,
     output_path: &Path,
     audio_output_path: Option<&Path>,
@@ -1004,43 +1501,7 @@ fn transcode_video(
         video_decoder.check(ffmpeg::codec::decoder::Check::EXPLODE);
     }
 
-    // `import.rs:1122-1131`, empty-layout fixup included.
-    let audio_stream_index = input
-        .streams()
-        .best(ffmpeg::media::Type::Audio)
-        .map(|stream| stream.index());
-    if strict
-        && audio_stream_index.is_none()
-        && input
-            .streams()
-            .any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
-    {
-        return Err("The imported audio track cannot be decoded".to_string());
-    }
-    let audio_decoder = audio_stream_index
-        .map(|index| {
-            let stream = input.stream(index).ok_or("Audio stream disappeared")?;
-            let decoder_ctx = avcodec::Context::from_parameters(stream.parameters())
-                .map_err(|error| format!("Failed to create audio decoder: {error}"))?;
-            let mut decoder = decoder_ctx
-                .decoder()
-                .audio()
-                .map_err(|error| format!("Failed to open audio decoder: {error}"))?;
-            if strict {
-                decoder.check(ffmpeg::codec::decoder::Check::EXPLODE);
-            }
-            if decoder.channel_layout().is_empty() {
-                decoder.set_channel_layout(ChannelLayout::default(i32::from(decoder.channels())));
-            }
-            decoder.set_packet_time_base(stream.time_base());
-            Ok::<_, String>((index, decoder))
-        })
-        .transpose();
-    let mut audio_decoder = if strict {
-        audio_decoder?
-    } else {
-        audio_decoder.unwrap_or(None)
-    };
+    let mut audio = ImportAudio::open(&input, strict)?;
 
     check_editor_import_cancelled(project_path, cancelled)?;
     if let Some(parent) = output_path.parent() {
@@ -1065,34 +1526,16 @@ fn transcode_video(
     )?;
     video_encoder.strict = strict;
 
-    let mut audio: Option<(avformat::context::Output, OpusOutput)> = None;
-    let mut sample_rate = None;
-    if let (Some((_, decoder)), Some(audio_path)) = (&audio_decoder, audio_output_path) {
-        let mut audio_output = avformat::output(audio_path)
-            .map_err(|e| format!("Failed to create audio output: {e}"))?;
-        let mut opus = open_opus_encoder(
-            &mut audio_output,
-            decoder.format(),
-            decoder.channel_layout(),
-            decoder.rate(),
-        )?;
-        opus.strict = strict;
-        audio_output
-            .write_header()
-            .map_err(|e| format!("Failed to write audio header: {e}"))?;
-        sample_rate = Some(decoder.rate());
-        audio = Some((audio_output, opus));
-    }
+    audio.open_output(audio_output_path)?;
+    let sample_rate = audio.sample_rate;
 
     output
         .write_header()
         .map_err(|e| format!("Failed to write header: {e}"))?;
 
     let mut video_frame = ffmpeg::frame::Video::empty();
-    let mut audio_frame = ffmpeg::frame::Audio::empty();
     let mut scaler: Option<ffmpeg::software::scaling::Context> = None;
     let mut frames_processed = 0u64;
-    let mut audio_samples_processed = 0u64;
     let mut last_progress = 0.0;
 
     while let Some(packet) = next_import_packet(&mut input, project_path, cancelled)? {
@@ -1100,7 +1543,7 @@ fn transcode_video(
         let stream_index = packet.stream();
         if strict
             && packet.is_corrupt()
-            && (stream_index == video_stream_index || Some(stream_index) == audio_stream_index)
+            && (stream_index == video_stream_index || audio.stream_index == Some(stream_index))
         {
             return Err("Imported media contains a corrupt packet".to_string());
         }
@@ -1140,25 +1583,8 @@ fn transcode_video(
                     report_converting(progress);
                 }
             }
-        } else if let Some((audio_index, decoder)) = audio_decoder.as_mut()
-            && stream_index == *audio_index
-            && let Some((audio_output, opus)) = audio.as_mut()
-        {
-            decoder
-                .send_packet(&packet)
-                .map_err(|e| format!("Transcoding failed: {e}"))?;
-            while receive_import_output(
-                decoder.receive_frame(&mut audio_frame),
-                strict,
-                "Audio decode",
-            )? {
-                check_editor_import_cancelled(project_path, cancelled)?;
-                if strict && audio_frame.is_corrupt() {
-                    return Err("Imported audio contains a corrupt frame".to_string());
-                }
-                audio_samples_processed += audio_frame.samples() as u64;
-                opus.queue_frame(&audio_frame, audio_output)?;
-            }
+        } else if audio.owns(stream_index) {
+            audio.send(&packet, project_path, cancelled)?;
         }
     }
 
@@ -1187,40 +1613,15 @@ fn transcode_video(
         video_encoder.queue_frame(frame, timestamp, &mut output)?;
     }
 
-    if let Some((_, decoder)) = audio_decoder.as_mut() {
-        decoder
-            .send_eof()
-            .map_err(|e| format!("Transcoding failed: {e}"))?;
-        while receive_import_output(
-            decoder.receive_frame(&mut audio_frame),
-            strict,
-            "Audio decode flush",
-        )? {
-            check_editor_import_cancelled(project_path, cancelled)?;
-            if strict && audio_frame.is_corrupt() {
-                return Err("Imported audio contains a corrupt frame".to_string());
-            }
-            audio_samples_processed += audio_frame.samples() as u64;
-            if let Some((audio_output, opus)) = audio.as_mut() {
-                opus.queue_frame(&audio_frame, audio_output)?;
-            }
-        }
-    }
+    audio.finish_decoding(project_path, cancelled)?;
 
     check_editor_import_cancelled(project_path, cancelled)?;
-    if strict
-        && (frames_processed == 0 || (audio_stream_index.is_some() && audio_samples_processed == 0))
-    {
+    if strict && (frames_processed == 0 || audio.is_empty()) {
         return Err("Imported media has an empty video or audio track".to_string());
     }
     video_encoder.flush(&mut output)?;
 
-    if let Some((mut audio_output, mut opus)) = audio.take() {
-        opus.flush(&mut audio_output)?;
-        audio_output
-            .write_trailer()
-            .map_err(|e| format!("Failed to write audio trailer: {e}"))?;
-    }
+    audio.finish()?;
 
     check_editor_import_cancelled(project_path, cancelled)?;
     output
@@ -1228,32 +1629,7 @@ fn transcode_video(
         .map_err(|e| format!("Failed to write trailer: {e}"))?;
     drop(output);
 
-    // `import.rs:1347-1354`: the editor opens this file the moment Complete
-    // lands, so it has to actually be on disk.
-    if strict {
-        for path in [
-            Some(output_path),
-            audio_output_path.filter(|_| sample_rate.is_some()),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            std::fs::OpenOptions::new()
-                .write(true)
-                .open(path)
-                .and_then(|file| file.sync_all())
-                .map_err(|error| format!("Failed to save imported media: {error}"))?;
-        }
-    } else {
-        if let Ok(file) = std::fs::File::open(output_path) {
-            let _ = file.sync_all();
-        }
-        if let Some(audio_path) = audio_output_path
-            && let Ok(file) = std::fs::File::open(audio_path)
-        {
-            let _ = file.sync_all();
-        }
-    }
+    sync_import_outputs(output_path, audio_output_path, sample_rate, strict)?;
 
     check_editor_import_cancelled(project_path, cancelled)?;
     Ok((fps, sample_rate))
@@ -1965,6 +2341,7 @@ mod tests {
             &root.join("audio.ogg"),
             &root,
             &AtomicBool::new(true),
+            &|_| {},
         );
         assert_eq!(result.unwrap_err(), IMPORT_CANCELLED);
         assert!(!output.exists());
@@ -2196,30 +2573,37 @@ mod tests {
     #[test]
     fn a_completed_conversion_keeps_every_source_frame_and_the_audio() {
         ffmpeg::init().unwrap();
-        let root = temp_dir("complete-conversion");
-        let source = root.join("source.mp4");
-        std::fs::write(
-            &source,
-            include_bytes!("../../media-server/src/__tests__/fixtures/test-with-audio.mp4"),
-        )
-        .unwrap();
-        std::fs::write(root.join("recording-meta.json"), b"{}").unwrap();
-        let output = root.join("display.mp4");
-        let audio = root.join("audio.ogg");
+        for copy in [true, false] {
+            let root = temp_dir("complete-conversion");
+            let source = root.join("source.mp4");
+            std::fs::write(
+                &source,
+                include_bytes!("../../media-server/src/__tests__/fixtures/test-with-audio.mp4"),
+            )
+            .unwrap();
+            std::fs::write(root.join("recording-meta.json"), b"{}").unwrap();
+            let output = root.join("display.mp4");
+            let audio = root.join("audio.ogg");
 
-        let (fps, sample_rate) =
-            transcode_video(&source, &output, Some(&audio), &root, &|_| {}, None).unwrap();
+            let (fps, sample_rate) = if copy {
+                copy_video_stream(&source, &output, Some(&audio), &root, &|_| {}, None)
+                    .unwrap()
+                    .expect("the H.264 fixture is copied without re-encoding")
+            } else {
+                reencode_video(&source, &output, Some(&audio), &root, &|_| {}, None).unwrap()
+            };
 
-        assert_eq!(fps, 25);
-        assert!(sample_rate.is_some());
-        assert_eq!(count_video_packets(&source), 25);
-        assert_eq!(count_video_packets(&output), 25);
-        assert_eq!(decoded_video_frames(&output), 25);
-        let duration = media_duration(&output).unwrap().as_secs_f64();
-        assert!((duration - 1.0).abs() < 0.01, "{duration}");
-        let audio_seconds = decoded_audio_seconds(&audio);
-        assert!((0.9..=1.1).contains(&audio_seconds), "{audio_seconds}");
-        std::fs::remove_dir_all(root).unwrap();
+            assert_eq!(fps, 25);
+            assert!(sample_rate.is_some());
+            assert_eq!(count_video_packets(&source), 25);
+            assert_eq!(count_video_packets(&output), 25);
+            assert_eq!(decoded_video_frames(&output), 25);
+            let duration = media_duration(&output).unwrap().as_secs_f64();
+            assert!((duration - 1.0).abs() < 0.01, "{copy}: {duration}");
+            let audio_seconds = decoded_audio_seconds(&audio);
+            assert!((0.9..=1.1).contains(&audio_seconds), "{audio_seconds}");
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     /// `CAP_IMPORT_BENCH_SOURCES=a.mp4,b.mp4 cargo test --bin cap-gpui benchmark_video_import -- --ignored --nocapture`

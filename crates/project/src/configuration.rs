@@ -15,6 +15,8 @@ use specta::Type;
 use crate::DisplayNotch;
 
 #[cfg(test)]
+mod caption_style_tests;
+#[cfg(test)]
 mod clip_transition_tests;
 mod markers;
 #[cfg(test)]
@@ -506,6 +508,19 @@ pub struct ColorCorrection {
 
 impl ColorCorrection {
     pub const PRESET_NONE: &'static str = "none";
+
+    pub fn cinematic() -> Self {
+        Self {
+            preset: "cinematic".to_string(),
+            contrast: 0.12,
+            saturation: 0.06,
+            temperature: 0.04,
+            split_tone: 0.45,
+            vignette: 0.18,
+            grain: 0.12,
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for ColorCorrection {
@@ -570,6 +585,8 @@ pub struct Camera {
     pub scale_during_zoom: f32,
     #[serde(default)]
     pub background_blur: BackgroundBlurConfig,
+    #[serde(default)]
+    pub skin_smoothing: f32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, Default)]
@@ -581,6 +598,10 @@ pub enum CameraShape {
 }
 
 impl Camera {
+    pub fn skin_smoothing_is_active(&self) -> bool {
+        self.skin_smoothing > 0.005
+    }
+
     pub fn default_zoom_size() -> f32 {
         60.0
     }
@@ -614,6 +635,7 @@ impl Default for Camera {
             rounding_type: CornerStyle::default(),
             scale_during_zoom: Self::default_scale_during_zoom(),
             background_blur: BackgroundBlurConfig::default(),
+            skin_smoothing: 0.0,
         }
     }
 }
@@ -1222,7 +1244,7 @@ pub enum TextLayout {
     SplitRight,
 }
 
-#[derive(Type, Serialize, Deserialize, Clone, Debug)]
+#[derive(Type, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TextSegment {
     pub start: f64,
@@ -1294,6 +1316,12 @@ pub struct TextSegment {
     /// segment edges when `layout` is not `Overlay`.
     #[serde(default = "TextSegment::default_layout_transition")]
     pub layout_transition: f64,
+    #[serde(
+        default,
+        deserialize_with = "crate::title_cards::deserialize_title_card",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title_card: Option<crate::TitleCard>,
 }
 
 impl TextSegment {
@@ -1685,6 +1713,8 @@ pub struct AudioTrackSegment {
     #[serde(default)]
     pub volume_db: f32,
     #[serde(default)]
+    pub ducking: bool,
+    #[serde(default)]
     pub fade_in: f64,
     #[serde(default)]
     pub fade_out: f64,
@@ -1697,6 +1727,26 @@ pub struct AudioTrackSegment {
 impl AudioTrackSegment {
     fn default_enabled() -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod music_ducking_compatibility_tests {
+    use super::AudioTrackSegment;
+
+    #[test]
+    fn music_ducking_old_segments_stay_off_and_enabled_roundtrips() {
+        let mut segment: AudioTrackSegment = serde_json::from_value(serde_json::json!({
+            "start": 1., "end": 4., "path": "assets/audio/music.mp3"
+        }))
+        .unwrap();
+        assert!(!segment.ducking);
+        segment.ducking = true;
+        let restored: AudioTrackSegment =
+            serde_json::from_slice(&serde_json::to_vec(&segment).unwrap()).unwrap();
+        assert!(restored.ducking);
+        assert_eq!(restored.path, segment.path);
+        assert_eq!((restored.start, restored.end), (1., 4.));
     }
 }
 
@@ -1995,6 +2045,112 @@ pub struct TimelineConfiguration {
     pub camera3d_segments: Vec<Camera3DSegment>,
 }
 
+impl TimelineConfiguration {
+    pub fn has_overlays(&self) -> bool {
+        !self.text_segments.is_empty()
+            || !self.shape_segments.is_empty()
+            || !self.image_segments.is_empty()
+            || !self.mask_segments.is_empty()
+    }
+
+    pub fn overlay_spans(
+        &self,
+    ) -> impl Iterator<Item = (OverlayTrackKind, usize, u32, f64, f64)> + '_ {
+        let text = self
+            .text_segments
+            .iter()
+            .enumerate()
+            .map(|(index, segment)| {
+                (
+                    OverlayTrackKind::Text,
+                    index,
+                    segment.track,
+                    segment.start,
+                    segment.end,
+                )
+            });
+        let shape = self
+            .shape_segments
+            .iter()
+            .enumerate()
+            .map(|(index, segment)| {
+                (
+                    OverlayTrackKind::Shape,
+                    index,
+                    segment.track,
+                    segment.start,
+                    segment.end,
+                )
+            });
+        let image = self
+            .image_segments
+            .iter()
+            .enumerate()
+            .map(|(index, segment)| {
+                (
+                    OverlayTrackKind::Image,
+                    index,
+                    segment.track,
+                    segment.start,
+                    segment.end,
+                )
+            });
+        let mask = self
+            .mask_segments
+            .iter()
+            .enumerate()
+            .map(|(index, segment)| {
+                (
+                    OverlayTrackKind::Mask,
+                    index,
+                    segment.track,
+                    segment.start,
+                    segment.end,
+                )
+            });
+        text.chain(shape).chain(image).chain(mask)
+    }
+
+    pub fn overlay_layer_count(&self) -> u32 {
+        self.overlay_spans()
+            .map(|(_, _, layer, _, _)| layer + 1)
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub fn for_each_overlay_track_mut(
+        &mut self,
+        mut apply: impl FnMut(OverlayTrackKind, &mut u32),
+    ) {
+        for segment in &mut self.text_segments {
+            apply(OverlayTrackKind::Text, &mut segment.track);
+        }
+        for segment in &mut self.shape_segments {
+            apply(OverlayTrackKind::Shape, &mut segment.track);
+        }
+        for segment in &mut self.image_segments {
+            apply(OverlayTrackKind::Image, &mut segment.track);
+        }
+        for segment in &mut self.mask_segments {
+            apply(OverlayTrackKind::Mask, &mut segment.track);
+        }
+    }
+
+    pub fn overlay_layer_order(&self) -> Vec<OverlayTrack> {
+        let mut units = self
+            .overlay_spans()
+            .map(|(kind, _, track, _, _)| OverlayTrack { kind, track })
+            .collect::<Vec<_>>();
+        units.sort_by(|a, b| {
+            b.track
+                .cmp(&a.track)
+                .then(a.kind.stack_rank().cmp(&b.kind.stack_rank()))
+        });
+        units.dedup();
+        units
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct TimelineSource<'a> {
     pub source_time: f64,
@@ -2092,19 +2248,78 @@ impl TimelineConfiguration {
         })
     }
 
-    /// Output-time windows where a fullscreen text segment pauses the
-    /// recording clock, sorted and merged. Empty for every project without
-    /// fullscreen text — the mapping below then short-circuits to the exact
-    /// pre-hold arithmetic. A hold that starts after the clips have ended
-    /// (a text card left there by a clip trim or delete, which do not ripple
-    /// text) has no frame to hold and is never reached, so it is left out
-    /// and adds nothing to `duration()`; one starting exactly at the end is
-    /// a closing title and stays.
+    // Fullscreen cards pause the recording clock. Cards beyond all clips and
+    // imported media stay detached after trimming; a card at the end is an outro.
     pub fn hold_windows(&self) -> Vec<(f64, f64)> {
+        self.collect_hold_windows(true)
+    }
+
+    pub(crate) fn duration_without_title_outro(&self) -> f64 {
+        self.duration_with_holds(&self.collect_hold_windows(false))
+    }
+
+    pub fn has_content_tail(&self) -> bool {
+        self.placed_content_end() > self.clips_duration() + self.held_duration()
+    }
+
+    fn placed_content_end(&self) -> f64 {
+        self.audio_segments
+            .iter()
+            .map(|segment| (segment.start, segment.end))
+            .chain(
+                self.image_segments
+                    .iter()
+                    .map(|segment| (segment.start, segment.end)),
+            )
+            .chain(
+                self.shape_segments
+                    .iter()
+                    .map(|segment| (segment.start, segment.end)),
+            )
+            .filter(|(start, end)| {
+                start.is_finite() && end.is_finite() && *start >= 0. && end > start
+            })
+            .map(|(_, end)| end)
+            .fold(0., f64::max)
+    }
+
+    fn duration_with_holds(&self, holds: &[(f64, f64)]) -> f64 {
+        let video_end =
+            self.clips_duration() + holds.iter().map(|(start, end)| end - start).sum::<f64>();
+        video_end
+            .max(self.placed_content_end())
+            .max(holds.last().map_or(0., |(_, end)| *end))
+    }
+
+    fn content_tail_mapping(&self, frame_time: f64) -> Option<TimelineFrameMapping<'_>> {
+        let end = self.duration();
+        if frame_time < self.clips_duration() || frame_time >= end || !frame_time.is_finite() {
+            return None;
+        }
+        let output_end = self
+            .hold_windows()
+            .iter()
+            .map(|(start, _)| *start)
+            .find(|start| *start > frame_time)
+            .unwrap_or(end);
+        Some(TimelineFrameMapping::Hold {
+            source: self.last_source()?,
+            output_end,
+        })
+    }
+
+    fn collect_hold_windows(&self, include_title_outro: bool) -> Vec<(f64, f64)> {
         let mut windows: Vec<(f64, f64)> = self
             .text_segments
             .iter()
             .filter(|s| s.enabled && s.layout == TextLayout::Fullscreen && s.end > s.start)
+            .filter(|segment| {
+                include_title_outro
+                    || !segment
+                        .title_card
+                        .as_ref()
+                        .is_some_and(|card| card.role == crate::TitleCardRole::Outro)
+            })
             .map(|s| (s.start, s.end))
             .collect();
         if windows.is_empty() {
@@ -2122,7 +2337,9 @@ impl TimelineConfiguration {
         let clips_end = self.clips_duration();
         let mut held = 0.0;
         windows.retain(|(start, end)| {
-            if start - held > clips_end + CLOSING_HOLD_TOLERANCE {
+            if start - held > clips_end + CLOSING_HOLD_TOLERANCE
+                && *start > self.placed_content_end() + CLOSING_HOLD_TOLERANCE
+            {
                 return false;
             }
             held += end - start;
@@ -2139,7 +2356,9 @@ impl TimelineConfiguration {
     pub fn get_frame_mapping(&self, frame_time: f64) -> Option<TimelineFrameMapping<'_>> {
         let holds = self.hold_windows();
         if holds.is_empty() {
-            return self.get_frame_mapping_unheld(frame_time);
+            return self
+                .get_frame_mapping_unheld(frame_time)
+                .or_else(|| self.content_tail_mapping(frame_time));
         }
 
         if let Some((hold_start, hold_end)) = active_hold_window(&holds, frame_time) {
@@ -2151,7 +2370,7 @@ impl TimelineConfiguration {
                 ) => source,
                 Some(TimelineFrameMapping::Transition { incoming, .. }) => incoming,
                 // A closing title starts at the clips' exclusive end, so it holds their last instant.
-                None if (effective - self.clips_duration()).abs() <= CLOSING_HOLD_TOLERANCE => {
+                None if effective >= self.clips_duration() - CLOSING_HOLD_TOLERANCE => {
                     self.last_source()?
                 }
                 None => return None,
@@ -2175,28 +2394,35 @@ impl TimelineConfiguration {
             let output_end = effective_to_output(&holds, output_end);
             next_hold_start.map_or(output_end, |hold| output_end.min(hold))
         };
-        Some(match self.get_frame_mapping_unheld(effective)? {
-            TimelineFrameMapping::Single { source, output_end } => TimelineFrameMapping::Single {
-                source,
-                output_end: clamp_end(output_end),
+        Some(
+            match self
+                .get_frame_mapping_unheld(effective)
+                .or_else(|| self.content_tail_mapping(frame_time))?
+            {
+                TimelineFrameMapping::Single { source, output_end } => {
+                    TimelineFrameMapping::Single {
+                        source,
+                        output_end: clamp_end(output_end),
+                    }
+                }
+                TimelineFrameMapping::Transition {
+                    outgoing,
+                    incoming,
+                    kind,
+                    progress,
+                    duration,
+                    output_end,
+                } => TimelineFrameMapping::Transition {
+                    outgoing,
+                    incoming,
+                    kind,
+                    progress,
+                    duration,
+                    output_end: clamp_end(output_end),
+                },
+                hold @ TimelineFrameMapping::Hold { .. } => hold,
             },
-            TimelineFrameMapping::Transition {
-                outgoing,
-                incoming,
-                kind,
-                progress,
-                duration,
-                output_end,
-            } => TimelineFrameMapping::Transition {
-                outgoing,
-                incoming,
-                kind,
-                progress,
-                duration,
-                output_end: clamp_end(output_end),
-            },
-            hold @ TimelineFrameMapping::Hold { .. } => hold,
-        })
+        )
     }
 
     fn last_source(&self) -> Option<TimelineSource<'_>> {
@@ -2324,11 +2550,11 @@ impl TimelineConfiguration {
     }
 
     pub fn duration(&self) -> f64 {
-        self.clips_duration() + self.held_duration()
+        self.duration_with_holds(&self.hold_windows())
     }
 
     /// Output seconds covered by the clips, without fullscreen text holds.
-    fn clips_duration(&self) -> f64 {
+    pub(crate) fn clips_duration(&self) -> f64 {
         let segment_duration: f64 = self.segments.iter().map(TimelineSegment::duration).sum();
         if self.transitions.is_empty() {
             segment_duration
@@ -2438,6 +2664,9 @@ pub struct CaptionWord {
     pub text: String,
     pub start: f32,
     pub end: f32,
+    /// Left out of the drawn caption while its audio keeps playing.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 #[derive(Type, Serialize, Deserialize, Clone, Debug, Default)]
@@ -2463,12 +2692,80 @@ pub enum CaptionPosition {
     BottomRight,
 }
 
+#[derive(Type, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptionTextStyle {
+    pub font: String,
+    pub size: u32,
+}
+
+#[derive(Type, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CaptionAppearance {
+    pub color: String,
+    pub outline: bool,
+    pub outline_width: f32,
+    pub outline_color: String,
+    pub shadow: bool,
+    pub shadow_color: String,
+    pub shadow_opacity: u32,
+    pub shadow_size: f32,
+    pub font_weight: u32,
+    pub uppercase: bool,
+}
+
+impl Default for CaptionAppearance {
+    fn default() -> Self {
+        CaptionSettings::default().source_appearance()
+    }
+}
+
+impl CaptionAppearance {
+    pub fn apply_to(&self, settings: &mut CaptionSettings) {
+        settings.color = self.color.clone();
+        settings.outline = self.outline;
+        settings.outline_width = self.outline_width;
+        settings.outline_color = self.outline_color.clone();
+        settings.shadow = self.shadow;
+        settings.shadow_color = self.shadow_color.clone();
+        settings.shadow_opacity = self.shadow_opacity;
+        settings.shadow_size = self.shadow_size;
+        settings.font_weight = self.font_weight;
+        settings.uppercase = self.uppercase;
+    }
+    pub fn normalized_outline_width(&self) -> f32 {
+        if self.outline_width.is_finite() {
+            self.outline_width.clamp(0., 20.)
+        } else {
+            5.5
+        }
+    }
+    pub fn normalized_shadow_size(&self) -> f32 {
+        if self.shadow_size.is_finite() {
+            self.shadow_size.clamp(0., 30.)
+        } else {
+            5.
+        }
+    }
+}
+
 #[derive(Type, Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CaptionSettings {
     pub enabled: bool,
+    pub display_mode: crate::CaptionDisplayMode,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub translations: BTreeMap<String, crate::CaptionTranslation>,
     pub font: String,
     pub size: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_style: Option<CaptionTextStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_appearance: Option<CaptionAppearance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_gap: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom_margin: Option<u32>,
     pub color: String,
     #[serde(alias = "backgroundColor")]
     pub background_color: String,
@@ -2479,8 +2776,14 @@ pub struct CaptionSettings {
     #[serde(alias = "fontWeight")]
     pub font_weight: u32,
     pub outline: bool,
+    pub outline_width: f32,
     #[serde(alias = "outlineColor")]
     pub outline_color: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shadow: bool,
+    pub shadow_color: String,
+    pub shadow_opacity: u32,
+    pub shadow_size: f32,
     #[serde(alias = "exportWithSubtitles")]
     pub export_with_subtitles: bool,
     #[serde(alias = "highlightColor")]
@@ -2510,8 +2813,104 @@ pub struct CaptionSettings {
 }
 
 impl CaptionSettings {
+    pub fn source_appearance(&self) -> CaptionAppearance {
+        CaptionAppearance {
+            color: self.color.clone(),
+            outline: self.outline,
+            outline_width: self.outline_width,
+            outline_color: self.outline_color.clone(),
+            shadow: self.shadow,
+            shadow_color: self.shadow_color.clone(),
+            shadow_opacity: self.shadow_opacity,
+            shadow_size: self.shadow_size,
+            font_weight: self.font_weight,
+            uppercase: self.uppercase,
+        }
+    }
+    pub fn resolved_translation_appearance(&self) -> CaptionAppearance {
+        self.translation_appearance.clone().unwrap_or_else(|| {
+            let mut appearance = self.source_appearance();
+            appearance.outline_width = (self.normalized_outline_width() * self.size.max(1) as f32
+                / self.resolved_translation_style().size.max(1) as f32)
+                .min(20.);
+            appearance
+        })
+    }
+    fn freeze_translation_appearance(&mut self) {
+        if self.translation_appearance.is_none() {
+            self.translation_appearance = Some(self.resolved_translation_appearance());
+        }
+    }
+    pub fn edit_source_appearance(&mut self, change: impl FnOnce(&mut CaptionAppearance)) {
+        self.freeze_translation_appearance();
+        let mut appearance = self.source_appearance();
+        change(&mut appearance);
+        appearance.apply_to(self);
+    }
+    pub fn edit_translation_appearance(&mut self, change: impl FnOnce(&mut CaptionAppearance)) {
+        let mut appearance = self.resolved_translation_appearance();
+        change(&mut appearance);
+        self.translation_appearance = Some(appearance);
+    }
+    pub fn resolved_translation_style(&self) -> CaptionTextStyle {
+        self.translation_style
+            .clone()
+            .unwrap_or_else(|| CaptionTextStyle {
+                font: self.font.clone(),
+                size: self.size,
+            })
+    }
+
+    fn freeze_translation_style(&mut self) {
+        if self.translation_style.is_none() {
+            self.translation_style = Some(self.resolved_translation_style());
+        }
+    }
+
+    pub fn set_source_font(&mut self, font: String) {
+        self.freeze_translation_style();
+        self.font = font;
+    }
+
+    pub fn set_source_font_size(&mut self, size: u32) {
+        self.freeze_translation_appearance();
+        self.freeze_translation_style();
+        self.size = size;
+    }
+
+    pub fn set_translation_font(&mut self, font: String) {
+        self.freeze_translation_style();
+        if let Some(style) = &mut self.translation_style {
+            style.font = font;
+        }
+    }
+
+    pub fn set_translation_font_size(&mut self, size: u32) {
+        self.freeze_translation_appearance();
+        self.freeze_translation_style();
+        if let Some(style) = &mut self.translation_style {
+            style.size = size;
+        }
+    }
+
     pub fn hides_fillers(&self) -> bool {
         !self.show_filler_words && self.filler_language.as_deref() == Some("en")
+    }
+
+    pub fn normalized_outline_width(&self) -> f32 {
+        if self.outline_width.is_finite() {
+            self.outline_width.clamp(0.0, 20.0)
+        } else {
+            5.5
+        }
+    }
+
+    pub fn normalized_shadow_size(&self) -> f32 {
+        if self.shadow_size.is_finite() {
+            self.shadow_size.clamp(0.0, 30.0)
+        } else {
+            5.0
+        }
     }
 }
 
@@ -2557,8 +2956,14 @@ impl Default for CaptionSettings {
     fn default() -> Self {
         Self {
             enabled: false,
+            display_mode: crate::CaptionDisplayMode::Original,
+            translations: BTreeMap::new(),
             font: "System Sans-Serif".to_string(),
             size: 24,
+            translation_style: None,
+            translation_appearance: None,
+            translation_gap: None,
+            bottom_margin: None,
             color: "#FFFFFF".to_string(),
             background_color: "#000000".to_string(),
             background_opacity: 90,
@@ -2566,7 +2971,12 @@ impl Default for CaptionSettings {
             italic: false,
             font_weight: Self::default_font_weight(),
             outline: false,
+            outline_width: 5.5,
             outline_color: "#000000".to_string(),
+            shadow: false,
+            shadow_color: "#000000".to_string(),
+            shadow_opacity: 100,
+            shadow_size: 5.0,
             export_with_subtitles: false,
             highlight_color: Self::default_highlight_color(),
             fade_duration: Self::default_fade_duration(),
@@ -2807,6 +3217,15 @@ impl OverlayTrackKind {
     pub fn is_legacy(self) -> bool {
         !matches!(self, Self::Shape)
     }
+
+    fn stack_rank(self) -> u8 {
+        match self {
+            Self::Text => 0,
+            Self::Shape => 1,
+            Self::Image => 2,
+            Self::Mask => 3,
+        }
+    }
 }
 
 #[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -2866,6 +3285,8 @@ pub struct ProjectConfiguration {
     /// durations from `fade_duration`.
     #[serde(default)]
     pub text_anim_version: u32,
+    #[serde(default)]
+    pub overlay_layer_version: u32,
     #[serde(
         default,
         deserialize_with = "markers::deserialize_markers",
@@ -2876,6 +3297,7 @@ pub struct ProjectConfiguration {
 
 pub const TEXT_SIZE_VERSION: u32 = 1;
 pub const TEXT_ANIM_VERSION: u32 = 1;
+pub const OVERLAY_LAYER_VERSION: u32 = 1;
 
 /// The keys [`ProjectConfiguration::load`] migrates on presence, read in a pass
 /// that skips every value instead of building a JSON tree of a file that can
@@ -2921,9 +3343,13 @@ impl Default for ProjectConfiguration {
             hidden_text_segments: Default::default(),
             screen_motion_blur: Self::default_screen_motion_blur(),
             screen_movement_spring: Default::default(),
-            color_correction: Default::default(),
+            color_correction: ColorCorrectionConfiguration {
+                camera: ColorCorrection::cinematic(),
+                ..Default::default()
+            },
             text_size_version: TEXT_SIZE_VERSION,
             text_anim_version: TEXT_ANIM_VERSION,
+            overlay_layer_version: OVERLAY_LAYER_VERSION,
             markers: Vec::new(),
         }
     }
@@ -2997,15 +3423,35 @@ impl ProjectConfiguration {
         preset.captions = match (self.captions.clone(), settings) {
             (Some(mut captions), settings) => {
                 let filler_language = captions.settings.filler_language.take();
+                let translations = std::mem::take(&mut captions.settings.translations);
+                let display_mode = captions.settings.display_mode;
+                let current_translation_style = captions.settings.translation_style.take();
+                let current_translation_appearance =
+                    captions.settings.translation_appearance.take();
+                let mut settings = settings.unwrap_or_default();
+                settings.translation_gap = settings
+                    .translation_gap
+                    .or(captions.settings.translation_gap);
+                settings.bottom_margin = settings.bottom_margin.or(captions.settings.bottom_margin);
+                if settings.translation_style.is_none() {
+                    settings.translation_style = current_translation_style;
+                }
+                if settings.translation_appearance.is_none() {
+                    settings.translation_appearance = current_translation_appearance;
+                }
                 captions.settings = CaptionSettings {
                     filler_language,
-                    ..settings.unwrap_or_default()
+                    translations,
+                    display_mode,
+                    ..settings
                 };
                 Some(captions)
             }
             (None, Some(settings)) => Some(CaptionsData {
                 settings: CaptionSettings {
                     filler_language: None,
+                    translations: BTreeMap::new(),
+                    display_mode: crate::CaptionDisplayMode::Original,
                     ..settings
                 },
                 ..Default::default()
@@ -3017,6 +3463,7 @@ impl ProjectConfiguration {
         preset.text_anim_version = self.text_anim_version;
         preset.overlay_order = self.overlay_order.clone();
         preset.overlay_order_with_shapes = self.overlay_order_with_shapes.clone();
+        preset.overlay_layer_version = self.overlay_layer_version;
         preset.clips = self.clips.clone();
         preset.markers = self.markers.clone();
         preset
@@ -3032,7 +3479,57 @@ impl ProjectConfiguration {
     }
 
     pub fn has_overlay_order(&self) -> bool {
-        !self.overlay_order().is_empty()
+        if self.overlays_are_layered() {
+            self.timeline
+                .as_ref()
+                .is_some_and(TimelineConfiguration::has_overlays)
+        } else {
+            !self.overlay_order().is_empty()
+        }
+    }
+
+    pub fn overlays_are_layered(&self) -> bool {
+        self.overlay_layer_version >= OVERLAY_LAYER_VERSION
+    }
+
+    pub fn migrate_overlay_layers(&mut self) -> bool {
+        if self.overlays_are_layered() {
+            return false;
+        }
+        let order = self.overlay_tracks();
+        self.overlay_layer_version = OVERLAY_LAYER_VERSION;
+        let Some(timeline) = self.timeline.as_mut() else {
+            return false;
+        };
+        let count = order.len() as u32;
+        let layer_of = |kind: OverlayTrackKind, track: u32| {
+            order
+                .iter()
+                .position(|unit| unit.kind == kind && unit.track == track)
+                .map_or(track, |index| count - 1 - index as u32)
+        };
+        let mut changed = false;
+        timeline.for_each_overlay_track_mut(|kind, track| {
+            let layer = layer_of(kind, *track);
+            if layer != *track {
+                *track = layer;
+                changed = true;
+            }
+        });
+        changed
+    }
+
+    fn legacy_synced(&self) -> Option<Self> {
+        if !self.overlays_are_layered() {
+            return None;
+        }
+        let order = self.overlay_tracks();
+        if self.overlay_order() == order.as_slice() {
+            return None;
+        }
+        let mut synced = self.clone();
+        synced.set_overlay_order(order);
+        Some(synced)
     }
 
     /// Saves `order`, writing the newer kinds only to the field older builds
@@ -3071,6 +3568,9 @@ impl ProjectConfiguration {
         let Some(timeline) = &self.timeline else {
             return Vec::new();
         };
+        if self.overlays_are_layered() {
+            return timeline.overlay_layer_order();
+        }
         let mut available = Vec::new();
         for (kind, mut tracks) in [
             (
@@ -3242,6 +3742,39 @@ impl ProjectConfiguration {
         Ok(())
     }
 
+    pub fn migrate_text_settings(&mut self) -> bool {
+        let needs_size = self.text_size_version == 0;
+        let needs_animation = self.text_anim_version == 0;
+        if let Some(timeline) = self.timeline.as_mut() {
+            for segment in &mut timeline.text_segments {
+                // Legacy text scaled glyphs with the box; title cards have always used current units.
+                if segment.title_card.is_some() {
+                    continue;
+                }
+                if needs_size {
+                    let scale = (segment.size.y / 0.2).clamp(0.25, 4.0) as f32;
+                    segment.font_size = (segment.font_size * scale).clamp(1.0, 480.0);
+                }
+                if needs_animation {
+                    let fade = segment.fade_duration.max(0.0);
+                    segment.animation_in_duration = fade;
+                    segment.animation_out_duration = fade;
+                    if fade == 0.0 {
+                        segment.animation_in = TextAnimation::None;
+                        segment.animation_out = TextAnimation::None;
+                    }
+                }
+            }
+        }
+        if needs_size {
+            self.text_size_version = TEXT_SIZE_VERSION;
+        }
+        if needs_animation {
+            self.text_anim_version = TEXT_ANIM_VERSION;
+        }
+        needs_size || needs_animation
+    }
+
     pub fn load(project_path: impl AsRef<Path>) -> Result<Self, std::io::Error> {
         let project_path = project_path.as_ref();
         let config_path = project_path.join("project-config.json");
@@ -3272,38 +3805,8 @@ impl ProjectConfiguration {
             config.screen_motion_blur = screen_motion_blur;
         }
 
-        // Legacy text configs coupled glyph size to the box: the renderer
-        // multiplied font_size by size.y / 0.2. Bake that factor into
-        // font_size so the new decoupled law renders them identically.
-        let mut needs_text_size_migration = false;
-        if config.text_size_version == 0 {
-            if let Some(timeline) = config.timeline.as_mut() {
-                for segment in &mut timeline.text_segments {
-                    let scale = (segment.size.y / 0.2).clamp(0.25, 4.0) as f32;
-                    let migrated = (segment.font_size * scale).clamp(1.0, 480.0);
-                    if (migrated - segment.font_size).abs() > f32::EPSILON {
-                        segment.font_size = migrated;
-                        needs_text_size_migration = true;
-                    }
-                }
-            }
-            config.text_size_version = TEXT_SIZE_VERSION;
-        }
-
-        if config.text_anim_version == 0 {
-            if let Some(timeline) = config.timeline.as_mut() {
-                for segment in &mut timeline.text_segments {
-                    let fade = segment.fade_duration.max(0.0);
-                    segment.animation_in_duration = fade;
-                    segment.animation_out_duration = fade;
-                    if fade == 0.0 {
-                        segment.animation_in = TextAnimation::None;
-                        segment.animation_out = TextAnimation::None;
-                    }
-                }
-            }
-            config.text_anim_version = TEXT_ANIM_VERSION;
-        }
+        let needs_text_settings_migration = config.migrate_text_settings();
+        let needs_overlay_layer_migration = config.migrate_overlay_layers();
 
         // Auto-calculated camera offsets used to repeat the camera decoder's
         // start-time alignment, playing the camera ahead by the same amount.
@@ -3323,7 +3826,8 @@ impl ProjectConfiguration {
         if needs_camera_migration
             || needs_motion_blur_clamp
             || needs_screen_motion_blur_migration
-            || needs_text_size_migration
+            || needs_text_settings_migration
+            || needs_overlay_layer_migration
             || needs_clip_offset_repair
         {
             match config.write(project_path) {
@@ -3348,7 +3852,8 @@ impl ProjectConfiguration {
         let temp_path = tempfile::TempPath::from_path(
             project_path.join(format!(".project-config-{}.json.tmp", uuid::Uuid::new_v4())),
         );
-        let config = serde_json::to_string_pretty(self)?;
+        let synced = self.legacy_synced();
+        let config = serde_json::to_string_pretty(synced.as_ref().unwrap_or(self))?;
         let mut file = std::fs::File::create(&temp_path)?;
         file.write_all(config.as_bytes())?;
         file.sync_all()?;
@@ -3476,6 +3981,44 @@ mod notch_tests {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn camera_style_defaults_only_apply_to_new_projects() {
+        let fresh = ProjectConfiguration::default();
+        assert_eq!(fresh.color_correction.camera, ColorCorrection::cinematic());
+        assert_eq!(fresh.color_correction.screen, ColorCorrection::default());
+        let mut old = serde_json::to_value(&fresh).unwrap();
+        old.as_object_mut().unwrap().remove("colorCorrection");
+        let restored: ProjectConfiguration = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(
+            restored.color_correction,
+            ColorCorrectionConfiguration::default()
+        );
+        old["colorCorrection"] =
+            serde_json::json!({"camera": {"preset": "midnight", "contrast": 0.27}});
+        let restored: ProjectConfiguration = serde_json::from_value(old).unwrap();
+        assert_eq!(restored.color_correction.camera.preset, "midnight");
+        assert_eq!(restored.color_correction.camera.contrast, 0.27);
+        assert_eq!(restored.color_correction.screen, ColorCorrection::default());
+    }
+
+    #[test]
+    fn caption_effects_preserve_legacy_defaults_and_bound_extreme_inputs() {
+        let mut settings: CaptionSettings =
+            serde_json::from_str(r#"{"outline":true,"shadow":true}"#).unwrap();
+        assert_eq!(settings.normalized_outline_width(), 5.5);
+        assert_eq!(settings.normalized_shadow_size(), 5.0);
+        assert_eq!(settings.shadow_opacity, 100);
+        assert_eq!(settings.shadow_color, "#000000");
+        settings.outline_width = f32::INFINITY;
+        settings.shadow_size = f32::NAN;
+        assert_eq!(settings.normalized_outline_width(), 5.5);
+        assert_eq!(settings.normalized_shadow_size(), 5.0);
+        settings.outline_width = -10.0;
+        settings.shadow_size = 10000.0;
+        assert_eq!(settings.normalized_outline_width(), 0.0);
+        assert_eq!(settings.normalized_shadow_size(), 30.0);
+    }
 
     #[test]
     fn filler_settings_are_off_for_old_projects_and_only_written_when_set() {
@@ -4122,6 +4665,7 @@ mod tests {
             animation_out_duration: 0.15,
             layout: TextLayout::Fullscreen,
             layout_transition: 0.5,
+            title_card: None,
         }
     }
 
@@ -5144,6 +5688,7 @@ mod tests {
                     animation_out_duration: 0.15,
                     layout: TextLayout::Overlay,
                     layout_transition: 0.5,
+                    title_card: None,
                 }],
                 caption_segments: Vec::new(),
                 keyboard_segments: Vec::new(),
@@ -5254,6 +5799,7 @@ mod tests {
                     animation_out_duration: 0.15,
                     layout: TextLayout::Overlay,
                     layout_transition: 0.5,
+                    title_card: None,
                 }],
                 caption_segments: Vec::new(),
                 keyboard_segments: Vec::new(),
@@ -5693,6 +6239,70 @@ mod overlay_order_tests {
         assert!(json.get("overlayOrderWithShapes").is_none());
     }
 
+    fn legacy_stack() -> ProjectConfiguration {
+        serde_json::from_value(serde_json::json!({
+            "timeline": {
+                "segments": [],
+                "zoomSegments": [],
+                "textSegments": [{"start": 0.0, "end": 1.0}],
+                "imageSegments": [{"start": 0.0, "end": 1.0}, {"start": 2.0, "end": 3.0, "track": 1}],
+                "maskSegments": [{
+                    "start": 0.0, "end": 1.0, "maskType": "sensitive",
+                    "center": {"x": 0.5, "y": 0.5}, "size": {"x": 0.2, "y": 0.2}
+                }]
+            },
+            "overlayOrder": [
+                {"kind": "image", "track": 1},
+                {"kind": "text", "track": 0},
+                {"kind": "mask", "track": 0},
+                {"kind": "image", "track": 0}
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn layer_migration_keeps_the_saved_stack() {
+        let mut project = legacy_stack();
+        assert!(!project.overlays_are_layered());
+        let before = project.overlay_tracks();
+        assert!(project.migrate_overlay_layers());
+        assert!(project.overlays_are_layered());
+        let timeline = project.timeline.as_ref().unwrap();
+        assert_eq!(timeline.image_segments[1].track, 3);
+        assert_eq!(timeline.text_segments[0].track, 2);
+        assert_eq!(timeline.mask_segments[0].track, 1);
+        assert_eq!(timeline.image_segments[0].track, 0);
+        let after = project.overlay_tracks();
+        assert_eq!(
+            after.iter().map(|unit| unit.kind).collect::<Vec<_>>(),
+            before.iter().map(|unit| unit.kind).collect::<Vec<_>>()
+        );
+        assert!(!project.migrate_overlay_layers());
+    }
+
+    #[test]
+    fn layered_projects_order_by_layer_and_save_a_legacy_order() {
+        let mut project = legacy_stack();
+        project.migrate_overlay_layers();
+        let timeline = project.timeline.as_mut().unwrap();
+        timeline.text_segments[0].track = 3;
+        timeline.image_segments[1].track = 2;
+        assert_eq!(
+            project.overlay_tracks(),
+            [
+                layer(OverlayTrackKind::Text, 3),
+                layer(OverlayTrackKind::Image, 2),
+                layer(OverlayTrackKind::Mask, 1),
+                layer(OverlayTrackKind::Image, 0),
+            ]
+        );
+        assert!(project.has_overlay_order());
+        let synced = project.legacy_synced().unwrap();
+        assert_eq!(synced.overlay_order(), project.overlay_tracks().as_slice());
+        assert!(!ProjectConfiguration::default().has_overlay_order());
+    }
+
     #[test]
     fn preset_application_keeps_the_shape_aware_order() {
         let shape = layer(OverlayTrackKind::Shape, 0);
@@ -5754,5 +6364,112 @@ mod timeline_repair_tests {
             .map(|s| s.timescale)
             .collect();
         assert_eq!(speeds, vec![1.0, 1.0, 1.0, 0.25]);
+    }
+}
+
+#[cfg(test)]
+mod full_audio_timeline_tests {
+    use super::*;
+
+    fn timeline() -> TimelineConfiguration {
+        serde_json::from_value(serde_json::json!({
+            "segments": [{"start":0,"end":10,"timescale":1.25}],
+            "zoomSegments": [],
+            "audioSegments": [{"start":7.5,"end":20,"path":"voice.m4a"}]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn full_audio_extends_output_and_holds_last_frame_without_repeating_recording_audio() {
+        let mut timeline = timeline();
+        assert_eq!(timeline.duration(), 20.);
+        assert!(matches!(
+            timeline.get_frame_mapping(7.9),
+            Some(TimelineFrameMapping::Single { .. })
+        ));
+        match timeline.get_frame_mapping(8.) {
+            Some(TimelineFrameMapping::Hold { source, output_end }) => {
+                assert_eq!(output_end, 20.);
+                assert!(source.source_time < 10. && source.source_time > 9.9);
+            }
+            _ => panic!("Expected the final frame during the audio tail"),
+        }
+        assert!(timeline.get_frame_mapping(20.).is_none());
+        timeline.audio_segments[0].enabled = false;
+        assert_eq!(timeline.duration(), 20.);
+        timeline.audio_segments[0].end = 12.;
+        assert_eq!(timeline.duration(), 12.);
+        timeline.audio_segments.clear();
+        assert_eq!(timeline.duration(), 8.);
+    }
+
+    #[test]
+    fn imported_image_extends_output_and_hiding_preserves_edit_boundaries() {
+        let mut timeline = timeline();
+        timeline.audio_segments.clear();
+        timeline.image_segments.push(ImageSegment {
+            start: 7.5,
+            end: 10.5,
+            ..Default::default()
+        });
+        assert_eq!(timeline.duration(), 10.5);
+        assert!(timeline.has_content_tail());
+        assert!(matches!(
+            timeline.get_frame_mapping(10.),
+            Some(TimelineFrameMapping::Hold { .. })
+        ));
+        timeline.image_segments[0].enabled = false;
+        assert_eq!(timeline.duration(), 10.5);
+        let restored: TimelineConfiguration =
+            serde_json::from_value(serde_json::to_value(&timeline).unwrap()).unwrap();
+        assert_eq!(restored.duration(), 10.5);
+        timeline.image_segments.clear();
+        assert_eq!(timeline.duration(), 8.);
+    }
+
+    #[test]
+    fn pasted_shape_duration_is_exported_beyond_video_end() {
+        let mut timeline = timeline();
+        timeline.audio_segments.clear();
+        timeline.shape_segments.push(crate::ShapeSegment {
+            start: 7.,
+            end: 12.,
+            ..Default::default()
+        });
+        assert_eq!(timeline.duration(), 12.);
+        assert!(timeline.has_content_tail());
+        assert!(matches!(
+            timeline.get_frame_mapping(11.),
+            Some(TimelineFrameMapping::Hold { .. })
+        ));
+    }
+
+    #[test]
+    fn closing_title_after_extended_audio_remains_reachable() {
+        let mut timeline = timeline();
+        timeline.text_segments.push(
+            serde_json::from_value(serde_json::json!({
+                "start":20., "end":22., "layout":"fullscreen", "content":"End"
+            }))
+            .unwrap(),
+        );
+        assert_eq!(timeline.duration(), 22.);
+        assert_eq!(timeline.hold_windows(), vec![(20., 22.)]);
+        assert!(matches!(
+            timeline.get_frame_mapping(19.),
+            Some(TimelineFrameMapping::Hold {
+                output_end: 20.,
+                ..
+            })
+        ));
+        assert!(matches!(
+            timeline.get_frame_mapping(21.),
+            Some(TimelineFrameMapping::Hold {
+                output_end: 22.,
+                ..
+            })
+        ));
+        assert!(timeline.get_frame_mapping(22.).is_none());
     }
 }

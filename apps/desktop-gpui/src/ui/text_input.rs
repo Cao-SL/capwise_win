@@ -73,7 +73,7 @@ use gpui::{
     WrappedLine, actions, div, fill, point, prelude::*, px, relative, size, svg,
 };
 use smallvec::SmallVec;
-use unicode_segmentation::GraphemeCursor;
+use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation as _};
 
 use super::keyboard_nav;
 use crate::theme::Theme;
@@ -321,6 +321,42 @@ struct InputLayout {
     intrinsic_size: Size<Pixels>,
     measurements: SmallVec<[(Pixels, Size<Pixels>); 4]>,
     key: LayoutKey,
+    secret: Option<SecretText>,
+}
+
+struct SecretText {
+    text: SharedString,
+    boundaries: Vec<(usize, usize)>,
+}
+
+impl SecretText {
+    fn new(source: &str) -> Self {
+        let mut text = String::new();
+        let mut boundaries = Vec::new();
+        for (index, grapheme) in source.grapheme_indices(true) {
+            boundaries.push((index, text.len()));
+            text.push(if grapheme == "\n" { '\n' } else { '•' });
+        }
+        boundaries.push((source.len(), text.len()));
+        Self {
+            text: text.into(),
+            boundaries,
+        }
+    }
+
+    fn display_offset(&self, source: usize) -> usize {
+        let index = self
+            .boundaries
+            .partition_point(|(offset, _)| *offset <= source);
+        self.boundaries[index.saturating_sub(1)].1
+    }
+
+    fn source_offset(&self, display: usize) -> usize {
+        let index = self
+            .boundaries
+            .partition_point(|(_, offset)| *offset <= display);
+        self.boundaries[index.saturating_sub(1)].0
+    }
 }
 
 /// What makes a cached layout stale.
@@ -332,6 +368,7 @@ struct LayoutKey {
     font: Font,
     color: Hsla,
     marked: Option<Range<usize>>,
+    secret: bool,
 }
 
 impl InputLayout {
@@ -369,7 +406,11 @@ impl InputLayout {
             return px(0.);
         };
         let paragraph_start = self.paragraph_starts[row.paragraph];
-        let local = offset.saturating_sub(paragraph_start).min(line.len());
+        let display = self
+            .secret
+            .as_ref()
+            .map_or(offset, |secret| secret.display_offset(offset));
+        let local = display.saturating_sub(paragraph_start).min(line.len());
         line.position_for_index(local, line_height)
             .map(|position| position.x)
             .unwrap_or(px(0.))
@@ -397,7 +438,10 @@ impl InputLayout {
             Ok(index) => index,
             Err(index) => index,
         };
-        self.paragraph_starts[row.paragraph] + local.min(line.len())
+        let display = self.paragraph_starts[row.paragraph] + local.min(line.len());
+        self.secret
+            .as_ref()
+            .map_or(display, |secret| secret.source_offset(display))
     }
 }
 
@@ -530,6 +574,7 @@ pub struct TextInputState {
     marked_range: Option<Range<usize>>,
     multi_line: bool,
     disabled: bool,
+    secret: bool,
 
     /// Shared with the element, for the reason gpui's own `TextLayout` is an
     /// `Rc<RefCell<..>>`: `WrappedLine::paint` needs `&mut App`, and a layout
@@ -574,6 +619,7 @@ impl TextInputState {
             marked_range: None,
             multi_line,
             disabled: false,
+            secret: false,
             layout: Rc::new(RefCell::new(None)),
             text_bounds: None,
             line_height: px(16.),
@@ -624,6 +670,38 @@ impl TextInputState {
         self.content.clone()
     }
 
+    pub(crate) fn visual_row_bounds_for_offset(&self, offset: usize) -> Option<Range<Pixels>> {
+        if !self.content.is_char_boundary(offset) {
+            return None;
+        }
+        let layout = self.layout.borrow();
+        let layout = layout
+            .as_ref()
+            .filter(|layout| layout.key.text == self.content)?;
+        let height = layout.key.line_height;
+        if layout.rows.is_empty() || !f32::from(height).is_finite() || height <= px(0.) {
+            return None;
+        }
+        let top = height * layout.row_for_offset(offset) as f32;
+        Some(top..top + height)
+    }
+
+    pub(crate) fn byte_offset_for_visual_y(&self, y: Pixels) -> Option<usize> {
+        if !f32::from(y).is_finite() {
+            return None;
+        }
+        let layout = self.layout.borrow();
+        let layout = layout
+            .as_ref()
+            .filter(|layout| layout.key.text == self.content)?;
+        let height = f32::from(layout.key.line_height);
+        if layout.rows.is_empty() || !height.is_finite() || height <= 0. {
+            return None;
+        }
+        let row = ((f32::from(y).max(0.) / height) as usize).min(layout.rows.len() - 1);
+        Some(layout.rows[row].range.start)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.content.is_empty()
     }
@@ -643,11 +721,19 @@ impl TextInputState {
         self.disabled
     }
 
+    pub fn set_secret(&mut self, secret: bool, cx: &mut Context<Self>) {
+        if self.secret != secret {
+            self.secret = secret;
+            self.invalidate_layout();
+            cx.notify();
+        }
+    }
+
     /// Replace the whole value from outside -- a Reset button, a store value
     /// arriving, a project reload. Emits nothing: the owner already knows.
     pub fn set_text(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         let text: SharedString = text.into();
-        if text == self.content {
+        if text == self.content && !(self.secret && text.is_empty()) {
             return;
         }
         self.content = text;
@@ -1095,7 +1181,7 @@ impl TextInputState {
     }
 
     fn on_copy(&mut self, _: &Copy, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.selected_range.is_empty() {
+        if self.selected_range.is_empty() || self.secret {
             return;
         }
         let text = self.content[self.selected_range.clone()].to_string();
@@ -1106,8 +1192,10 @@ impl TextInputState {
         if self.selected_range.is_empty() || self.disabled {
             return;
         }
-        let text = self.content[self.selected_range.clone()].to_string();
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        if !self.secret {
+            let text = self.content[self.selected_range.clone()].to_string();
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
         self.replace(None, "", UndoGroup::Discrete, cx);
     }
 
@@ -1313,7 +1401,11 @@ impl EntityInputHandler for TextInputState {
             return None;
         }
         actual_range.replace(self.range_to_utf16(&range));
-        Some(self.content[range].to_string())
+        Some(if self.secret {
+            "•".repeat(self.content[range].encode_utf16().count())
+        } else {
+            self.content[range].to_string()
+        })
     }
 
     fn selected_text_range(
@@ -1399,7 +1491,9 @@ impl EntityInputHandler for TextInputState {
             (!new_text.is_empty()).then(|| range.start..range.start + new_text.len());
         self.selected_range = new_selected_range_utf16
             .as_ref()
-            .map(|utf16| self.range_from_utf16(utf16))
+            .map(|utf16| {
+                offset_from_utf16(new_text, utf16.start)..offset_from_utf16(new_text, utf16.end)
+            })
             .map(|selected| range.start + selected.start..range.start + selected.end)
             .unwrap_or_else(|| {
                 let caret = range.start + new_text.len();
@@ -2053,6 +2147,7 @@ impl TextBody {
             font,
             color: self.color,
             marked: state.marked_range.clone(),
+            secret: state.secret,
         }
     }
 
@@ -2062,16 +2157,24 @@ impl TextBody {
         wrap_width: Option<Pixels>,
         window: &mut Window,
     ) -> SmallVec<[WrappedLine; 1]> {
+        let secret = key.secret.then(|| SecretText::new(&key.text));
+        let text = secret.as_ref().map_or(&key.text, |secret| &secret.text);
+        let marked = key.marked.as_ref().map(|range| {
+            secret.as_ref().map_or_else(
+                || range.clone(),
+                |secret| secret.display_offset(range.start)..secret.display_offset(range.end),
+            )
+        });
         let base = TextRun {
-            len: key.text.len(),
+            len: text.len(),
             font: key.font.clone(),
             color: key.color,
             background_color: None,
             underline: None,
             strikethrough: None,
         };
-        let runs: Vec<TextRun> = match key.marked.as_ref() {
-            Some(marked) if marked.end <= key.text.len() && marked.start <= marked.end => vec![
+        let runs: Vec<TextRun> = match marked.as_ref() {
+            Some(marked) if marked.end <= text.len() && marked.start <= marked.end => vec![
                 TextRun {
                     len: marked.start,
                     ..base.clone()
@@ -2086,7 +2189,7 @@ impl TextBody {
                     ..base.clone()
                 },
                 TextRun {
-                    len: key.text.len() - marked.end,
+                    len: text.len() - marked.end,
                     ..base
                 },
             ]
@@ -2097,7 +2200,7 @@ impl TextBody {
         };
         window
             .text_system()
-            .shape_text(key.text.clone(), key.font_size, &runs, wrap_width, None)
+            .shape_text(text.clone(), key.font_size, &runs, wrap_width, None)
             .unwrap_or_default()
     }
 
@@ -2204,6 +2307,13 @@ impl TextBody {
             .iter()
             .map(|row| row.width)
             .fold(px(0.), |a, b| if b > a { b } else { a });
+        let secret = key.secret.then(|| SecretText::new(&key.text));
+        if let Some(secret) = &secret {
+            for row in &mut rows {
+                row.range =
+                    secret.source_offset(row.range.start)..secret.source_offset(row.range.end);
+            }
+        }
         let size = size(width, self.line_height * rows.len() as f32);
         let intrinsic_size = intrinsic_text_size(&lines, self.line_height);
         *self.layout.borrow_mut() = Some(InputLayout {
@@ -2217,6 +2327,7 @@ impl TextBody {
             intrinsic_size,
             measurements: SmallVec::new(),
             key,
+            secret,
         });
         self.state.update(cx, |state, _| {
             state.line_height = self.line_height;
@@ -3176,6 +3287,141 @@ mod tests {
         });
     }
 
+    #[test]
+    fn secret_text_maps_graphemes_without_exposing_content() {
+        for source in ["", "synthetic-key", "密钥e\u{301}👩🏽‍💻\nabc"] {
+            let secret = SecretText::new(source);
+            assert!(secret.text.chars().all(|ch| ch == '•' || ch == '\n'));
+            assert_eq!(secret.text.chars().count(), source.graphemes(true).count());
+            for (source_offset, display_offset) in &secret.boundaries {
+                assert!(source.is_char_boundary(*source_offset));
+                assert!(secret.text.is_char_boundary(*display_offset));
+                assert_eq!(secret.display_offset(*source_offset), *display_offset);
+                assert_eq!(secret.source_offset(*display_offset), *source_offset);
+            }
+            assert_eq!(secret.source_offset(usize::MAX), source.len());
+            assert_eq!(secret.display_offset(usize::MAX), secret.text.len());
+        }
+    }
+
+    #[gpui::test]
+    fn secret_layout_keeps_selection_and_caret_on_source_boundaries(cx: &mut gpui::TestAppContext) {
+        cx.add_empty_window().update(|window, cx| {
+            let text = "test密钥e\u{301}👩🏽‍💻\nmore";
+            let body = measurement_body(text, window, cx);
+            body.state
+                .update(cx, |state, cx| state.set_secret(true, cx));
+            for width in [None, Some(px(100.))] {
+                body.ensure_layout(body.layout_key(window, cx), width, window, cx);
+                let layout = body.layout.borrow();
+                let layout = layout.as_ref().unwrap();
+                assert!(
+                    layout
+                        .lines
+                        .iter()
+                        .all(|line| line.text.chars().all(|ch| ch == '•'))
+                );
+                for (offset, _) in &layout.secret.as_ref().unwrap().boundaries {
+                    let row = layout.row_for_offset(*offset);
+                    let x = layout.x_for_offset(*offset, body.line_height);
+                    assert_eq!(
+                        layout.offset_for_point(
+                            point(x, body.line_height * (row as f32 + 0.5)),
+                            body.line_height
+                        ),
+                        *offset
+                    );
+                }
+                assert_eq!(body.state.read(cx).text(), text);
+            }
+            body.state
+                .update(cx, |state, cx| state.set_secret(false, cx));
+            assert!(body.layout.borrow().is_none());
+            body.ensure_layout(body.layout_key(window, cx), None, window, cx);
+            assert!(
+                body.layout
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .lines
+                    .iter()
+                    .any(|line| line.text.contains("密钥"))
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn secret_input_masks_platform_context_and_cannot_copy_or_restore_cleared_keys(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.add_empty_window().update(|window, cx| {
+            let state = cx.new(|cx| TextInputState::single_line(window, cx));
+            cx.write_to_clipboard(ClipboardItem::new_string("clipboard sentinel".into()));
+            state.update(cx, |state, cx| {
+                state.set_secret(true, cx);
+                state.set_text("test密钥🙂", cx);
+                let length = state.content.encode_utf16().count();
+                let mut actual = None;
+                assert_eq!(
+                    state.text_for_range(0..length, &mut actual, window, cx),
+                    Some("•".repeat(length))
+                );
+                assert_eq!(actual, Some(0..length));
+                state.select_all_text(cx);
+                state.on_copy(&Copy, window, cx);
+                assert_eq!(
+                    cx.read_from_clipboard()
+                        .and_then(|item| item.text())
+                        .as_deref(),
+                    Some("clipboard sentinel")
+                );
+                state.on_cut(&Cut, window, cx);
+                assert!(state.text().is_empty());
+                assert_eq!(
+                    cx.read_from_clipboard()
+                        .and_then(|item| item.text())
+                        .as_deref(),
+                    Some("clipboard sentinel")
+                );
+                state.on_undo(&Undo, window, cx);
+                assert_eq!(state.text(), "test密钥🙂");
+                state.select_all_text(cx);
+                state.replace(None, "", UndoGroup::Discrete, cx);
+                assert!(!state.undo_stack.is_empty());
+                state.set_text("", cx);
+                state.on_undo(&Undo, window, cx);
+                assert!(state.text().is_empty());
+                assert!(state.undo_stack.is_empty());
+                assert!(state.redo_stack.is_empty());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn ime_composition_selection_is_relative_to_inserted_text(cx: &mut gpui::TestAppContext) {
+        cx.add_empty_window().update(|window, cx| {
+            let state = cx.new(|cx| TextInputState::single_line(window, cx));
+            for secret in [false, true] {
+                state.update(cx, |state, cx| {
+                    state.set_secret(secret, cx);
+                    state.set_text("中", cx);
+                    state.replace_and_mark_text_in_range(None, "a", Some(1..1), window, cx);
+                    assert_eq!(state.text(), "中a");
+                    assert_eq!(state.selection(), 4..4);
+                    assert_eq!(state.marked_range, Some(3..4));
+                    state.replace_and_mark_text_in_range(None, "🙂文", Some(2..3), window, cx);
+                    assert_eq!(state.text(), "中🙂文");
+                    assert_eq!(state.selection(), 7..10);
+                    assert_eq!(state.marked_range, Some(3..10));
+                    state.replace_text_in_range(None, "完成", window, cx);
+                    assert_eq!(state.text(), "中完成");
+                    assert_eq!(state.selection(), 9..9);
+                    assert_eq!(state.marked_range, None);
+                });
+            }
+        });
+    }
+
     fn check_invalidated(body: &TextBody, window: &mut Window, cx: &mut App) {
         body.layout.borrow_mut().as_mut().unwrap().max_glyph_height = px(-123.);
         check_measurement(body, Some(px(1368.)), window, cx);
@@ -3187,6 +3433,83 @@ mod tests {
         assert_eq!(cache.wrap_width, Some(px(250.)));
         assert_ne!(cache.max_glyph_height, px(-123.));
         assert!(cache.measurements.is_empty());
+    }
+
+    #[gpui::test]
+    fn visual_reading_positions_follow_wrapped_rows_without_editing(cx: &mut gpui::TestAppContext) {
+        cx.add_empty_window().update(|window, cx| {
+            let text = "开场先介绍主题，调整音量到25%。\nThen press Command+S.\n结束。";
+            let mut body = measurement_body(text, window, cx);
+            body.state
+                .update(cx, |state, _| state.selected_range = 6..12);
+            for (width, height) in [(96., 45.), (320., 61.5)] {
+                body.line_height = px(height);
+                body.ensure_layout(body.layout_key(window, cx), Some(px(width)), window, cx);
+                let starts: Vec<_> = body
+                    .layout
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .rows
+                    .iter()
+                    .map(|row| row.range.start)
+                    .collect();
+                assert!(starts.len() > 3);
+                let state = body.state.read(cx);
+                for (index, start) in starts.iter().copied().enumerate() {
+                    let top = px(height * index as f32);
+                    assert_eq!(
+                        state.visual_row_bounds_for_offset(start),
+                        Some(top..top + px(height))
+                    );
+                    assert_eq!(
+                        state.byte_offset_for_visual_y(top + px(height / 2.)),
+                        Some(start)
+                    );
+                    assert!(text.is_char_boundary(start));
+                }
+                assert_eq!(state.byte_offset_for_visual_y(px(-100.)), Some(0));
+                assert_eq!(
+                    state.byte_offset_for_visual_y(px(100_000.)),
+                    starts.last().copied()
+                );
+                assert_eq!(state.visual_row_bounds_for_offset(1), None);
+                assert_eq!(state.visual_row_bounds_for_offset(usize::MAX), None);
+                assert_eq!(state.byte_offset_for_visual_y(px(f32::NAN)), None);
+                assert_eq!(state.byte_offset_for_visual_y(px(f32::INFINITY)), None);
+                assert_eq!(state.selection(), 6..12);
+                assert_eq!(state.text(), text);
+                assert!(state.undo_stack.is_empty());
+                assert!(state.redo_stack.is_empty());
+            }
+        });
+    }
+
+    #[gpui::test]
+    fn visual_reading_positions_wait_for_current_text_layout(cx: &mut gpui::TestAppContext) {
+        cx.add_empty_window().update(|window, cx| {
+            let body = measurement_body("第一行。\nSecond line.", window, cx);
+            assert_eq!(body.state.read(cx).visual_row_bounds_for_offset(0), None);
+            body.ensure_layout(body.layout_key(window, cx), Some(px(120.)), window, cx);
+            assert!(
+                body.state
+                    .read(cx)
+                    .visual_row_bounds_for_offset(0)
+                    .is_some()
+            );
+            body.state
+                .update(cx, |state, _| state.content = "新稿".into());
+            assert_eq!(body.state.read(cx).visual_row_bounds_for_offset(0), None);
+            assert_eq!(body.state.read(cx).byte_offset_for_visual_y(px(0.)), None);
+            body.ensure_layout(body.layout_key(window, cx), Some(px(120.)), window, cx);
+            assert_eq!(
+                body.state.read(cx).visual_row_bounds_for_offset(0),
+                Some(px(0.)..px(45.))
+            );
+            body.state
+                .update(cx, |state, cx| state.set_text("又一次修改", cx));
+            assert_eq!(body.state.read(cx).byte_offset_for_visual_y(px(0.)), None);
+        });
     }
 
     #[gpui::test]
@@ -3312,7 +3635,9 @@ mod tests {
                 font: Font::default(),
                 color: gpui::black(),
                 marked: None,
+                secret: false,
             },
+            secret: None,
         }
     }
 

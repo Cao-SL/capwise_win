@@ -332,6 +332,14 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (tr::camera::effects::mirror_title(), "Mirror unavailable"),
         (
+            tr::camera::effects::skin_smoothing_title(),
+            "Skin smoothing unavailable",
+        ),
+        (
+            tr::camera::effects::skin_smoothing_message(),
+            "Your camera preview is not retouched.",
+        ),
+        (
             tr::camera::effects::mirror_message(),
             "Your camera preview is not mirrored.",
         ),
@@ -377,10 +385,10 @@ fn main_surfaces_match_the_literals_they_replaced() {
             tr::onboarding::modes::instant::feature_4(),
             "Browser-based playback",
         ),
-        (tr::onboarding::modes::studio::title(), "Studio Mode"),
+        (tr::onboarding::modes::studio::title(), "Record, edit, export"),
         (
             tr::onboarding::modes::studio::tagline(),
-            "Professional editing tools",
+            "Record it, then just export",
         ),
         (
             tr::onboarding::modes::studio::description(),
@@ -400,7 +408,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::modes::studio::feature_4(),
-            "Export or share when ready",
+            "Export MP4 or GIF in one click",
         ),
         (
             tr::onboarding::modes::screenshot::title(),
@@ -441,7 +449,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::faq::storage::answer(),
-            "Every recording stays on your Mac; Capwise uploads nothing. Change where recordings are kept in Settings → General.",
+            "Recordings are saved on this Mac, and local models run here. When enabled, cloud recognition or AI processing sends the relevant content to your selected service. Stock media search uses the internet. Change the recording folder in Settings → General.",
         ),
         (
             tr::onboarding::faq::shortcuts::question(),
@@ -453,7 +461,7 @@ fn main_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::onboarding::faq::sharing::question(),
-            "How does sharing work?",
+            "How do I export?",
         ),
         (
             tr::onboarding::faq::sharing::answer(),
@@ -513,13 +521,19 @@ fn main_surfaces_match_the_literals_they_replaced() {
             "Free, offline Qwen3-ASR on your Mac, or Doubao and other cloud services",
         ),
         (tr::onboarding::faq::source(), "View the source on GitHub ↗"),
-        (tr::onboarding::faq::captions::question(), "How are captions made?"),
+        (
+            tr::onboarding::faq::captions::question(),
+            "How are captions made?",
+        ),
         (
             tr::onboarding::faq::captions::answer(),
             "Generate them from the editor's Captions tab. By default Qwen3-ASR runs on your Mac for free and the audio never leaves it; cloud services such as Doubao can be set up in Settings → AI models.",
         ),
         (tr::onboarding::nav::relaunch(), "Relaunch Capwise"),
-        (tr::onboarding::nav::continue_to_cap(), "Continue to Capwise"),
+        (
+            tr::onboarding::nav::continue_to_cap(),
+            "Continue to Capwise",
+        ),
         (tr::onboarding::nav::start(), "Start Using Capwise"),
         (tr::onboarding::nav::next(), "Continue"),
         (tr::onboarding::nav::back(), "←  Back"),

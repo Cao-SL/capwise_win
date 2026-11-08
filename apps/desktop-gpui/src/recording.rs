@@ -104,6 +104,7 @@ pub struct ActiveRecording {
     /// Recording-scoped mic mute (payload zeroing at the consumer seam; the
     /// stream cadence is unaffected). `None` when the recording has no mic.
     pub mic_mute: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(crate) mic_tap_actor: Option<ActorRef<MicrophoneFeed>>,
     _mic_feed: Option<Arc<RecordingOwnedFeed<MicrophoneFeed>>>,
     _camera_feed: Option<Arc<RecordingOwnedFeed<CameraFeed>>>,
     // The mic error channel must outlive the stream or error sends panic the
@@ -450,40 +451,48 @@ async fn finalize_studio(
             None => RecoveryManager::remux_if_needed(&project_path),
         };
         result.map_err(anyhow::Error::from)?;
-        let placement = completed
-            .meta
-            .camera_path()
-            .and_then(|_| camera_snapshot.and_then(|snapshot| snapshot.placement));
-        let preset_applied = apply_default_preset_to_project_config(
-            &project_path,
-            &crate::presets::PresetsStore::load(),
-        );
-        apply_camera_preview_to_project_config(
-            &project_path,
-            camera_snapshot.map_or_else(current_camera_blur, |snapshot| snapshot.blur),
-            placement,
-        );
-        if !preset_applied {
-            let library = serde_json::from_value(serde_json::Value::Object(
-                crate::store::store_section("animated_gradients"),
-            ))
-            .unwrap_or_default();
-            apply_animated_gradient_to_project_config(&project_path, &capture_target, &library);
+        if !crate::recording_setup::has_preparation_evidence(&project_path) {
+            let placement = completed
+                .meta
+                .camera_path()
+                .and_then(|_| camera_snapshot.and_then(|snapshot| snapshot.placement));
+            let preset_applied = apply_default_preset_to_project_config(
+                &project_path,
+                &crate::presets::PresetsStore::load(),
+            );
+            apply_camera_preview_to_project_config(
+                &project_path,
+                camera_snapshot.map_or_else(current_camera_blur, |snapshot| snapshot.blur),
+                camera_snapshot.map_or_else(current_camera_skin_smoothing, |snapshot| {
+                    snapshot.skin_smoothing
+                }),
+                placement,
+            );
+            if !preset_applied {
+                let library = serde_json::from_value(serde_json::Value::Object(
+                    crate::store::store_section("animated_gradients"),
+                ))
+                .unwrap_or_default();
+                apply_animated_gradient_to_project_config(&project_path, &capture_target, &library);
+            }
+            if crate::store::studio_sound_by_default()
+                && let Err(error) = enable_studio_sound(&project_path)
+            {
+                tracing::warn!(%error, "Could not apply the Studio Sound default");
+            }
+            if crate::store::GeneralSettings::load().macbook_notch_overlay
+                && completed.meta.display_notch().is_some()
+                && matches!(
+                    capture_target,
+                    ScreenCaptureTarget::Display { .. } | ScreenCaptureTarget::Area { .. }
+                )
+                && let Err(error) = enable_notch_overlay(&project_path)
+            {
+                tracing::warn!(%error, "Could not apply the notch overlay preference");
+            }
         }
-        if crate::store::studio_sound_by_default()
-            && let Err(error) = enable_studio_sound(&project_path)
-        {
-            tracing::warn!(%error, "Could not apply the Studio Sound default");
-        }
-        if crate::store::GeneralSettings::load().macbook_notch_overlay
-            && completed.meta.display_notch().is_some()
-            && matches!(
-                capture_target,
-                ScreenCaptureTarget::Display { .. } | ScreenCaptureTarget::Area { .. }
-            )
-            && let Err(error) = enable_notch_overlay(&project_path)
-        {
-            tracing::warn!(%error, "Could not apply the notch overlay preference");
+        if let Err(error) = crate::recording_defaults::prepare_tracks(&project_path) {
+            tracing::warn!(%error, "Could not prepare the recording's editing tracks");
         }
         Ok::<_, anyhow::Error>(completed)
     })
@@ -590,6 +599,7 @@ pub(crate) type CaptureStopFuture =
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StudioCameraSnapshot {
     pub blur: crate::store::BlurMode,
+    pub skin_smoothing: bool,
     pub placement: Option<cap_recording::camera_placement::RecordingCameraPlacement>,
 }
 
@@ -1675,6 +1685,11 @@ pub(crate) fn preparing_presentation(
         "animated_gradients",
     )))
     .map_err(|error| format!("Preparing appearance preferences did not parse: {error}"))?;
+    if camera_snapshot.map_or_else(current_camera_skin_smoothing, |snapshot| {
+        snapshot.skin_smoothing
+    }) {
+        return Err("Camera skin smoothing requires ordinary editor loading".into());
+    }
     let mut config = preparing_presentation_for(
         project,
         camera_snapshot.map_or_else(current_camera_blur, |snapshot| snapshot.blur),
@@ -1707,6 +1722,7 @@ fn preparing_presentation_for(
     let mut project = preset.unwrap_or_else(|| project.clone());
     // Finalization replaces any saved blur with the live toggle, which is off here.
     project.camera.background_blur = cap_project::BackgroundBlurConfig::default();
+    project.camera.skin_smoothing = 0.0;
     Ok(project)
 }
 
@@ -1749,6 +1765,12 @@ fn current_camera_blur() -> crate::store::BlurMode {
         .camera_window
         .map(|state| state.background_blur)
         .unwrap_or_default()
+}
+
+fn current_camera_skin_smoothing() -> bool {
+    crate::store::load()
+        .camera_window
+        .is_some_and(|state| state.skin_smoothing)
 }
 
 /// `BackgroundBlurMode`'s JSON spelling
@@ -1943,12 +1965,13 @@ fn apply_camera_blur_to_project_config(
     project_dir: &std::path::Path,
     blur: crate::store::BlurMode,
 ) -> bool {
-    apply_camera_preview_to_project_config(project_dir, blur, None)
+    apply_camera_preview_to_project_config(project_dir, blur, false, None)
 }
 
 fn apply_camera_preview_to_project_config(
     project_dir: &std::path::Path,
     blur: crate::store::BlurMode,
+    skin_smoothing: bool,
     placement: Option<cap_recording::camera_placement::RecordingCameraPlacement>,
 ) -> bool {
     use serde_json::{Map, Value};
@@ -1990,6 +2013,14 @@ fn apply_camera_preview_to_project_config(
         "mode".to_string(),
         Value::String(blur_mode_json(blur).to_string()),
     );
+    if skin_smoothing {
+        camera.insert(
+            "skinSmoothing".to_string(),
+            Value::from(f64::from(cap_camera_effects::DEFAULT_SKIN_SMOOTHING)),
+        );
+    } else {
+        camera.remove("skinSmoothing");
+    }
 
     if let Some(placement) = placement {
         let mut positioned = cap_project::Camera::default();
@@ -2082,6 +2113,7 @@ fn persist_instant_meta(
     })
 }
 
+#[cfg_attr(not(feature = "cap-cloud"), allow(dead_code))]
 pub(crate) fn persist_instant_upload_failure(
     project_path: &std::path::Path,
     error: &str,
@@ -2112,6 +2144,7 @@ pub(crate) fn persist_instant_upload_failure(
     })
 }
 
+#[cfg_attr(not(feature = "cap-cloud"), allow(dead_code))]
 fn check_instant_publication_cancelled(
     cancel: Option<&std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<()> {
@@ -2146,6 +2179,7 @@ pub(crate) async fn finish_instant_upload_locally(
     check_instant_publication_cancelled(cancel)
 }
 
+#[cfg_attr(not(feature = "cap-cloud"), allow(dead_code))]
 pub(crate) fn persist_instant_upload_complete(
     project_path: &std::path::Path,
     metadata_lock: &Mutex<()>,
@@ -2675,6 +2709,7 @@ async fn start_attempt_with_upload(
         .map(|upload| upload.video().id.clone());
     let instant_upload =
         instant_upload.map(|upload| Arc::new(tokio::sync::Mutex::new(Some(upload))));
+    let mic_tap_actor = mic_lock.as_ref().map(|lock| (**lock).clone());
     Ok(ActiveRecording {
         handle,
         project_dir,
@@ -2687,6 +2722,7 @@ async fn start_attempt_with_upload(
         #[cfg(target_os = "linux")]
         instant_operation: Arc::new(tokio::sync::Mutex::new(())),
         mic_mute,
+        mic_tap_actor,
         _mic_feed: mic_feed,
         _camera_feed: camera_feed,
         _mic_errors: mic_errors,
@@ -3756,6 +3792,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cap-cloud")]
     fn failed_instant_upload_preserves_resumable_identity_and_audio_intent() {
         let dir = temp_project("upload-identity");
         let video = cap_project::VideoUploadInfo {
@@ -4018,6 +4055,7 @@ mod tests {
             assert!(apply_camera_preview_to_project_config(
                 &dir,
                 blur,
+                false,
                 Some(placement)
             ));
             let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -4054,6 +4092,38 @@ mod tests {
     /// A config written by a build that predates `backgroundBlur` (or one that
     /// never had a camera section at all) gets the key created rather than
     /// being skipped.
+    #[test]
+    fn bridging_skin_smoothing_follows_the_live_toggle() {
+        use serde_json::Value;
+        let dir =
+            std::env::temp_dir().join(format!("cap-skin-smoothing-bridge-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("project-config.json");
+        std::fs::write(&path, br#"{"camera":{"skinSmoothing":0.2,"size":30.0}}"#).unwrap();
+
+        assert!(apply_camera_preview_to_project_config(
+            &dir,
+            BlurMode::Off,
+            true,
+            None
+        ));
+        let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let project: cap_project::Camera =
+            serde_json::from_value(written["camera"].clone()).unwrap();
+        assert!((project.skin_smoothing - cap_camera_effects::DEFAULT_SKIN_SMOOTHING).abs() < 1e-5);
+
+        assert!(apply_camera_preview_to_project_config(
+            &dir,
+            BlurMode::Off,
+            false,
+            None
+        ));
+        let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(written["camera"].get("skinSmoothing").is_none());
+        assert_eq!(written["camera"]["size"], 30.0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn bridging_blur_creates_the_missing_section() {
         let dir = temp_project("create");
