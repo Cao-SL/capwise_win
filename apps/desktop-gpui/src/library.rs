@@ -188,16 +188,6 @@ impl RecordingMode {
         }
     }
 
-    /// `firstLetterUpperCase()` on the badge -- the mode with its first letter
-    /// capitalized, which for these two values is just the label.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Studio => "Studio",
-            Self::Instant => "Instant",
-        }
-    }
-
-    /// `IconCapInstant` / `IconCapFilmCut`, the badge and tab glyphs.
     pub fn icon(self) -> &'static str {
         match self {
             Self::Studio => "icons/film-cut.svg",
@@ -252,6 +242,7 @@ pub struct RecordingItem {
     /// content hash are not read by this page.
     pub sharing: Option<String>,
     pub sort_time_millis: f64,
+    pub duration_secs: Option<f64>,
     /// `${path}/screenshots/display.jpg`, existence-checked here rather than
     /// left to an `<img onError>`.
     pub thumbnail: Option<PathBuf>,
@@ -363,6 +354,7 @@ fn recording_item(path: PathBuf, meta: RecordingMeta, sort_time_millis: f64) -> 
         pretty_name: meta.pretty_name,
         sharing: meta.sharing.map(|sharing| sharing.link),
         sort_time_millis,
+        duration_secs: project_duration_secs(&path),
         thumbnail_version: source_mtime_nanos(&thumbnail),
         thumbnail: thumbnail.is_file().then_some(thumbnail),
         path,
@@ -505,9 +497,107 @@ pub fn find_incomplete_recordings() -> Vec<IncompleteRecordingItem> {
     find_incomplete_recordings_in(&known_recordings_dirs(), None)
 }
 
+#[derive(serde::Deserialize)]
+struct SavedTimeline {
+    timeline: Option<cap_project::TimelineConfiguration>,
+}
+
+fn project_duration_secs(path: &Path) -> Option<f64> {
+    let text = std::fs::read_to_string(path.join("project-config.json")).ok()?;
+    let duration = serde_json::from_str::<SavedTimeline>(&text)
+        .ok()?
+        .timeline?
+        .duration();
+    (duration.is_finite() && duration > 0.0).then_some(duration)
+}
+
+const DEFAULT_NAME_PREFIXES: [&str; 2] = ["Recording ", "Cap "];
+
+fn default_name_stamp(pretty_name: &str) -> Option<&str> {
+    DEFAULT_NAME_PREFIXES
+        .iter()
+        .find_map(|prefix| pretty_name.strip_prefix(prefix))
+}
+
+fn default_name_time(pretty_name: &str) -> Option<chrono::NaiveDateTime> {
+    chrono::NaiveDateTime::parse_from_str(default_name_stamp(pretty_name)?, "%Y-%m-%d at %H.%M.%S")
+        .ok()
+}
+
+pub fn display_project_name(pretty_name: &str) -> String {
+    display_project_name_on(pretty_name, chrono::Local::now().date_naive())
+}
+
+fn display_project_name_on(pretty_name: &str, today: chrono::NaiveDate) -> String {
+    match default_name_time(pretty_name) {
+        Some(time) => tr::main::library::recording_name(
+            short_date(time.date(), today, crate::i18n::current()),
+            time.format("%H:%M"),
+        ),
+        None => pretty_name.to_string(),
+    }
+}
+
+fn short_date(
+    date: chrono::NaiveDate,
+    today: chrono::NaiveDate,
+    locale: crate::i18n::Locale,
+) -> String {
+    use chrono::Datelike as _;
+    let same_year = date.year() == today.year();
+    match (locale, same_year) {
+        (crate::i18n::Locale::ZhCn | crate::i18n::Locale::Ja, true) => {
+            format!("{}月{}日", date.month(), date.day())
+        }
+        (crate::i18n::Locale::ZhCn | crate::i18n::Locale::Ja, false) => {
+            format!("{}年{}月{}日", date.year(), date.month(), date.day())
+        }
+        (_, true) => date.format("%b %-d").to_string(),
+        (_, false) => date.format("%b %-d, %Y").to_string(),
+    }
+}
+
+fn relative_date(date: chrono::NaiveDate, today: chrono::NaiveDate) -> String {
+    if date == today {
+        tr::main::library::today().to_string()
+    } else if today.pred_opt() == Some(date) {
+        tr::main::library::yesterday().to_string()
+    } else {
+        short_date(date, today, crate::i18n::current())
+    }
+}
+
+fn clock_duration(seconds: f64) -> String {
+    let total = seconds.max(0.0).round() as u64;
+    let (hours, minutes, secs) = (total / 3600, total % 3600 / 60, total % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{secs:02}")
+    } else {
+        format!("{minutes}:{secs:02}")
+    }
+}
+
+pub fn recording_details(item: &RecordingItem) -> Option<String> {
+    let today = chrono::Local::now().date_naive();
+    let date = default_name_time(&item.pretty_name)
+        .is_none()
+        .then(|| {
+            chrono::DateTime::from_timestamp_millis(item.sort_time_millis as i64)
+                .filter(|_| item.sort_time_millis > 0.0)
+        })
+        .flatten()
+        .map(|time| relative_date(time.with_timezone(&chrono::Local).date_naive(), today));
+    let parts: Vec<String> = item
+        .duration_secs
+        .map(clock_duration)
+        .into_iter()
+        .chain(date)
+        .collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
 fn is_recording_after_recovery_cutoff(pretty_name: &str, sort_time_millis: f64) -> bool {
-    let Some(date) = pretty_name
-        .strip_prefix("Cap ")
+    let Some(date) = default_name_stamp(pretty_name)
         .and_then(|name| name.split(" at ").next())
         .and_then(|value| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
         .or_else(|| {
@@ -2799,6 +2889,59 @@ mod tests {
             !is_recording_after_recovery_cutoff("Custom instant recording", 0.0),
             "a name without a date falls back to the sort time"
         );
+        assert!(!is_recording_after_recovery_cutoff(
+            "Recording 2025-12-31 at 23.59.59",
+            0.0
+        ));
+        assert!(is_recording_after_recovery_cutoff(
+            "Recording 2026-11-07 at 22.08.21",
+            0.0
+        ));
+        assert!(
+            is_recording_after_recovery_cutoff("Cap 2026-11- at 19.10.32", 1_794_000_000_000.0),
+            "a damaged default name falls back to the sort time"
+        );
+    }
+
+    #[test]
+    fn default_names_read_as_a_friendly_label() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
+        let label = |name: &str| display_project_name_on(name, today);
+        assert_eq!(
+            label("Cap 2026-11-07 at 22.08.21"),
+            "Recording Nov 7, 22:08"
+        );
+        assert_eq!(
+            label("Recording 2026-11-07 at 22.08.21"),
+            "Recording Nov 7, 22:08"
+        );
+        assert_eq!(
+            label("Cap 2025-03-01 at 09.05.00"),
+            "Recording Mar 1, 2025, 09:05"
+        );
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 11, 7).unwrap();
+        let earlier = chrono::NaiveDate::from_ymd_opt(2025, 3, 1).unwrap();
+        let zh = crate::i18n::Locale::ZhCn;
+        assert_eq!(short_date(date, today, zh), "11月7日");
+        assert_eq!(short_date(earlier, today, zh), "2025年3月1日");
+        assert_eq!(relative_date(today, today), "Today");
+        assert_eq!(relative_date(today.pred_opt().unwrap(), today), "Yesterday");
+        for name in [
+            "Cap 2026-11- at 19.10.32",
+            "Product demo",
+            "Cap Recording",
+            "",
+        ] {
+            assert_eq!(label(name), name);
+        }
+    }
+
+    #[test]
+    fn durations_read_as_a_clock() {
+        assert_eq!(clock_duration(0.4), "0:00");
+        assert_eq!(clock_duration(48.1), "0:48");
+        assert_eq!(clock_duration(176.6), "2:57");
+        assert_eq!(clock_duration(3723.0), "1:02:03");
     }
 
     #[test]
@@ -2988,7 +3131,10 @@ mod tests {
         }
         let message =
             recovery_failure_message(&RecoveryError::VideoConcat(RemuxError::NoFragments), path);
-        assert!(message.starts_with("Capwise could not rebuild"), "{message}");
+        assert!(
+            message.starts_with("Capwise could not rebuild"),
+            "{message}"
+        );
     }
 
     #[test]

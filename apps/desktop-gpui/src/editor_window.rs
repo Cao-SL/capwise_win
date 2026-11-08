@@ -287,10 +287,10 @@ fn transcript_row_width(viewport_width: f32) -> f32 {
 // ---------------------------------------------------------------------------
 
 use crate::editor_timeline::{
-    self as timeline, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT,
-    START_SNAP_PX, TIMELINE_BOTTOM_PADDING, TIMELINE_CARD_BORDER, TIMELINE_HEADER_HEIGHT,
-    TIMELINE_PADDING, TIMELINE_SLOT_PADDING, TIMELINE_TOP_PADDING, TRACK_GUTTER, TRACK_ICON_WIDTH,
-    TRACK_ROW_GAP, TimelineModel, TimelineView, TrackKind, TrackLanes, TrackRow, Transform,
+    self as timeline, MINIMAP_HEIGHT, SCROLL_BODY_PADDING_RIGHT, START_SNAP_PX,
+    TIMELINE_BOTTOM_PADDING, TIMELINE_HEADER_HEIGHT, TIMELINE_PADDING, TIMELINE_TOP_PADDING,
+    TRACK_GUTTER, TRACK_ICON_WIDTH, TRACK_ROW_GAP, TimelineModel, TimelineView, TrackKind,
+    TrackLanes, TrackRow, Transform,
 };
 
 // ---------------------------------------------------------------------------
@@ -579,7 +579,7 @@ pub fn preflight(path: &std::path::Path) -> Result<ProjectSummary, String> {
 
     Ok(ProjectSummary {
         recordings: recordings.clone(),
-        pretty_name: meta.pretty_name.clone(),
+        pretty_name: crate::library::display_project_name(&meta.pretty_name),
         timeline,
         duration: duration.max(0.0),
         has_camera,
@@ -1786,19 +1786,12 @@ enum PresetDialog {
     Style(style_preset_ui::StyleDialog),
 }
 
-/// The add-track tray, computed once when it opens. It slides out of the
-/// gutter's right edge with its bottom on the ruler's baseline (Kobalte
-/// `placement: "right-end"` on the gutter anchor, `TrackManager.tsx`), so
-/// every track type is on screen at once and nothing scrolls.
+/// The toolbar's "more" tray. It hangs under the "more" button, which
+/// [`Self::frame_anchor`] measures every paint.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct AddTrackMenu {
-    left: Pixels,
-    /// Distance from the window's bottom edge to the tray's bottom edge.
-    bottom: Pixels,
-    top: Option<Pixels>,
     /// Bumped per open so the entrance animation replays each time.
     generation: usize,
-    hovered: Option<CanvasTool>,
 }
 
 /// One tile in the toolbar's "more" tray: a track to add, or one of the two
@@ -1827,7 +1820,6 @@ const CANVAS_TOOLS: [CanvasTool; 8] = [
 const ADD_TRACK_TRAY_ANIMATION: Duration = Duration::from_millis(620);
 const ADD_TRACK_TRAY_IN_MS: f32 = 220.;
 const ADD_TRACK_TRAY_SLIDE: f32 = 12.;
-const ADD_TRACK_HINT_HEIGHT: f32 = 2. * 15. + 16.;
 const ADD_TRACK_TRAY_WIDTH: f32 = 4. * 64. + 3. * 4. + 12. + 2.;
 const ADD_TRACK_TILE_DELAY_MS: f32 = 60.;
 const ADD_TRACK_TILE_STAGGER_MS: f32 = 24.;
@@ -1860,7 +1852,7 @@ fn add_track_tile_progress(delta: f32, index: usize) -> f32 {
     ease_out_back((elapsed / ADD_TRACK_TILE_IN_MS).clamp(0., 1.))
 }
 
-const CLIP_MENU_WIDTH: f32 = 300.;
+const CLIP_MENU_WIDTH: f32 = 232.;
 const TRACK_MENU_WIDTH: f32 = 264.;
 const TRACK_MENU_SPEEDS: [f64; 6] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 /// `DEFAULT_CLIP_TRANSITION_DURATION` (`ED/clip-transitions.ts`).
@@ -1967,6 +1959,7 @@ enum ClipMenuTrailing {
     None,
     Hint(&'static str),
     Kbd(&'static str),
+    Value(&'static str),
 }
 
 fn format_clip_speed(speed: f64) -> String {
@@ -2033,62 +2026,6 @@ fn clip_menu_section(theme: &Theme, label: &'static str) -> gpui::Div {
         .child(label)
 }
 
-fn clip_menu_toggle_row(
-    theme: &Theme,
-    id: &'static str,
-    icon: &'static str,
-    label: &'static str,
-    description: &'static str,
-    checked: bool,
-) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .h(px(40.))
-        .w_full()
-        .flex()
-        .items_center()
-        .gap(px(10.))
-        .rounded(px(8.))
-        .px(px(8.))
-        .cursor_pointer()
-        .hover(|this| this.bg(Hsla::from(theme.editor.ctl_hover)))
-        .child(
-            svg()
-                .path(icon)
-                .size(px(14.))
-                .flex_none()
-                .text_color(Hsla::from(if checked {
-                    theme.editor.accent
-                } else {
-                    theme.editor.text_2
-                })),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .text_size(px(12.5))
-                        .text_color(Hsla::from(theme.editor.text_1))
-                        .child(label),
-                )
-                .child(
-                    div()
-                        .text_size(px(10.5))
-                        .text_color(Hsla::from(theme.editor.text_3))
-                        .child(description),
-                ),
-        )
-        .child(ui::Toggle::plain(
-            theme,
-            SharedString::from(format!("{id}-toggle")),
-            checked,
-        ))
-}
-
 fn clip_menu_row(
     theme: &Theme,
     id: &'static str,
@@ -2143,32 +2080,29 @@ fn clip_menu_row(
                 .flex_none()
                 .text_color(icon_color),
         )
-        .overflow_hidden();
-    // A disabled row keeps its own label whole; the reason beside it wraps
-    // onto a second line instead, which longer translations need.
-    let hinted = matches!(trailing, ClipMenuTrailing::Hint(_)) && !enabled;
-    let row = row.child(
-        div()
-            .when(hinted, |label| label.flex_none())
-            .when(!hinted, |label| label.flex_1().min_w_0())
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .text_ellipsis()
-            .child(label),
-    );
-    match trailing {
-        ClipMenuTrailing::Hint(hint) if !enabled => row.child(
+        .overflow_hidden()
+        .child(
             div()
                 .flex_1()
                 .min_w_0()
-                .text_right()
-                .text_size(px(10.5))
-                .line_height(px(12.))
-                .line_clamp(2)
-                .text_color(Hsla::from(theme.editor.text_3))
-                .child(hint),
-        ),
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .child(label),
+        );
+    let tooltip_theme = *theme;
+    match trailing {
+        ClipMenuTrailing::Hint(hint) if !enabled => row
+            .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+            .tooltip(move |_, cx| ui::Tooltip::new(&tooltip_theme, hint).view(cx)),
         ClipMenuTrailing::Kbd(key) if enabled => row.child(ui::KbdChip::row(theme, key)),
+        ClipMenuTrailing::Value(value) => row.child(
+            div()
+                .flex_none()
+                .text_size(px(11.5))
+                .text_color(Hsla::from(theme.editor.text_3))
+                .child(value),
+        ),
         _ => row,
     }
 }
@@ -5181,7 +5115,8 @@ impl EditorWindow {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
                     self.sidebar.caption_tab = crate::editor_workbench::CaptionTab::Content;
                     if let Some(index) = selected.indices.first() {
-                        self.sidebar.caption_page = index / crate::editor_workbench::CAPTIONS_PER_PAGE;
+                        self.sidebar.caption_page =
+                            index / crate::editor_workbench::CAPTIONS_PER_PAGE;
                     }
                 } else if selected.track == TrackKind::Audio {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Audio;
@@ -6203,10 +6138,8 @@ impl EditorWindow {
                 if drag.moved
                     && let Some(timeline) = self.project.timeline.as_ref()
                 {
-                    let target = crate::editor_clips::clip_insertion_at(
-                        timeline,
-                        drag.press_time + delta,
-                    );
+                    let target =
+                        crate::editor_clips::clip_insertion_at(timeline, drag.press_time + delta);
                     if self.clip_reorder_target != Some(target) {
                         self.clip_reorder_target = Some(target);
                         cx.notify();
@@ -8761,26 +8694,9 @@ impl EditorWindow {
         let focus = self.focus_handle_for_menu();
         window.focus(&focus, cx);
         self.toolbar_menu = None;
-        let viewport = window.viewport_size();
-        // The header strip is the first thing inside the timeline card, whose
-        // geometry is fixed from the window's bottom edge, so the ruler's
-        // baseline is a constant offset from the bottom-left corner.
-        let timeline_height = self
-            .clamp_timeline_height(self.preferred_timeline_height(), f32::from(viewport.height));
-        let header_bottom = f32::from(viewport.height) - timeline_height
-            + TIMELINE_CARD_BORDER
-            + TIMELINE_TOP_PADDING
-            + TIMELINE_HEADER_HEIGHT;
         self.add_track_opens += 1;
         self.add_track = Some(AddTrackMenu {
-            left: px(TIMELINE_SLOT_PADDING
-                + TIMELINE_CARD_BORDER
-                + TIMELINE_PADDING
-                + TRACK_GUTTER),
-            bottom: px(f32::from(viewport.height) - header_bottom),
-            top: None,
             generation: self.add_track_opens,
-            hovered: None,
         });
         cx.notify();
     }
@@ -9432,7 +9348,8 @@ impl EditorWindow {
             cap_project::XY::new(0.3 * ratio, 0.3)
         };
         let mut index = 0;
-        let (animation_in, emphasis, animation_out) = self.take_pending_motion().unwrap_or_default();
+        let (animation_in, emphasis, animation_out) =
+            self.take_pending_motion().unwrap_or_default();
         if self.edit(
             |timeline| {
                 index = edits::insert_image_segment(
@@ -9662,7 +9579,11 @@ impl EditorWindow {
                 self.split_at_playhead(window, cx);
             }
             self.set_selection(None, cx);
-            let count = self.project.timeline.as_ref().map_or(0, |t| t.segments.len());
+            let count = self
+                .project
+                .timeline
+                .as_ref()
+                .map_or(0, |t| t.segments.len());
             if rest == "-drop" {
                 self.reorder_clip_on_timeline(0, count, window, cx);
             } else {
@@ -9697,12 +9618,7 @@ impl EditorWindow {
             return;
         }
         self.open_add_track(window, cx);
-        // `open` leaves the tray showing where the toolbar's "more" opens it.
         if spec == "open" {
-            if let Some(menu) = &mut self.add_track {
-                menu.left = px(200.);
-                menu.top = Some(px(118.));
-            }
             cx.notify();
             return;
         }
@@ -10319,39 +10235,38 @@ impl EditorWindow {
                 tr::editor::window::clip_menu::match_speed(),
             ),
         ];
-        let section = |label: &'static str, body: gpui::AnyElement| {
+        let toggle_row = |id: &'static str,
+                          label: &'static str,
+                          description: &'static str,
+                          toggle: ui::Toggle| {
             div()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .child(clip_menu_section(&theme, label))
-                .child(body)
+                .id(SharedString::from(format!("{id}-row")))
+                .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+                .tooltip(move |_, cx| ui::Tooltip::new(&theme, description).view(cx))
+                .child(ui::Field::inline(&theme, label).value(toggle.into_any_element()))
         };
-        let speed_row = clip_menu_chip_row(&theme)
-            .children(speeds.into_iter().map(|speed| {
-                clip_menu_chip(
-                    &theme,
-                    SharedString::from(format!("clip-panel-speed-{speed}")),
-                    (timescale - speed).abs() < 1e-6,
-                    format_clip_speed(speed),
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.set_clip_timescale(index, speed, window, cx);
-                }))
-            }))
-            .into_any_element();
-        let audio_extra = if normal_speed {
-            clip_menu_toggle_row(
+        let speed_row = clip_menu_chip_row(&theme).children(speeds.into_iter().map(|speed| {
+            clip_menu_chip(
                 &theme,
-                "clip-panel-mute",
-                "icons/volume-x.svg",
-                tr::editor::window::clip_menu::mute_clip(),
-                tr::editor::window::clip_menu::mute_clip_description(),
-                muted,
+                SharedString::from(format!("clip-panel-speed-{speed}")),
+                (timescale - speed).abs() < 1e-6,
+                format_clip_speed(speed),
             )
             .on_click(cx.listener(move |this, _, window, cx| {
-                this.set_clip_muted(index, !muted, window, cx);
+                this.set_clip_timescale(index, speed, window, cx);
             }))
+        }));
+        let audio_extra = if normal_speed {
+            toggle_row(
+                "clip-panel-mute",
+                tr::editor::window::clip_menu::mute_clip(),
+                tr::editor::window::clip_menu::mute_clip_description(),
+                ui::Toggle::plain(&theme, "clip-panel-mute", muted).on_click(cx.listener(
+                    move |this, _, window, cx| {
+                        this.set_clip_muted(index, !muted, window, cx);
+                    },
+                )),
+            )
             .into_any_element()
         } else {
             clip_menu_chip_row(&theme)
@@ -10368,22 +10283,21 @@ impl EditorWindow {
                 }))
                 .into_any_element()
         };
-        let cursor_row = clip_menu_toggle_row(
-            &theme,
+        let cursor_row = toggle_row(
             "clip-panel-hide-cursor",
-            "icons/mouse-pointer-ban.svg",
             tr::editor::window::clip_menu::hide_cursor(),
             tr::editor::window::clip_menu::hide_cursor_description(),
-            cursor_hidden,
+            ui::Toggle::plain(&theme, "clip-panel-hide-cursor", cursor_hidden).on_click(
+                cx.listener(move |this, _, window, cx| {
+                    this.set_clip_hide_cursor(index, !cursor_hidden, window, cx);
+                }),
+            ),
         )
-        .on_click(cx.listener(move |this, _, window, cx| {
-            this.set_clip_hide_cursor(index, !cursor_hidden, window, cx);
-        }))
         .into_any_element();
         div()
             .flex()
             .flex_col()
-            .gap(px(16.))
+            .gap(px(20.))
             .child(
                 ui::SelectionHeader::plain(&theme, "panel-clip", title)
                     .on_done(cx.listener(|this, _, _window, cx| this.set_selection(None, cx)))
@@ -10393,25 +10307,27 @@ impl EditorWindow {
                         }),
                     ),
             )
-            .child(section(tr::editor::window::clip_menu::speed(), speed_row))
-            .child(section(
-                tr::editor::window::clip_menu::audio(),
-                self.slider_field_disabled(
-                    tr::editor::window::clip_menu::volume(),
-                    crate::editor_sidebar::SliderKey::ClipVolume(index),
-                    "%",
-                    muted,
-                    cx,
-                )
-                .into_any_element(),
-            ))
+            .child(
+                ui::Field::section(&theme, tr::editor::window::clip_menu::speed()).child(speed_row),
+            )
+            .child(
+                ui::Field::section(&theme, tr::editor::window::clip_menu::audio())
+                    .gap(px(4.))
+                    .child(self.slider_field_disabled(
+                        tr::editor::window::clip_menu::volume(),
+                        crate::editor_sidebar::SliderKey::ClipVolume(index),
+                        "%",
+                        muted,
+                        cx,
+                    )),
+            )
             .child(self.more_settings("clip", cx, move |_, _| {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(16.))
+                    .gap(px(4.))
                     .child(audio_extra)
-                    .child(section(tr::editor::window::clip_menu::cursor(), cursor_row))
+                    .child(cursor_row)
                     .into_any_element()
             }))
             .into_any_element()
@@ -10421,23 +10337,8 @@ impl EditorWindow {
         let menu = self.clip_speed?;
         let theme = self.theme;
         let timeline = self.project.timeline.as_ref()?;
-        let segment = timeline.segments.get(menu.index)?;
         let index = menu.index;
-        let timescale = segment.timescale;
-        let muted = edits::clip_is_muted(segment);
-        let audio_mode = segment.speed_audio_mode.unwrap_or_default();
-        let cursor_hidden = segment.hides_cursor();
-        let normal_speed = (timescale - 1.0).abs() < f64::EPSILON;
-        let title = match self.timeline.clips.get(index).map(|clip| &clip.detail) {
-            Some(timeline::SegmentDetail::Clip { name, .. }) => name.clone(),
-            _ => SharedString::from(crate::editor_clips::display_name(&timeline.segments, index)),
-        };
-        let duration = crate::editor_clips::format_clip_duration(segment.duration());
-        let summary = if normal_speed {
-            duration
-        } else {
-            format!("{duration} · {}", format_clip_speed(timescale))
-        };
+        timeline.segments.get(index)?;
         let playhead = self.view.preview_time.unwrap_or(self.playhead);
         let can_split = self
             .timeline
@@ -10460,26 +10361,13 @@ impl EditorWindow {
             .rename_in_progress()
             .filter(|(editing, _)| *editing == index)
             .map(|(_, input)| input);
-        let speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
-        let audio_modes = [
-            (
-                ClipSpeedAudioMode::Mute,
-                tr::editor::window::clip_menu::mute(),
-            ),
-            (
-                ClipSpeedAudioMode::MaintainPitch,
-                tr::editor::window::clip_menu::keep_pitch(),
-            ),
-            (
-                ClipSpeedAudioMode::MatchSpeed,
-                tr::editor::window::clip_menu::match_speed(),
-            ),
-        ];
-        let chip = |id: SharedString, selected: bool, label: String| {
-            clip_menu_chip(&theme, id, selected, label)
+        let divider = || {
+            div()
+                .mx(px(8.))
+                .my(px(4.))
+                .h(px(1.))
+                .bg(Hsla::from(theme.editor.line))
         };
-        let chip_row = || clip_menu_chip_row(&theme);
-        let divider = || div().h(px(1.)).bg(Hsla::from(theme.editor.line));
 
         let mut card = div()
             .id("clip-speed-popover")
@@ -10488,7 +10376,6 @@ impl EditorWindow {
             .w(px(CLIP_MENU_WIDTH))
             .flex()
             .flex_col()
-            .gap(px(8.))
             .rounded(px(12.))
             .border_1()
             .border_color(Hsla::from(theme.editor.line))
@@ -10506,162 +10393,6 @@ impl EditorWindow {
         };
 
         let card = card
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .px(px(8.))
-                    .pt(px(4.))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.editor.text_1))
-                            .child(title),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .text_size(px(11.))
-                            .text_color(Hsla::from(theme.editor.text_3))
-                            .child(summary),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(clip_menu_section(
-                        &theme,
-                        tr::editor::window::clip_menu::speed(),
-                    ))
-                    .child(chip_row().children(speeds.into_iter().map(|speed| {
-                        let selected = (timescale - speed).abs() < 1e-6;
-                        chip(
-                            SharedString::from(format!("clip-speed-{speed}")),
-                            selected,
-                            format_clip_speed(speed),
-                        )
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
-                                this.set_clip_timescale(index, speed, window, cx);
-                            },
-                        ))
-                    }))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(clip_menu_section(
-                        &theme,
-                        tr::editor::window::clip_menu::audio(),
-                    ))
-                    .child(self.slider_field_disabled(
-                        tr::editor::window::clip_menu::volume(),
-                        crate::editor_sidebar::SliderKey::ClipVolume(index),
-                        "%",
-                        muted,
-                        cx,
-                    ))
-                    .child(if normal_speed {
-                        clip_menu_toggle_row(
-                            &theme,
-                            "clip-menu-mute",
-                            "icons/volume-x.svg",
-                            tr::editor::window::clip_menu::mute_clip(),
-                            tr::editor::window::clip_menu::mute_clip_description(),
-                            muted,
-                        )
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.set_clip_muted(index, !muted, window, cx);
-                        }))
-                        .into_any_element()
-                    } else {
-                        chip_row()
-                            .children(audio_modes.into_iter().map(|(mode, label)| {
-                                let selected = audio_mode == mode
-                                    || (mode == ClipSpeedAudioMode::Mute && muted);
-                                chip(
-                                    SharedString::from(format!("clip-speed-audio-{label}")),
-                                    selected,
-                                    label.to_string(),
-                                )
-                                .on_click(cx.listener(
-                                    move |this, _, window, cx| {
-                                        this.set_clip_speed_audio_mode(index, mode, window, cx);
-                                    },
-                                ))
-                            }))
-                            .into_any_element()
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(clip_menu_section(
-                        &theme,
-                        tr::editor::window::clip_menu::cursor(),
-                    ))
-                    .child(
-                        clip_menu_toggle_row(
-                            &theme,
-                            "clip-menu-hide-cursor",
-                            "icons/mouse-pointer-ban.svg",
-                            tr::editor::window::clip_menu::hide_cursor(),
-                            tr::editor::window::clip_menu::hide_cursor_description(),
-                            cursor_hidden,
-                        )
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
-                                this.set_clip_hide_cursor(index, !cursor_hidden, window, cx);
-                            },
-                        )),
-                    ),
-            )
-            .when(index > 0 && can_transition, |card| {
-                card.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .child(clip_menu_section(
-                            &theme,
-                            tr::editor::window::clip_menu::transition(),
-                        ))
-                        .child(
-                            clip_menu_row(
-                                &theme,
-                                "clip-menu-transition",
-                                "icons/arrow-left-right.svg",
-                                transition.map_or(
-                                    tr::editor::window::clip_menu::transition_none(),
-                                    |current| transitions::transition_label(current.kind),
-                                ),
-                                ClipMenuTrailing::None,
-                                true,
-                                false,
-                            )
-                            .on_click(cx.listener(
-                                move |this, event: &gpui::ClickEvent, window, cx| {
-                                    this.clip_speed = None;
-                                    this.edit_transition_at(index, event.position(), window, cx);
-                                },
-                            )),
-                        ),
-                )
-            })
-            .child(divider())
             .child(
                 div()
                     .flex()
@@ -10750,6 +10481,29 @@ impl EditorWindow {
                             this.start_clip_rename(index, window, cx);
                         }))
                         .into_any_element(),
+                    })
+                    .when(index > 0 && can_transition, |column| {
+                        column.child(
+                            clip_menu_row(
+                                &theme,
+                                "clip-menu-transition",
+                                "icons/arrow-left-right.svg",
+                                tr::editor::window::transition::title(),
+                                transition.map_or(ClipMenuTrailing::None, |current| {
+                                    ClipMenuTrailing::Value(transitions::transition_label(
+                                        current.kind,
+                                    ))
+                                }),
+                                true,
+                                false,
+                            )
+                            .on_click(cx.listener(
+                                move |this, event: &gpui::ClickEvent, window, cx| {
+                                    this.clip_speed = None;
+                                    this.edit_transition_at(index, event.position(), window, cx);
+                                },
+                            )),
+                        )
                     }),
             )
             .child(divider())
@@ -11117,30 +10871,23 @@ impl EditorWindow {
         )
     }
 
-    fn render_add_track_popover(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    fn render_add_track_popover(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         let menu = self.add_track?;
+        let trigger = self.more_tools_bounds()?;
         let theme = self.theme;
         let scene_available = self.scene_available();
-        let hint: SharedString = match menu.hovered {
-            None => tr::editor::window::add_track::hint().into(),
-            Some(CanvasTool::Crop) => tr::editor::window::crop_tooltip().into(),
-            Some(CanvasTool::Frame) => tr::editor::window::frame::add_tooltip().into(),
-            Some(CanvasTool::Track(kind)) => {
-                if kind == TrackKind::Scene && !scene_available {
-                    kind.picker_unavailable().into()
-                } else if kind == TrackKind::ThreeD && self.tracks.is_active(kind) {
-                    // The 3D tile only shows and hides the lane; the shots on
-                    // it survive either way.
-                    tr::editor::window::add_track::hide_3d().into()
-                } else if !kind.supports_multiple() && self.tracks.is_active(kind) {
-                    kind.picker_remove().into()
-                } else {
-                    kind.picker_description().into()
-                }
-            }
-        };
         let generation = menu.generation;
-        let left = f32::from(menu.left);
+        let left = f32::from(
+            trigger
+                .left()
+                .min(window.viewport_size().width - px(ADD_TRACK_TRAY_WIDTH + 12.))
+                .max(px(12.)),
+        );
+        let top = trigger.bottom() + px(6.);
         Some(
             div()
                 .absolute()
@@ -11164,9 +10911,8 @@ impl EditorWindow {
                     div()
                         .id("add-track-tray")
                         .absolute()
-                        .left(menu.left)
-                        .when_some(menu.top, |element, top| element.top(top))
-                        .when(menu.top.is_none(), |element| element.bottom(menu.bottom))
+                        .left(px(left))
+                        .top(top)
                         .occlude()
                         .flex()
                         .flex_col()
@@ -11197,19 +10943,6 @@ impl EditorWindow {
                                     },
                                 )),
                         )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .h(px(ADD_TRACK_HINT_HEIGHT))
-                                .px(px(12.))
-                                .border_t_1()
-                                .border_color(Hsla::from(theme.editor.line))
-                                .text_size(px(11.))
-                                .line_height(px(15.))
-                                .text_color(Hsla::from(theme.editor.text_2))
-                                .child(div().line_clamp(2).child(hint)),
-                        )
                         .with_animation(
                             ("add-track-tray", generation),
                             Animation::new(ADD_TRACK_TRAY_ANIMATION),
@@ -11233,27 +10966,42 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = self.theme;
-        let (available, active, color, icon, label): (bool, bool, Hsla, &'static str, &'static str) =
-            match tool {
-                CanvasTool::Track(kind) => (
-                    kind != TrackKind::Scene || scene_available,
-                    !kind.supports_multiple() && self.tracks.is_active(kind),
-                    kind.color(),
-                    kind.icon(),
-                    kind.picker_label(),
-                ),
-                CanvasTool::Crop => (
-                    true,
-                    false,
-                    TrackKind::Clip.color(),
-                    "icons/crop.svg",
-                    tr::editor::window::crop(),
-                ),
-                CanvasTool::Frame => {
-                    let (label, icon) = self.frame_tool_content();
-                    (true, false, TrackKind::Style.color(), icon, label)
-                }
-            };
+        let (available, active, color, icon, label): (
+            bool,
+            bool,
+            Hsla,
+            &'static str,
+            &'static str,
+        ) = match tool {
+            CanvasTool::Track(kind) => (
+                kind != TrackKind::Scene || scene_available,
+                !kind.supports_multiple() && self.tracks.is_active(kind),
+                kind.color(),
+                kind.icon(),
+                kind.picker_label(),
+            ),
+            CanvasTool::Crop => (
+                true,
+                false,
+                TrackKind::Clip.color(),
+                "icons/crop.svg",
+                tr::editor::window::crop(),
+            ),
+            CanvasTool::Frame => {
+                let (label, icon) = self.frame_tool_content();
+                (true, false, TrackKind::Style.color(), icon, label)
+            }
+        };
+        let description: &'static str = match tool {
+            CanvasTool::Crop => tr::editor::window::crop_tooltip(),
+            CanvasTool::Frame => tr::editor::window::frame::add_tooltip(),
+            CanvasTool::Track(kind) if !available => kind.picker_unavailable(),
+            CanvasTool::Track(TrackKind::ThreeD) if active => {
+                tr::editor::window::add_track::hide_3d()
+            }
+            CanvasTool::Track(kind) if active => kind.picker_remove(),
+            CanvasTool::Track(kind) => kind.picker_description(),
+        };
         let group = SharedString::from(format!("add-track-tile-{tool:?}"));
         let badge = |this: gpui::Div| {
             this.absolute()
@@ -11302,13 +11050,11 @@ impl EditorWindow {
                             } else {
                                 Hsla::from(theme.editor.ctl)
                             })
-                            .child(svg().path(icon).size(px(14.)).text_color(
-                                if available {
-                                    timeline::tile_fg(&theme, color)
-                                } else {
-                                    Hsla::from(theme.editor.text_3)
-                                },
-                            )),
+                            .child(svg().path(icon).size(px(14.)).text_color(if available {
+                                timeline::tile_fg(&theme, color)
+                            } else {
+                                Hsla::from(theme.editor.text_3)
+                            })),
                     )
                     .when(active, |this| {
                         this.child(
@@ -11341,22 +11087,8 @@ impl EditorWindow {
                     })
                     .child(label),
             )
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                let Some(menu) = this.add_track.as_mut() else {
-                    return;
-                };
-                let next = if *hovered {
-                    Some(tool)
-                } else if menu.hovered == Some(tool) {
-                    None
-                } else {
-                    menu.hovered
-                };
-                if menu.hovered != next {
-                    menu.hovered = next;
-                    cx.notify();
-                }
-            }))
+            .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+            .tooltip(move |_window, cx| ui::Tooltip::new(&theme, description).view(cx))
             .when(available, |this| {
                 this.on_click(cx.listener(move |this, _, window, cx| {
                     this.add_track = None;
@@ -12083,14 +11815,6 @@ impl EditorWindow {
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(Hsla::from(theme.editor.text_1)),
                             ),
-                    )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(Hsla::from(theme.editor.text_3))
-                            .child(".cap"),
                     ),
             )
             .child(
@@ -12498,7 +12222,9 @@ impl EditorWindow {
                 ui::EditorButton::plain(&theme, "insert-sticker")
                     .text(&theme)
                     .left_icon("icons/smile.svg")
-                    .when(!narrow, |button| button.label(tr::editor::stickers::title()))
+                    .when(!narrow, |button| {
+                        button.label(tr::editor::stickers::title())
+                    })
                     .tooltip(&theme, tr::editor::stickers::tooltip())
                     .disabled(!self.project_ready())
                     .pressed(self.sticker_picker.is_some())
@@ -12521,25 +12247,25 @@ impl EditorWindow {
             // Crop, frame and image live in this tray now; the frame popover
             // hangs from it.
             .child(
-                div().relative().flex_none().child(self.frame_anchor()).child(
-                ui::EditorButton::plain(&theme, "canvas-more-tools")
-                    .text(&theme)
-                    .left_icon("icons/more-horizontal.svg")
-                    .tooltip(&theme, tr::editor::window::add_track::more())
-                    .disabled(!self.project_ready())
-                    .pressed(self.add_track.is_some() || self.frame_controls_open() || self.crop.is_some())
-                    .on_open(cx.listener(|this, bounds: &Bounds<Pixels>, window, cx| {
-                        this.open_add_track(window, cx);
-                        if let Some(menu) = &mut this.add_track {
-                            menu.left = bounds
-                                .origin
-                                .x
-                                .min(window.viewport_size().width - px(ADD_TRACK_TRAY_WIDTH + 12.))
-                                .max(px(12.));
-                            menu.top = Some(bounds.bottom() + px(6.));
-                        }
-                    })),
-                ),
+                div()
+                    .relative()
+                    .flex_none()
+                    .child(self.frame_anchor())
+                    .child(
+                        ui::EditorButton::plain(&theme, "canvas-more-tools")
+                            .text(&theme)
+                            .left_icon("icons/more-horizontal.svg")
+                            .tooltip(&theme, tr::editor::window::add_track::more())
+                            .disabled(!self.project_ready())
+                            .pressed(
+                                self.add_track.is_some()
+                                    || self.frame_controls_open()
+                                    || self.crop.is_some(),
+                            )
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_add_track(window, cx);
+                            })),
+                    ),
             )
     }
 
@@ -14804,7 +14530,7 @@ impl Render for EditorWindow {
             .children(self.render_toolbar_menu(cx))
             .children(self.render_text_menu(cx))
             .children(self.render_frame_controls(window, cx))
-            .children(self.render_add_track_popover(cx))
+            .children(self.render_add_track_popover(window, cx))
             .children(self.render_sticker_picker(cx))
             .children(self.render_shape_tool_popover(cx))
             .children(self.render_clip_speed_popover(cx))

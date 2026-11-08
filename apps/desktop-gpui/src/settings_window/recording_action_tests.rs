@@ -65,6 +65,7 @@ fn row(root: &str) -> RecordingRow {
             clip_count: 1,
             sharing: Some(format!("https://cap.test/{root}")),
             sort_time_millis: 0.,
+            duration_secs: None,
             thumbnail: None,
             thumbnail_version: None,
         },
@@ -99,8 +100,9 @@ fn open_two_recordings(cx: &mut TestAppContext) -> (Entity<SettingsWindow>, Visu
 #[gpui::test]
 fn held_recording_action_does_not_move_to_a_different_recording(cx: &mut TestAppContext) {
     let (settings, mut visual) = open_two_recordings(cx);
-    let link = point(px(432.), px(40.));
+    let link = point(px(490.), px(29.));
     visual.simulate_mouse_move(link, None, Modifiers::none());
+    draw(&mut visual);
     visual.simulate_mouse_down(link, MouseButton::Left, Modifiers::none());
     settings.update(&mut visual, |settings, _| {
         settings.recordings.items.as_mut().unwrap().remove(0);
@@ -118,8 +120,9 @@ fn held_recording_action_does_not_move_to_a_different_recording(cx: &mut TestApp
 #[gpui::test]
 fn held_recording_action_survives_an_unchanged_refresh(cx: &mut TestAppContext) {
     let (settings, mut visual) = open_two_recordings(cx);
-    let link = point(px(432.), px(40.));
+    let link = point(px(490.), px(29.));
     visual.simulate_mouse_move(link, None, Modifiers::none());
+    draw(&mut visual);
     visual.simulate_mouse_down(link, MouseButton::Left, Modifiers::none());
     settings.update(&mut visual, |settings, _| {
         settings.recordings.items = Some(vec![row("first"), row("second")]);
@@ -135,9 +138,10 @@ fn held_recording_action_survives_an_unchanged_refresh(cx: &mut TestAppContext) 
 #[gpui::test]
 fn held_recording_action_follows_the_same_recording_after_reordering(cx: &mut TestAppContext) {
     let (settings, mut visual) = open_two_recordings(cx);
-    let old_link = point(px(432.), px(116.));
-    let new_link = point(px(432.), px(40.));
+    let old_link = point(px(490.), px(86.));
+    let new_link = point(px(490.), px(29.));
     visual.simulate_mouse_move(old_link, None, Modifiers::none());
+    draw(&mut visual);
     visual.simulate_mouse_down(old_link, MouseButton::Left, Modifiers::none());
     settings.update(&mut visual, |settings, _| {
         settings.recordings.items.as_mut().unwrap().remove(0);

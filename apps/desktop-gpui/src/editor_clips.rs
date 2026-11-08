@@ -485,11 +485,9 @@ pub(crate) fn move_clip_with_layers(
     }
     const EPSILON: f64 = 1e-6;
     let owner = |start: f64, end: f64| {
-        before
-            .iter()
-            .position(|(clip_start, clip_end)| {
-                start >= clip_start - EPSILON && end <= clip_end + EPSILON
-            })
+        before.iter().position(|(clip_start, clip_end)| {
+            start >= clip_start - EPSILON && end <= clip_end + EPSILON
+        })
     };
     fn carry<T: TrackSegmentOps>(
         track: &mut Vec<T>,
@@ -984,13 +982,20 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let to = if from < insertion { insertion - 1 } else { insertion };
+        let to = if from < insertion {
+            insertion - 1
+        } else {
+            insertion
+        };
         if from == to || from >= self.clip_segments().len() {
             return;
         }
         let durations = self.clip_display_durations.clone();
         self.edit_project("clip-reorder", window, cx, move |project| {
-            let captions = project.captions.as_ref().map(|captions| captions.segments.clone());
+            let captions = project
+                .captions
+                .as_ref()
+                .map(|captions| captions.segments.clone());
             let Some(timeline) = project.timeline.as_mut() else {
                 return false;
             };
@@ -1155,7 +1160,7 @@ impl EditorWindow {
                                     ui::Button::plain(
                                         &theme,
                                         "clips-record",
-                                        ui::ButtonVariant::Blue,
+                                        ui::ButtonVariant::White,
                                         ui::ButtonSize::Md,
                                     )
                                     .icon("icons/video.svg")
@@ -1185,7 +1190,7 @@ impl EditorWindow {
                                 ui::Button::plain(
                                     &theme,
                                     "clips-import",
-                                    ui::ButtonVariant::Gray,
+                                    ui::ButtonVariant::White,
                                     ui::ButtonSize::Md,
                                 )
                                 .icon("icons/circle-plus.svg")
@@ -2134,7 +2139,12 @@ impl EditorWindow {
         .detach();
     }
 
-    pub(crate) fn import_mp4(&mut self, source: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn import_mp4(
+        &mut self,
+        source: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.import_mp4_owned(source, None, window, cx);
     }
 

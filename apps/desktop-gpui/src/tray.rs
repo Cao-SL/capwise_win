@@ -444,7 +444,7 @@ fn previous_submenu(previous: &[PreviousItem]) -> Entry {
                 title: format!(
                     "{}{}",
                     type_indicator(item.kind),
-                    truncate_title(&item.pretty_name)
+                    truncate_title(&crate::library::display_project_name(&item.pretty_name))
                 ),
                 item: Some(TrayItem::PreviousItem(item.path.clone())),
                 enabled: true,

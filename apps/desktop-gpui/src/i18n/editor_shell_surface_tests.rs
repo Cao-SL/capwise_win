@@ -507,7 +507,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::editor::tabs::audio::use_for_new(),
-            "Use for new recordings",
+            "Enhance voice in new recordings",
         ),
         (
             tr::editor::tabs::camera::advanced_shadow(),
@@ -556,10 +556,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::camera::framing::more(), "More ratios…"),
         (tr::editor::tabs::camera::framing::back(), "‹ Common ratios"),
         (tr::editor::tabs::camera::framing::custom(), "Custom ratio"),
-        (
-            tr::editor::tabs::camera::framing::adjust(),
-            "Adjust framing",
-        ),
+        (tr::editor::tabs::camera::framing::adjust(), "Framing"),
         (
             tr::editor::tabs::camera::framing::horizontal(),
             "Horizontal framing",
@@ -1102,10 +1099,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::window::add_track::hide_3d(),
             "Hide the 3D track.",
         ),
-        (
-            tr::editor::window::add_track::hint(),
-            "Adds at the playhead, in front of everything there. Rows appear as needed.",
-        ),
         (tr::editor::window::add_track::more(), "More"),
         (tr::editor::window::aspect::auto(), "Auto"),
         (tr::editor::window::aspect::classic(), "Classic"),
@@ -1156,8 +1149,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::window::camera3d_lane::prompt(),
             "Add cinematic 3D shots to your recording",
         ),
-        (tr::editor::window::clip_menu::audio(), "AUDIO"),
-        (tr::editor::window::clip_menu::cursor(), "CURSOR"),
+        (tr::editor::window::clip_menu::audio(), "Audio"),
         (tr::editor::window::clip_menu::delete(), "Delete clip"),
         (
             tr::editor::window::clip_menu::delete_only_clip(),
@@ -1185,7 +1177,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Silence this clip's audio",
         ),
         (tr::editor::window::clip_menu::rename(), "Rename clip"),
-        (tr::editor::window::clip_menu::speed(), "SPEED"),
+        (tr::editor::window::clip_menu::speed(), "Speed"),
         (tr::editor::window::clip_menu::more(), "More settings"),
         (tr::editor::window::clip_menu::split(), "Split at playhead"),
         (
@@ -1471,12 +1463,9 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::export::turbo::warning(),
             "Uses all of your CPU, the GPU and several times more memory until the export finishes. Other apps may slow down, and your computer may get warm and loud.",
         ),
-        (tr::editor::window::clip_menu::transition(), "TRANSITION"),
-        (tr::editor::window::clip_menu::transition_none(), "None"),
         (tr::editor::window::transition::title(), "Transition"),
         (tr::editor::window::transition::add(), "Add transition"),
         (tr::editor::window::transition::duration(), "Duration"),
-        (tr::editor::window::transition::seconds_unit(), "s"),
         (
             tr::editor::window::transition::remove(),
             "Remove transition",

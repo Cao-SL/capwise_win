@@ -1,6 +1,6 @@
 use gpui::{
     AppContext as _, Context, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled,
-    Window, div, px,
+    Window, div, prelude::FluentBuilder as _, px,
 };
 
 use crate::{ai_store, i18n::tr, settings_window::SettingsWindow, stock_media::Provider, ui};
@@ -66,7 +66,38 @@ fn provider_name(provider: Provider) -> &'static str {
     }
 }
 
+fn key_url(provider: Provider) -> &'static str {
+    match provider {
+        Provider::Unsplash => "https://unsplash.com/developers",
+        Provider::Pixabay => "https://pixabay.com/api/docs/",
+    }
+}
+
+const PROVIDERS: [Provider; 2] = [Provider::Unsplash, Provider::Pixabay];
+
 impl SettingsWindow {
+    pub(crate) fn stock_page_shown(&mut self, cx: &mut Context<Self>) {
+        let unknown: Vec<&'static str> = PROVIDERS
+            .into_iter()
+            .map(provider_id)
+            .filter(|id| ai_store::cached_key_tail(ai_store::Kind::Stock, id).is_none())
+            .collect();
+        if unknown.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .spawn(async move {
+                    for id in unknown {
+                        ai_store::key(ai_store::Kind::Stock, id);
+                    }
+                })
+                .await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
+    }
+
     fn edit_stock_key(&mut self, provider: Provider, window: &mut Window, cx: &mut Context<Self>) {
         if self.pages.stock.busy {
             return;
@@ -192,7 +223,7 @@ impl SettingsWindow {
     }
 
     pub(crate) fn render_stock_services(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
-        let rows = [Provider::Unsplash, Provider::Pixabay]
+        let rows = PROVIDERS
             .into_iter()
             .map(|provider| self.stock_service_row(provider, cx))
             .collect();
@@ -216,11 +247,24 @@ impl SettingsWindow {
             Provider::Unsplash => tr::settings::stock::unsplash_description(),
             Provider::Pixabay => tr::settings::stock::pixabay_description(),
         };
-        let status = match &saved_tail {
-            Some(Some(tail)) => format!("{} · {tail}", tr::settings::stock::configured()),
-            Some(None) => tr::settings::stock::not_configured().to_string(),
-            None => tr::settings::ai::key_unverified().to_string(),
-        };
+        let has_key = saved_tail.as_ref().is_some_and(Option::is_some);
+        let status = saved_tail.as_ref().map(|tail| {
+            div()
+                .flex()
+                .flex_shrink_0()
+                .items_center()
+                .gap(px(6.))
+                .text_size(px(12.))
+                .text_color(theme.settings_muted())
+                .when(tail.is_some(), |status| {
+                    status.child(div().size(px(6.)).rounded_full().bg(gpui::rgb(0x22c55e)))
+                })
+                .child(if tail.is_some() {
+                    tr::settings::stock::configured()
+                } else {
+                    tr::settings::stock::not_configured()
+                })
+        });
         let mut column = div().flex().flex_col().child(
             div()
                 .flex()
@@ -243,22 +287,30 @@ impl SettingsWindow {
                         )
                         .child(
                             div()
-                                .text_size(px(12.))
-                                .text_color(theme.settings_muted())
-                                .child(description),
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(theme.settings_muted())
+                                        .child(description),
+                                )
+                                .when(!has_key, |line| {
+                                    line.child(self.quiet_link(
+                                        SharedString::from(format!("stock-get-key-{id}")),
+                                        tr::settings::stock::get_key(),
+                                        cx,
+                                        move |_, _, cx| cx.open_url(key_url(provider)),
+                                    ))
+                                }),
                         ),
                 )
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .text_size(px(12.))
-                        .text_color(theme.settings_muted())
-                        .child(status),
-                )
+                .children(status)
                 .child(self.button(
                     SharedString::from(format!("stock-edit-{id}")),
                     (ui::ButtonVariant::Gray, None),
-                    if saved_tail.as_ref().is_some_and(Option::is_some) {
+                    if has_key {
                         tr::settings::stock::edit()
                     } else {
                         tr::settings::stock::configure()
@@ -306,18 +358,6 @@ impl SettingsWindow {
                     move |this, window, cx| this.remove_stock_key(provider, window, cx),
                 ));
             }
-            let key_url = match provider {
-                Provider::Unsplash => "https://unsplash.com/oauth/applications",
-                Provider::Pixabay => "https://pixabay.com/api/docs/",
-            };
-            buttons = buttons.child(div().flex_1()).child(self.button(
-                "stock-get-key",
-                (ui::ButtonVariant::Gray, None),
-                tr::settings::stock::get_key(),
-                state.busy,
-                cx,
-                move |_, _, cx| cx.open_url(key_url),
-            ));
             column = column.child(
                 div()
                     .flex()

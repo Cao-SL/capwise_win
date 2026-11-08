@@ -798,11 +798,7 @@ impl EditorWindow {
                             .flex_none()
                             .text_size(px(11.))
                             .text_color(Hsla::from(theme.editor.text_3))
-                            .child(SharedString::from(format!(
-                                "{} · {}",
-                                transition_label(current.kind),
-                                seconds(current.duration)
-                            ))),
+                            .child(seconds(current.duration)),
                     ),
             )
             .child(
@@ -816,29 +812,19 @@ impl EditorWindow {
             .child(
                 div()
                     .flex()
-                    .flex_col()
-                    .gap(px(6.))
+                    .items_center()
+                    .gap(px(12.))
                     .px(px(4.))
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(px(12.))
-                                    .text_color(Hsla::from(theme.editor.text_2))
-                                    .child(tr::editor::window::transition::duration()),
-                            )
-                            .child(self.render_number_field(
-                                crate::editor_panels::FieldKey::TransitionDuration(index),
-                                tr::editor::window::transition::seconds_unit(),
-                                64.,
-                            )),
+                            .flex_none()
+                            .text_size(px(12.))
+                            .text_color(Hsla::from(theme.editor.text_2))
+                            .child(tr::editor::window::transition::duration()),
                     )
                     .child(
                         div()
+                            .flex_1()
                             .flex()
                             .flex_row()
                             .items_center()

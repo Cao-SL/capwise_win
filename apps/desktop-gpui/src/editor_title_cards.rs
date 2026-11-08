@@ -930,32 +930,17 @@ impl EditorWindow {
             .gap(px(16.))
             .child(
                 ui::Field::stacked(&theme, tr::editor::title_cards::title())
-                    .value(
-                        ui::EditorButton::plain(&theme, "edit-text-on-canvas")
-                            .left_icon("icons/pencil.svg")
-                            .icon_size(px(13.))
-                            .height(px(24.))
-                            .tooltip(&theme, tr::editor::canvas::edit_text())
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.begin_canvas_text_edit(index, window, cx);
-                            }))
-                            .into_any_element(),
-                    )
                     .child(self.render_field_input(FieldKey::TextContent(index), Some(64.))),
             )
             .child(
                 div()
                     .flex()
                     .gap(px(8.))
-                    .child(
-                        div().flex_1().min_w_0().child(
-                            ui::Field::stacked(&theme, tr::editor::title_cards::subtitle())
-                                .child(self.render_field_input(
-                                    FieldKey::TitleCardSubtitle(index),
-                                    None,
-                                )),
+                    .child(div().flex_1().min_w_0().child(
+                        ui::Field::stacked(&theme, tr::editor::title_cards::subtitle()).child(
+                            self.render_field_input(FieldKey::TitleCardSubtitle(index), None),
                         ),
-                    )
+                    ))
                     .child(
                         div().w(px(120.)).flex_none().child(
                             ui::Field::stacked(&theme, tr::editor::title_cards::kicker()).child(
@@ -1008,7 +993,7 @@ impl EditorWindow {
                                 .gap(px(6.))
                                 .child(
                                     ui::EditorButton::plain(&theme, "title-card-solid")
-                                        .outlined(&theme)
+                                        .choice(&theme)
                                         .grow()
                                         .height(px(32.))
                                         .text_size(px(12.))
@@ -1023,7 +1008,7 @@ impl EditorWindow {
                                 )
                                 .child(
                                     ui::EditorButton::plain(&theme, "title-card-image")
-                                        .outlined(&theme)
+                                        .choice(&theme)
                                         .grow()
                                         .height(px(32.))
                                         .text_size(px(12.))
@@ -1200,9 +1185,12 @@ impl EditorWindow {
                             .label(tr::editor::title_cards::remove())
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.end_field_edit(cx);
-                                if this.title_card_edit("title-card-remove", window, cx, |project| {
-                                    project.remove_title_card(role)
-                                }) {
+                                if this.title_card_edit(
+                                    "title-card-remove",
+                                    window,
+                                    cx,
+                                    |project| project.remove_title_card(role),
+                                ) {
                                     this.set_selection(None, cx);
                                 }
                             })),

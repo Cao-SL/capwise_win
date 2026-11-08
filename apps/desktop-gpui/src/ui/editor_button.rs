@@ -55,6 +55,7 @@ pub struct EditorButton {
     chevron: Hsla,
     rest_bg: Option<Hsla>,
     border: Option<Hsla>,
+    pressed_border: Option<Hsla>,
     radius: Pixels,
     full: bool,
     /// Content sits at the leading edge instead of the centre -- for a
@@ -92,6 +93,7 @@ impl EditorButton {
             chevron: Hsla::from(theme.editor.text_3),
             rest_bg: None,
             border: None,
+            pressed_border: None,
             radius: px(7.),
             full: false,
             start: false,
@@ -138,6 +140,17 @@ impl EditorButton {
 
     pub fn outlined(mut self, theme: &Theme) -> Self {
         self.border = Some(Hsla::from(theme.editor.line));
+        self
+    }
+
+    /// A choice among siblings: the picked one is an accent wash with accent
+    /// ink, the way the tab rail marks its selected tab.
+    pub fn choice(mut self, theme: &Theme) -> Self {
+        let accent = Hsla::from(theme.editor.accent);
+        self.border = Some(Hsla::from(theme.editor.line));
+        self.pressed_bg = accent.opacity(0.12);
+        self.pressed_text = accent;
+        self.pressed_border = Some(accent.opacity(0.45));
         self
     }
 
@@ -261,6 +274,7 @@ impl RenderOnce for EditorButton {
             chevron,
             rest_bg,
             border,
+            pressed_border,
             radius,
             full,
             start,
@@ -316,6 +330,9 @@ impl RenderOnce for EditorButton {
             .when_some(rest_bg, |this, bg| this.bg(bg))
             .when_some(border, |this, color| this.border_1().border_color(color))
             .when(pressed, |this| this.bg(pressed_bg))
+            .when_some(pressed_border.filter(|_| pressed), |this, color| {
+                this.border_1().border_color(color)
+            })
             .when(!disabled && !pressed, |this| {
                 this.cursor_pointer()
                     .hover(move |this| this.bg(hover_bg).text_color(hover_text))

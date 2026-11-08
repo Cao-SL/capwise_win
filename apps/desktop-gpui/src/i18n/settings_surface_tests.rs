@@ -100,7 +100,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::recordings::empty::studio(),
-            "No studio recordings",
+            "No recordings yet",
         ),
         (tr::settings::recordings::load_more(), "Load more"),
         (
@@ -281,7 +281,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::shortcuts::after_studio::title(),
-            "After a Studio recording",
+            "After recording",
         ),
         (
             tr::settings::shortcuts::after_studio::hint(),
@@ -349,7 +349,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
         ),
         (
             tr::settings::shortcuts::label::start_studio(),
-            "Start Studio recording",
+            "Start recording",
         ),
         (
             tr::settings::shortcuts::label::start_instant(),
@@ -1249,7 +1249,7 @@ fn settings_surfaces_match_the_literals_they_replaced() {
     let assembled: &[(&str, String)] = &[
         (
             tr::settings::recordings::empty::studio_matching(),
-            format!("No matching {} recordings", "studio"),
+            "No matching recordings".to_string(),
         ),
         (
             tr::settings::feedback::capture_supported(),

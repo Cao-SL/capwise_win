@@ -295,9 +295,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::recording::auto_zoom::description(),
-            "Automatically add zoom segments around mouse clicks in Studio \
-                             recordings."
-                .into(),
+            "Automatically add zoom segments around mouse clicks while recording.".into(),
         ),
         (
             tr::settings::general::recording::auto_zoom::label(),
@@ -337,7 +335,7 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::recording::marker_sound::description(),
-            "Plays a short sound when you add a marker during a Studio recording. Your \
+            "Plays a short sound when you add a marker while recording. Your \
                              microphone or system audio can pick it up."
                 .into(),
         ),
@@ -377,11 +375,11 @@ fn english_matches_the_literals_it_replaced() {
         ),
         (
             tr::settings::general::storage::choose_folder(),
-            "Choose Folder".into(),
+            "Change…".into(),
         ),
         (
             tr::settings::general::storage::default_location(),
-            "Default (Application Support)".into(),
+            "Default location".into(),
         ),
         (
             tr::settings::general::storage::description(),
