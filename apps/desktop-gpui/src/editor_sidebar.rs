@@ -4466,12 +4466,17 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if name.eq_ignore_ascii_case("clips") || name.eq_ignore_ascii_case("library") {
+        if name.eq_ignore_ascii_case("clips")
+            || name.eq_ignore_ascii_case("library")
+            || name.eq_ignore_ascii_case("online")
+        {
             if !self.clips.open {
                 self.toggle_clips(window, cx);
             }
             self.assets.source = if name.eq_ignore_ascii_case("library") {
                 crate::editor_assets::AssetSource::Local
+            } else if name.eq_ignore_ascii_case("online") {
+                crate::editor_assets::AssetSource::Online
             } else {
                 crate::editor_assets::AssetSource::Project
             };

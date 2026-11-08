@@ -3568,6 +3568,8 @@ restore = "恢复上一版"
 invalid_result = "没有收到可用的稿件，请重试（最多 2 万字）"
 
 [editor.assets]
+stock_photos = "图片 · Unsplash"
+stock_videos = "视频 · Pixabay"
 library_all = "全部"
 library_audio = "音频"
 library_import = "导入"

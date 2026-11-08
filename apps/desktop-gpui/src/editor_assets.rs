@@ -26,6 +26,37 @@ use crate::{
 
 mod library;
 
+/// One-click searches for the Online tab, label and the English query sent.
+const STOCK_PHOTO_PRESETS: &[(&str, &str)] = &[
+    ("办公桌", "desk workspace"),
+    ("科技", "technology"),
+    ("城市", "city skyline"),
+    ("自然", "nature landscape"),
+    ("抽象背景", "abstract background"),
+    ("渐变", "gradient"),
+    ("纹理", "texture"),
+    ("团队", "team meeting"),
+    ("咖啡", "coffee"),
+    ("书本", "books"),
+    ("天空", "sky"),
+    ("极简", "minimal"),
+];
+
+const STOCK_VIDEO_PRESETS: &[(&str, &str)] = &[
+    ("城市延时", "city timelapse"),
+    ("键盘打字", "typing keyboard"),
+    ("科技", "technology"),
+    ("数据", "data"),
+    ("粒子背景", "particles background"),
+    ("云", "clouds"),
+    ("海浪", "ocean waves"),
+    ("办公室", "office"),
+    ("人群", "people walking"),
+    ("星空", "night sky stars"),
+    ("光斑", "bokeh"),
+    ("抽象", "abstract"),
+];
+
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum AssetSource {
     #[default]
@@ -1046,62 +1077,51 @@ impl EditorWindow {
             .gap(px(10.))
             .px(px(12.))
             .pb(px(12.));
+        // Pictures come from Unsplash, footage from Pixabay: people pick what
+        // they want, not which service has it.
+        let kinds = [
+            (MediaKind::Photo, tr::editor::assets::stock_photos()),
+            (MediaKind::Video, tr::editor::assets::stock_videos()),
+        ];
         body = body.child(
             div()
                 .flex()
-                .min_w_0()
-                .gap(px(4.))
-                .children(
-                    [
-                        (Provider::Unsplash, "Unsplash"),
-                        (Provider::Pixabay, "Pixabay"),
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, (provider, name))| {
-                        div().flex_1().min_w_0().whitespace_nowrap().child(
-                            ui::Button::plain(
-                                &theme,
-                                ("stock-provider", index),
-                                ui::ButtonVariant::Gray,
-                                ui::ButtonSize::Sm,
-                            )
-                            .label(name)
-                            .full_width()
-                            .when(self.assets.provider == provider, |button| {
-                                button.icon("icons/check.svg")
-                            })
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    this.assets.cancel_search();
-                                    this.assets.provider = provider;
-                                    if provider == Provider::Unsplash {
-                                        this.assets.kind = MediaKind::Photo;
-                                    }
-                                    this.clear_asset_results();
-                                    cx.notify();
-                                },
-                            )),
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div().flex_1().min_w_0().child(
+                        ui::SegmentedControl::editor(
+                            &theme,
+                            "stock-kind",
+                            kinds
+                                .iter()
+                                .map(|(kind, label)| {
+                                    ui::SegmentOption::new(*label, self.assets.kind == *kind)
+                                })
+                                .collect(),
                         )
-                    }),
+                        .stretch()
+                        .item_height(px(28.))
+                        .on_select(cx.listener(move |this, index: &usize, window, cx| {
+                            let Some((kind, _)) = kinds.get(*index) else {
+                                return;
+                            };
+                            this.set_stock_kind(*kind, window, cx);
+                        })),
+                    ),
                 )
                 .child(
-                    div().flex_1().min_w_0().whitespace_nowrap().child(
-                        ui::Button::plain(
-                            &theme,
-                            "stock-settings",
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(tr::editor::assets::settings())
-                        .full_width()
+                    ui::EditorButton::plain(&theme, "stock-settings")
+                        .left_icon("icons/settings.svg")
+                        .icon_size(px(14.))
+                        .height(px(32.))
+                        .tooltip(&theme, tr::editor::assets::settings())
                         .on_click(|_, _, cx| {
                             crate::app_windows::open_settings(
                                 crate::settings_window::Page::Assets,
                                 cx,
                             )
                         }),
-                    ),
                 ),
         );
         if configured == Some(false) {
@@ -1127,40 +1147,6 @@ impl EditorWindow {
                 .children(self.asset_status(cx))
                 .into_any_element();
         }
-        body = body.child(
-            div().flex().min_w_0().gap(px(6.)).children(
-                [
-                    (MediaKind::Photo, tr::editor::assets::image()),
-                    (MediaKind::Video, tr::editor::assets::video()),
-                ]
-                .into_iter()
-                .enumerate()
-                .map(|(index, (kind, label))| {
-                    div().flex_1().min_w_0().whitespace_nowrap().child(
-                        ui::Button::plain(
-                            &theme,
-                            ("stock-kind", index),
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(label)
-                        .full_width()
-                        .disabled(
-                            kind == MediaKind::Video && self.assets.provider == Provider::Unsplash,
-                        )
-                        .when(self.assets.kind == kind, |button| {
-                            button.icon("icons/check.svg")
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.assets.cancel_search();
-                            this.assets.kind = kind;
-                            this.clear_asset_results();
-                            cx.notify();
-                        })),
-                    )
-                }),
-            ),
-        );
         if let Some(input) = &self.assets.input {
             body = body.child(
                 div()
@@ -1192,6 +1178,43 @@ impl EditorWindow {
                     ),
             );
         }
+        // Words people reach for when cutting a talk or a tutorial: one
+        // click searches in English, which both services answer best.
+        let presets: &[(&'static str, &'static str)] = if self.assets.kind == MediaKind::Video {
+            STOCK_VIDEO_PRESETS
+        } else {
+            STOCK_PHOTO_PRESETS
+        };
+        body = body.child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .children(presets.iter().enumerate().map(|(index, (label, query))| {
+                    let query = *query;
+                    // Chinese words for a Chinese interface; elsewhere the
+                    // query itself reads fine.
+                    let label = if crate::i18n::current() == crate::i18n::Locale::ZhCn {
+                        *label
+                    } else {
+                        query
+                    };
+                    ui::EditorButton::plain(&theme, ("stock-preset", index))
+                        .outlined(&theme)
+                        .label(label)
+                        .text_size(px(12.))
+                        .height(px(26.))
+                        .radius(px(13.))
+                        .padding_x(px(10.))
+                        .disabled(self.assets.searching || waiting)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            if let Some(input) = &this.assets.input {
+                                input.update(cx, |input, cx| input.set_text(query, cx));
+                            }
+                            this.search_assets(1, true, window, cx);
+                        }))
+                })),
+        );
         let mut results = div()
             .id("stock-results")
             .flex_1()
@@ -1565,6 +1588,37 @@ impl EditorWindow {
             );
         }
         elements
+    }
+
+    /// Pictures from Unsplash, footage from Pixabay; Pixabay also covers
+    /// pictures when only it is set up.
+    fn set_stock_kind(&mut self, kind: MediaKind, window: &mut Window, cx: &mut Context<Self>) {
+        if self.assets.kind == kind {
+            return;
+        }
+        self.assets.cancel_search();
+        self.assets.kind = kind;
+        self.assets.provider = match kind {
+            MediaKind::Video => Provider::Pixabay,
+            MediaKind::Photo
+                if cached_credentials(Provider::Unsplash) == Some(false)
+                    && cached_credentials(Provider::Pixabay) == Some(true) =>
+            {
+                Provider::Pixabay
+            }
+            MediaKind::Photo => Provider::Unsplash,
+        };
+        self.clear_asset_results();
+        // Keep the words; show the other kind for them.
+        let has_query = self
+            .assets
+            .input
+            .as_ref()
+            .is_some_and(|input| !input.read(cx).text().trim().is_empty());
+        if has_query {
+            self.search_assets(1, true, window, cx);
+        }
+        cx.notify();
     }
 
     fn clear_asset_results(&mut self) {

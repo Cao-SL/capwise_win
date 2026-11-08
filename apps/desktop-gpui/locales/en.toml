@@ -3570,6 +3570,8 @@ restore = "Restore previous"
 invalid_result = "The model returned an empty or oversized draft. Try again (20,000 characters maximum)."
 
 [editor.assets]
+stock_photos = "Photos · Unsplash"
+stock_videos = "Video · Pixabay"
 library_all = "All"
 library_audio = "Audio"
 library_import = "Import"
