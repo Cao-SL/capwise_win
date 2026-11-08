@@ -7,7 +7,7 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
-use cap_project::ImageSegment;
+use cap_project::{ImageEmphasis, ImageMotion, ImageSegment};
 use image::{ImageDecoder, RgbaImage};
 use wgpu::util::DeviceExt;
 
@@ -102,6 +102,168 @@ struct CachedDraw {
     group: wgpu::BindGroup,
 }
 
+/// A picture layer's animated offset (px), scale, extra rotation (degrees)
+/// and opacity factor at one instant.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Motion {
+    alpha: f32,
+    offset: [f32; 2],
+    scale: f32,
+    rotation: f32,
+}
+
+const MOTION_REST: Motion = Motion {
+    alpha: 1.0,
+    offset: [0.0, 0.0],
+    scale: 1.0,
+    rotation: 0.0,
+};
+
+fn ease_out_cubic(t: f32) -> f32 {
+    1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
+}
+
+fn ease_out_back(t: f32) -> f32 {
+    let p = t.clamp(0.0, 1.0) - 1.0;
+    1.0 + 2.70158 * p * p * p + 1.70158 * p * p
+}
+
+/// One edge of the animation. `progress` runs 0 -> 1 toward resting for both
+/// edges; `direction` is +1 entering and -1 leaving, so slides carry on
+/// through the resting place instead of retracing.
+fn edge_motion(motion: ImageMotion, progress: f32, direction: f32, size: [f32; 2]) -> Motion {
+    if progress >= 1.0 || motion == ImageMotion::None {
+        return MOTION_REST;
+    }
+    let eased = ease_out_cubic(progress);
+    let travel_x = size[0] * 0.8;
+    let travel_y = size[1] * 0.8;
+    let rest = Motion {
+        alpha: eased,
+        ..MOTION_REST
+    };
+    match motion {
+        ImageMotion::None => MOTION_REST,
+        ImageMotion::Fade => rest,
+        ImageMotion::Pop => Motion {
+            scale: 0.6 + 0.4 * ease_out_back(progress),
+            ..rest
+        },
+        ImageMotion::Zoom => Motion {
+            scale: 1.5 - 0.5 * eased,
+            ..rest
+        },
+        ImageMotion::Stamp => Motion {
+            alpha: (progress * 4.0).min(1.0),
+            scale: 1.0 + 0.8 * (1.0 - ease_out_back(progress)),
+            ..MOTION_REST
+        },
+        ImageMotion::Spin => Motion {
+            scale: 0.4 + 0.6 * eased,
+            rotation: -direction * (1.0 - eased) * 180.0,
+            ..rest
+        },
+        ImageMotion::SlideUp => Motion {
+            offset: [0.0, direction * (1.0 - eased) * travel_y],
+            ..rest
+        },
+        ImageMotion::SlideDown => Motion {
+            offset: [0.0, -direction * (1.0 - eased) * travel_y],
+            ..rest
+        },
+        ImageMotion::SlideLeft => Motion {
+            offset: [direction * (1.0 - eased) * travel_x, 0.0],
+            ..rest
+        },
+        ImageMotion::SlideRight => Motion {
+            offset: [-direction * (1.0 - eased) * travel_x, 0.0],
+            ..rest
+        },
+    }
+}
+
+/// The loop that runs while the picture is shown; `t` is seconds since it
+/// appeared.
+fn emphasis_motion(emphasis: ImageEmphasis, t: f32, size: [f32; 2]) -> Motion {
+    use std::f32::consts::TAU;
+    let wave = |period: f32| (TAU * t / period).sin();
+    // 0 -> 1 -> 0 once per period, resting at 0.
+    let beat = |period: f32| 0.5 - 0.5 * (TAU * t / period).cos();
+    let nudge = |dx: f32, dy: f32| {
+        let distance = beat(0.8) * 0.12;
+        Motion {
+            offset: [dx * distance * size[0], dy * distance * size[1]],
+            ..MOTION_REST
+        }
+    };
+    match emphasis {
+        ImageEmphasis::None => MOTION_REST,
+        ImageEmphasis::Pulse => Motion {
+            scale: 1.0 + 0.1 * beat(0.9),
+            ..MOTION_REST
+        },
+        ImageEmphasis::Breathe => Motion {
+            scale: 1.0 + 0.04 * wave(2.4),
+            alpha: 0.92 + 0.08 * beat(2.4),
+            ..MOTION_REST
+        },
+        ImageEmphasis::Wiggle => Motion {
+            rotation: 8.0 * wave(0.5),
+            ..MOTION_REST
+        },
+        ImageEmphasis::Float => Motion {
+            offset: [0.0, -0.06 * size[1] * wave(2.0)],
+            ..MOTION_REST
+        },
+        ImageEmphasis::NudgeRight => nudge(1.0, 0.0),
+        ImageEmphasis::NudgeLeft => nudge(-1.0, 0.0),
+        ImageEmphasis::NudgeUp => nudge(0.0, -1.0),
+        ImageEmphasis::NudgeDown => nudge(0.0, 1.0),
+    }
+}
+
+fn combine(a: Motion, b: Motion) -> Motion {
+    Motion {
+        alpha: a.alpha * b.alpha,
+        offset: [a.offset[0] + b.offset[0], a.offset[1] + b.offset[1]],
+        scale: a.scale * b.scale,
+        rotation: a.rotation + b.rotation,
+    }
+}
+
+/// Everything the layer's animation does at `time`. Enter and exit shrink
+/// together when they would outlast the layer, so it still comes to rest.
+fn image_motion(segment: &ImageSegment, time: f64, size: [f32; 2]) -> Motion {
+    let edge = |motion: ImageMotion, seconds: f64| {
+        if motion == ImageMotion::None || !seconds.is_finite() {
+            0.0
+        } else {
+            seconds.clamp(0.0, 5.0)
+        }
+    };
+    let mut enter = edge(segment.animation_in, segment.animation_in_duration);
+    let mut exit = edge(segment.animation_out, segment.animation_out_duration);
+    let length = (segment.end - segment.start).max(0.0);
+    if enter + exit > length && enter + exit > 0.0 {
+        let fit = length / (enter + exit);
+        enter *= fit;
+        exit *= fit;
+    }
+    let elapsed = (time - segment.start).max(0.0);
+    let remaining = (segment.end - time).max(0.0);
+    let progress = |seconds: f64, duration: f64| {
+        if duration <= 0.0 {
+            1.0
+        } else {
+            (seconds / duration).clamp(0.0, 1.0) as f32
+        }
+    };
+    let entering = edge_motion(segment.animation_in, progress(elapsed, enter), 1.0, size);
+    let leaving = edge_motion(segment.animation_out, progress(remaining, exit), -1.0, size);
+    let emphasis = emphasis_motion(segment.emphasis, elapsed as f32, size);
+    combine(combine(entering, leaving), emphasis)
+}
+
 fn visible_images(
     segments: &[ImageSegment],
     frame_number: u32,
@@ -125,11 +287,19 @@ fn visible_images(
             {
                 return None;
             }
-            let center_size = [
-                (segment.center.x * f64::from(output_size.0)) as f32,
-                (segment.center.y * f64::from(output_size.1)) as f32,
+            let resting = [
                 (segment.size.x * f64::from(output_size.0)) as f32,
                 (segment.size.y * f64::from(output_size.1)) as f32,
+            ];
+            let motion = image_motion(segment, time, resting);
+            if motion.alpha <= 0.0 {
+                return None;
+            }
+            let center_size = [
+                (segment.center.x * f64::from(output_size.0)) as f32 + motion.offset[0],
+                (segment.center.y * f64::from(output_size.1)) as f32 + motion.offset[1],
+                resting[0] * motion.scale,
+                resting[1] * motion.scale,
             ];
             if center_size
                 .iter()
@@ -139,7 +309,9 @@ fn visible_images(
             {
                 return None;
             }
-            let (sin, cos) = (segment.rotation % 360.0).to_radians().sin_cos();
+            let (sin, cos) = ((segment.rotation + motion.rotation) % 360.0)
+                .to_radians()
+                .sin_cos();
             let half_width = (cos.abs() * center_size[2] + sin.abs() * center_size[3]) * 0.5;
             let half_height = (sin.abs() * center_size[2] + cos.abs() * center_size[3]) * 0.5;
             if center_size[0] + half_width < 0.0
@@ -157,7 +329,7 @@ fn visible_images(
                     rotation_opacity_radius: [
                         cos,
                         sin,
-                        segment.opacity.clamp(0.0, 1.0),
+                        (segment.opacity * motion.alpha).clamp(0.0, 1.0),
                         segment.rounding.clamp(0.0, 100.0)
                             * 0.005
                             * center_size[2].min(center_size[3]),
@@ -748,6 +920,45 @@ mod tests {
             size: XY::new(0.5, 0.5),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn stickers_enter_hold_and_leave_back_to_rest() {
+        let mut layer = segment("sticker.png");
+        layer.start = 1.0;
+        layer.end = 4.0;
+        layer.animation_in = ImageMotion::Stamp;
+        layer.animation_out = ImageMotion::SlideRight;
+        let size = [200.0, 100.0];
+
+        // At rest in the middle; nothing moves without an emphasis.
+        assert_eq!(image_motion(&layer, 2.5, size), MOTION_REST);
+        // A stamp starts large and faint.
+        let landing = image_motion(&layer, 1.01, size);
+        assert!(landing.scale > 1.5 && landing.alpha < 0.5);
+        // Leaving to the right moves right of the resting place.
+        let leaving = image_motion(&layer, 3.95, size);
+        assert!(leaving.offset[0] > 0.0 && leaving.alpha < 1.0);
+
+        // A nudge to the right only ever moves right, and returns.
+        layer.emphasis = ImageEmphasis::NudgeRight;
+        let pushes: Vec<f32> = (0..20)
+            .map(|step| image_motion(&layer, 1.5 + step as f64 * 0.04, size).offset[0])
+            .collect();
+        assert!(pushes.iter().all(|x| *x >= -1e-3));
+        assert!(pushes.iter().any(|x| *x > 5.0));
+    }
+
+    #[test]
+    fn edges_shrink_to_fit_a_short_layer() {
+        let mut layer = segment("short.png");
+        layer.start = 0.0;
+        layer.end = 0.2;
+        layer.animation_in = ImageMotion::Fade;
+        layer.animation_out = ImageMotion::Fade;
+        // 0.35 + 0.3 > 0.2: both edges scale down, so the middle is visible.
+        let middle = image_motion(&layer, 0.105, [100.0, 100.0]);
+        assert!(middle.alpha > 0.9);
     }
 
     #[test]
