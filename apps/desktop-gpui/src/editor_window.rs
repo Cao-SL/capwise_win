@@ -866,9 +866,7 @@ impl Render for EditorSectionView {
                             LoadState::Failed(_)
                         ));
                     }
-                    let sidebar = if let Some(assistant) = editor.render_assistant(cx) {
-                        assistant
-                    } else if editor.clips.open {
+                    let sidebar = if editor.clips.open && !editor.assistant.open {
                         editor.render_clips_sidebar(cx).into_any_element()
                     } else {
                         editor.with_style_controls(|editor| {
@@ -1790,6 +1788,7 @@ struct AddTrackMenu {
     left: Pixels,
     /// Distance from the window's bottom edge to the tray's bottom edge.
     bottom: Pixels,
+    top: Option<Pixels>,
     /// Bumped per open so the entrance animation replays each time.
     generation: usize,
     hovered: Option<TrackKind>,
@@ -5108,7 +5107,6 @@ impl EditorWindow {
                         .timeline
                         .as_ref()
                         .and_then(|timeline| timeline.text_segments.get(index))
-                        .filter(|segment| segment.title_card.is_none())
                         .map(|_| crate::editor_canvas::CanvasSelection::Text(index)),
                     TrackKind::Mask => Some(crate::editor_canvas::CanvasSelection::Mask(index)),
                     TrackKind::Shape => Some(crate::editor_canvas::CanvasSelection::Shape(index)),
@@ -7197,6 +7195,11 @@ impl EditorWindow {
         if !inserted {
             return;
         }
+        if kind == TrackKind::Text {
+            self.assistant.open = false;
+            self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+            self.sidebar.text_style_group = 0;
+        }
         self.set_selection(Some(Selection::single(kind, index)), cx);
         let target = match reveal {
             Some((animation_in, animation_out)) => {
@@ -8668,6 +8671,7 @@ impl EditorWindow {
                 + TIMELINE_PADDING
                 + TRACK_GUTTER),
             bottom: px(f32::from(viewport.height) - header_bottom),
+            top: None,
             generation: self.add_track_opens,
             hovered: None,
         });
@@ -9057,6 +9061,11 @@ impl EditorWindow {
                 .unwrap_or(0),
             _ => 0,
         };
+        if kind == TrackKind::Text {
+            self.assistant.open = false;
+            self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+            self.sidebar.text_style_group = 0;
+        }
         self.set_selection(Some(Selection::single(kind, index)), cx);
         let target = match reveal {
             Some((animation_in, animation_out)) => {
@@ -10987,7 +10996,8 @@ impl EditorWindow {
                         .id("add-track-tray")
                         .absolute()
                         .left(menu.left)
-                        .bottom(menu.bottom)
+                        .when_some(menu.top, |element, top| element.top(top))
+                        .when(menu.top.is_none(), |element| element.bottom(menu.bottom))
                         .occlude()
                         .flex()
                         .flex_col()
@@ -10999,39 +11009,13 @@ impl EditorWindow {
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .w(px(ADD_TRACK_TRAY_WIDTH))
                         .child(
-                            div().flex().flex_row().gap(px(4.)).p(px(6.)).children(
-                                ADD_TRACK_OPTIONS.iter().copied().enumerate().map(
-                                    |(index, kind)| {
-                                        self.render_add_track_tile(
-                                            index,
-                                            kind,
-                                            generation,
-                                            scene_available,
-                                            cx,
-                                        )
-                                    },
-                                ),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .px(px(12.))
-                                .pt(px(4.))
-                                .border_t_1()
-                                .border_color(Hsla::from(theme.editor.line))
-                                .text_size(px(10.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(Hsla::from(theme.editor.text_3))
-                                .child(tr::editor::window::add_track::more()),
-                        )
-                        .child(
                             div()
                                 .flex()
                                 .flex_row()
                                 .flex_wrap()
                                 .gap(px(4.))
                                 .px(px(6.))
-                                .pb(px(6.))
+                                .py(px(6.))
                                 .children(ADD_TRACK_MORE.iter().copied().enumerate().map(
                                     |(index, kind)| {
                                         self.render_add_track_tile(
@@ -11970,18 +11954,6 @@ impl EditorWindow {
                     .when(self.sharing.is_some(), |group| {
                         group.child(self.render_reupload_button(cx))
                     })
-                    .child(
-                        ui::EditorButton::plain(&theme, "assistant-open")
-                            .left_icon("icons/sparkles.svg")
-                            .when(!compact, |button| {
-                                button.label(tr::editor::assistant::title())
-                            })
-                            .tooltip(&theme, tr::editor::assistant::title())
-                            .disabled(!self.project_ready() || self.voiceover.is_busy())
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.open_assistant(window, cx)),
-                            ),
-                    )
                     .child(self.render_export_button(cx))
                     .relative()
                     .children((!self.visual_ready()).then(|| {
@@ -12314,6 +12286,51 @@ impl EditorWindow {
             )
             .child(self.render_frame_button(narrow, cx))
             .child(self.render_shape_tool_button(narrow, cx))
+            .child(
+                ui::EditorButton::plain(&theme, "insert-text")
+                    .text(&theme)
+                    .left_icon("icons/type.svg")
+                    .when(!narrow, |button| button.label(TrackKind::Text.label()))
+                    .tooltip(&theme, TrackKind::Text.picker_description())
+                    .disabled(!self.project_ready())
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.shape_tool = None;
+                        this.add_overlay_segment(TrackKind::Text, window, cx);
+                    })),
+            )
+            .child(
+                ui::EditorButton::plain(&theme, "insert-image")
+                    .text(&theme)
+                    .left_icon("icons/image.svg")
+                    .when(!narrow, |button| button.label(TrackKind::Image.label()))
+                    .tooltip(&theme, TrackKind::Image.picker_description())
+                    .disabled(!self.project_ready())
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.shape_tool = None;
+                        this.assistant.open = false;
+                        this.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+                        this.add_track_kind(TrackKind::Image, window, cx);
+                    })),
+            )
+            .child(
+                ui::EditorButton::plain(&theme, "canvas-more-tools")
+                    .text(&theme)
+                    .left_icon("icons/more-horizontal.svg")
+                    .tooltip(&theme, tr::editor::window::add_track::more())
+                    .disabled(!self.project_ready())
+                    .pressed(self.add_track.is_some())
+                    .on_open(cx.listener(|this, bounds: &Bounds<Pixels>, window, cx| {
+                        this.open_add_track(window, cx);
+                        if let Some(menu) = &mut this.add_track {
+                            menu.left = bounds
+                                .origin
+                                .x
+                                .min(window.viewport_size().width - px(ADD_TRACK_TRAY_WIDTH + 12.))
+                                .max(px(12.));
+                            menu.top = Some(bounds.bottom() + px(6.));
+                        }
+                    })),
+            )
     }
 
     /// The preview-resolution control: a segmented `Full | Half | Quarter`.
@@ -13065,7 +13082,6 @@ impl EditorWindow {
         live: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = self.theme;
         div()
             .relative()
             .h(px(TIMELINE_HEADER_HEIGHT))
@@ -13075,55 +13091,6 @@ impl EditorWindow {
                 self.view,
                 viewport_width,
             ))
-            // `TrackManager`'s trigger (`TL/TrackManager.tsx`): a solid pill
-            // in the gutter (`bg-ed-text-1 text-ed-card`, so black on the
-            // light theme and white on the dark one). Its plus turns into an
-            // x while the tray is open.
-            .child(
-                div()
-                    .id("add-track")
-                    .absolute()
-                    .bottom_0()
-                    .left(px(4.))
-                    .h(px(24.))
-                    .flex()
-                    .flex_row()
-                    .flex_none()
-                    .items_center()
-                    .justify_start()
-                    .gap(px(5.))
-                    .pl(px(6.))
-                    .pr(px(8.))
-                    .rounded(px(6.))
-                    .cursor_pointer()
-                    .bg(Hsla::from(theme.editor.text_1))
-                    .hover(|style| style.opacity(0.85))
-                    .active(|style| style.opacity(0.7))
-                    .text_size(px(12.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(Hsla::from(theme.editor.card))
-                    .child(
-                        svg()
-                            .path(if self.add_track.is_some() {
-                                "icons/x.svg"
-                            } else {
-                                "icons/plus.svg"
-                            })
-                            .size(px(12.))
-                            .flex_none()
-                            .text_color(Hsla::from(theme.editor.card)),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .whitespace_nowrap()
-                            .child(tr::editor::window::add_track::button()),
-                    )
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(|this, _: &gpui::ClickEvent, window, cx| {
-                        this.open_add_track(window, cx);
-                    })),
-            )
             // `absolute inset-y-0 right-0 z-40` at
             // `left: TRACK_GUTTER - START_SNAP_PX` -- the ruler's scrub
             // surface, which reaches into the snap-to-zero zone so hitting

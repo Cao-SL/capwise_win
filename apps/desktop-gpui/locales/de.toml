@@ -3885,6 +3885,11 @@ description = "Standardordner für Videos, Untertitel und Cover. Beim Export kan
 default_location = "Letzten Systemspeicherort verwenden"
 
 [editor.assistant]
+no_changes = "Keine passenden Inhalte zu ändern. Das Projekt bleibt unverändert."
+favorites = "Favoriten"
+custom_model = "Eigenes Modell: {model}"
+api_connection = "API-Verbindung"
+agent_connection = "Lokaler Agent · ACP"
 skills = "Skills"
 skill_search = "Lokale Skills suchen…"
 skill_notice = "Der ausgewählte Skill wird an das Modell gesendet. Capwise zeigt Änderungen zur Prüfung an; Skripte werden nicht ausgeführt."

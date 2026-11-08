@@ -3885,6 +3885,11 @@ description = "वीडियो, उपशीर्षक और कवर क
 default_location = "सिस्टम का पिछला सेव स्थान उपयोग करें"
 
 [editor.assistant]
+no_changes = "बदलने के लिए कोई मिलती सामग्री नहीं है। प्रोजेक्ट अपरिवर्तित है।"
+favorites = "पसंदीदा"
+custom_model = "कस्टम मॉडल: {model}"
+api_connection = "API कनेक्शन"
+agent_connection = "स्थानीय Agent · ACP"
 skills = "कौशल"
 skill_search = "स्थानीय कौशल खोजें…"
 skill_notice = "चुना हुआ कौशल मॉडल को भेजा जाता है। Capwise बदलावों का पूर्वावलोकन दिखाता है; कौशल की स्क्रिप्ट नहीं चलाता।"

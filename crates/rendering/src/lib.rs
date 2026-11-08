@@ -61,6 +61,7 @@ pub mod spring_mass_damper;
 mod takeover;
 mod text;
 mod title_cards;
+pub use title_cards::title_card_text_bounds;
 mod transition;
 #[cfg(test)]
 mod transition_render_tests;
@@ -9386,6 +9387,13 @@ impl RendererLayers {
                 .filter(|card| card.visible())
         {
             card.render(passes.pass(session.current_texture_view(), load));
+            if let Some(overlays) = &self.overlays
+                && !uniforms.texts.is_empty()
+            {
+                overlays
+                    .text
+                    .render(passes.pass(session.current_texture_view(), load));
+            }
             return;
         }
 

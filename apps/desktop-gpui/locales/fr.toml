@@ -3885,6 +3885,11 @@ description = "Dossier par défaut des vidéos, sous-titres et couvertures. Modi
 default_location = "Utiliser le dernier emplacement du système"
 
 [editor.assistant]
+no_changes = "Aucun contenu correspondant à modifier. Le projet reste inchangé."
+favorites = "Favoris"
+custom_model = "Modèle personnalisé : {model}"
+api_connection = "Connexion API"
+agent_connection = "Agent local · ACP"
 skills = "Compétences"
 skill_search = "Rechercher une compétence…"
 skill_notice = "La compétence sélectionnée est envoyée au modèle. Capwise prévisualise les modifications sans exécuter ses scripts."

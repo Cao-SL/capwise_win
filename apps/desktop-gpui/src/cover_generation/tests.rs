@@ -756,3 +756,23 @@ async fn image_errors_preserve_activation_reason_without_exposing_provider_detai
         server.join().unwrap();
     }
 }
+
+#[test]
+#[ignore = "requires an explicitly provided saved image-service response"]
+fn decode_saved_service_response_without_another_paid_request() {
+    let path = std::env::var("CAPWISE_IMAGE_RESPONSE").unwrap();
+    let body = std::fs::read(path).unwrap();
+    let request = BackgroundRequest {
+        model: "ep-saved-service-response".into(),
+        profile: ArkProfile::SingleImageCommon,
+        target: Dimensions {
+            width: 1920,
+            height: 1080,
+        },
+        ..request()
+    };
+    let (size, _) = request.prepare().unwrap();
+    let decoded = decode_response(&body, size, &request.model).unwrap();
+    assert!(decoded.origin.actual.pixels() > 0);
+    assert!(!decoded.bytes.is_empty());
+}

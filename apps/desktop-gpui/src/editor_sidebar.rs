@@ -254,10 +254,17 @@ pub enum SidebarTab {
     Audio,
     Cursor,
     Captions,
+    Assistant,
 }
 
 impl SidebarTab {
-    pub const ALL: [SidebarTab; 4] = [Self::Captions, Self::Background, Self::Camera, Self::Audio];
+    pub const ALL: [SidebarTab; 5] = [
+        Self::Captions,
+        Self::Background,
+        Self::Camera,
+        Self::Audio,
+        Self::Assistant,
+    ];
 
     pub fn icon(self) -> &'static str {
         match self {
@@ -266,6 +273,7 @@ impl SidebarTab {
             Self::Audio => "icons/audio-on.svg",
             Self::Cursor => "icons/cursor.svg",
             Self::Captions => "icons/captions.svg",
+            Self::Assistant => "icons/sparkles.svg",
         }
     }
 
@@ -276,6 +284,7 @@ impl SidebarTab {
             Self::Audio => tr::editor::sidebar::tab::audio(),
             Self::Cursor => tr::editor::sidebar::tab::cursor(),
             Self::Captions => tr::editor::sidebar::tab::captions(),
+            Self::Assistant => tr::editor::assistant::title(),
         }
     }
 
@@ -289,6 +298,7 @@ impl SidebarTab {
             Self::Audio => "Audio",
             Self::Cursor => "Cursor",
             Self::Captions => "Captions",
+            Self::Assistant => "Assistant",
         }
     }
 }
@@ -1089,6 +1099,13 @@ impl EditorWindow {
         }
         self.dismiss_sidebar_panels(cx);
         self.sidebar.tab = tab;
+        if tab == SidebarTab::Assistant {
+            self.open_assistant(window, cx);
+            return;
+        }
+        self.assistant.open = false;
+        self.assistant.model_menu = false;
+        self.assistant.skill_menu = false;
         self.focus_root(window, cx);
         self.sidebar.scroll.set_offset(gpui::point(px(0.), px(0.)));
         cx.notify();
@@ -2768,7 +2785,8 @@ impl EditorWindow {
                 ui::TabRailItem::new(
                     tab.icon(),
                     tab.title(),
-                    selection.is_none() && !picking_audio && tab == selected_tab,
+                    (tab == SidebarTab::Assistant && self.assistant.open)
+                        || (selection.is_none() && !picking_audio && tab == selected_tab),
                     disabled,
                 )
                 .context(context)
@@ -2803,14 +2821,16 @@ impl EditorWindow {
                     .shadow(theme.editor.card_shadow())
                     .child(rail)
                     .children(
-                        (selected_tab == SidebarTab::Captions && selection.is_none()
-                            || selection
-                                .as_ref()
-                                .is_some_and(|s| s.track == TrackKind::Caption))
+                        (selected_tab != SidebarTab::Assistant
+                            && (selected_tab == SidebarTab::Captions && selection.is_none()
+                                || selection
+                                    .as_ref()
+                                    .is_some_and(|s| s.track == TrackKind::Caption)))
                         .then(|| self.render_caption_navigation(cx)),
                     )
                     .children(
-                        (self.audio_picker.is_none()
+                        (selected_tab != SidebarTab::Assistant
+                            && self.audio_picker.is_none()
                             && (selected_tab == SidebarTab::Audio && selection.is_none()
                                 || selection
                                     .as_ref()
@@ -2829,7 +2849,10 @@ impl EditorWindow {
                             .p(px(12.))
                             .child(tr::editor::sidebar::importing_image())
                     }))
-                    .child(if let Some((index, group)) = self.sidebar.style_target {
+                    .child(if selected_tab == SidebarTab::Assistant {
+                        self.render_assistant(cx)
+                            .unwrap_or_else(|| div().into_any_element())
+                    } else if let Some((index, group)) = self.sidebar.style_target {
                         self.render_style_group(index, group, cx)
                     } else if self.audio_picker.is_some() {
                         self.render_audio_library(cx)
@@ -2881,6 +2904,11 @@ impl EditorWindow {
             SidebarTab::Audio => self.render_audio_tab(cx),
             SidebarTab::Cursor => self.render_cursor_tab(cx),
             SidebarTab::Captions => self.render_captions_tab(cx),
+            SidebarTab::Assistant => {
+                return self
+                    .render_assistant(cx)
+                    .unwrap_or_else(|| div().into_any_element());
+            }
         };
 
         // Block, not a flex column: its one child lays out the same, without

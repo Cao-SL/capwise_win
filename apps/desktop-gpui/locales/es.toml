@@ -3885,6 +3885,11 @@ description = "Carpeta predeterminada para vídeos, subtítulos y portadas. Pued
 default_location = "Usar la última ubicación del sistema"
 
 [editor.assistant]
+no_changes = "No hay contenido coincidente que modificar. El proyecto no ha cambiado."
+favorites = "Favoritos"
+custom_model = "Modelo personalizado: {model}"
+api_connection = "Conexión API"
+agent_connection = "Agente local · ACP"
 skills = "Habilidades"
 skill_search = "Buscar habilidades locales…"
 skill_notice = "La habilidad seleccionada se envía al modelo. Capwise muestra una vista previa de los cambios sin ejecutar scripts."

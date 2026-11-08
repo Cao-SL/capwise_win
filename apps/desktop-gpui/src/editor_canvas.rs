@@ -724,20 +724,15 @@ impl EditorWindow {
                 }
             }
             for (index, segment) in timeline.text_segments.iter().enumerate() {
-                if exclude == CanvasSelection::Text(index) || segment.title_card.is_some() {
+                if exclude == CanvasSelection::Text(index) {
                     continue;
                 }
                 if !(t >= segment.start && t < segment.end && segment.enabled) {
                     continue;
                 }
-                let center = segment.center;
-                let size = segment.size;
-                rects.push(NormRect {
-                    x: center.x - size.x / 2.,
-                    y: center.y - size.y / 2.,
-                    w: size.x,
-                    h: size.y,
-                });
+                if let Some(rect) = self.element_rect(CanvasSelection::Text(index)) {
+                    rects.push(rect);
+                }
             }
             for index in self.visible_shape_order(t) {
                 if exclude == CanvasSelection::Shape(index) || moving_shapes.contains(&index) {
@@ -781,6 +776,10 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(element, CanvasSelection::Text(_)) {
+            self.assistant.open = false;
+            self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
+        }
         if let Some((kind, index)) = element.timeline_selection() {
             self.canvas_selection = Some(element);
             self.set_selection(
@@ -792,6 +791,21 @@ impl EditorWindow {
                 self.set_selection(None, cx);
             }
             self.canvas_selection = Some(element);
+        }
+        if event.click_count == 2
+            && let CanvasSelection::Text(index) = element
+        {
+            self.ensure_field(
+                crate::editor_panels::FieldKey::TextContent(index),
+                window,
+                cx,
+            );
+            self.sync_fields(window, cx);
+            if let Some(input) = self.field(crate::editor_panels::FieldKey::TextContent(index)) {
+                input.update(cx, |state, cx| state.focus_and_select_all(window, cx));
+            }
+            cx.notify();
+            return;
         }
         let draggable = match element {
             CanvasSelection::Display => self.display_draggable(),
@@ -1374,7 +1388,12 @@ impl EditorWindow {
                 }
                 let segment = self.project.timeline.as_ref()?.text_segments.get(index)?;
                 if segment.title_card.is_some() {
-                    return None;
+                    let layout = self.frame_layout.as_ref()?;
+                    let bounds = cap_rendering::title_card_text_bounds(
+                        (layout.output_size[0], layout.output_size[1]),
+                        segment,
+                    )?;
+                    return Some(norm_rect(bounds, layout));
                 }
                 Some(NormRect {
                     x: segment.center.x - segment.size.x / 2.,
@@ -1427,6 +1446,9 @@ impl EditorWindow {
                 };
                 segment.center = center;
                 segment.size = size;
+                if let Some(card) = &mut segment.title_card {
+                    card.custom_text_layout = true;
+                }
             }
             CanvasSelection::Shape(index) => {
                 let Some(segment) = timeline.shape_segments.get_mut(index) else {
@@ -1488,16 +1510,20 @@ impl EditorWindow {
     /// inside `size()` (`Player.tsx:636`), not the player pane.
     pub(crate) fn render_canvas_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let time = self.preview_or_playhead();
-        if self.project.timeline.as_ref().is_some_and(|timeline| {
-            timeline.text_segments.iter().any(|segment| {
-                segment.title_card.is_some()
-                    && segment.enabled
-                    && time >= segment.start
-                    && time < segment.end
-            })
-        }) {
-            return None;
-        }
+        let active_card = self.project.timeline.as_ref().and_then(|timeline| {
+            timeline
+                .text_segments
+                .iter()
+                .enumerate()
+                .filter(|(_, segment)| {
+                    segment.title_card.is_some()
+                        && segment.enabled
+                        && time >= segment.start
+                        && time < segment.end
+                })
+                .max_by_key(|(index, segment)| (segment.track, *index))
+                .map(|(index, _)| index)
+        });
         if !self.canvas_overlay_visible()
             || (!self.player_panel_hovered
                 && self.canvas_drag.is_none()
@@ -1540,13 +1566,15 @@ impl EditorWindow {
             );
         }
 
-        if self.show_display()
+        if active_card.is_none()
+            && self.show_display()
             && let Some(rect) = self.display_rect()
         {
             layer =
                 layer.child(self.render_element_box(CanvasSelection::Display, rect, (cw, ch), cx));
         }
-        if self.show_camera()
+        if active_card.is_none()
+            && self.show_camera()
             && let Some(rect) = self.camera_rect()
         {
             layer =
@@ -1564,7 +1592,9 @@ impl EditorWindow {
                             .enumerate()
                             .filter(|(_, segment)| segment.track == track.track)
                         {
-                            if !(segment.enabled && time >= segment.start && time < segment.end) {
+                            if active_card.is_some()
+                                || !(segment.enabled && time >= segment.start && time < segment.end)
+                            {
                                 continue;
                             }
                             let element = CanvasSelection::Mask(index);
@@ -1585,7 +1615,8 @@ impl EditorWindow {
                                 .iter()
                                 .enumerate()
                                 .filter(|(_, segment)| {
-                                    segment.track == track.track
+                                    active_card.is_none()
+                                        && segment.track == track.track
                                         && segment.is_active_at(time)
                                         && segment.opacity > 0.
                                 })
@@ -1604,7 +1635,11 @@ impl EditorWindow {
                             .enumerate()
                             .filter(|(_, segment)| segment.track == track.track)
                         {
-                            if !(time >= segment.start && time < segment.end && segment.enabled) {
+                            if !(time >= segment.start && time < segment.end && segment.enabled)
+                                || active_card.is_some_and(|active| {
+                                    index != active && segment.title_card.is_some()
+                                })
+                            {
                                 continue;
                             }
                             let element = CanvasSelection::Text(index);
@@ -1621,13 +1656,16 @@ impl EditorWindow {
                 }
             }
         }
-        if self.show_captions()
+        if active_card.is_none()
+            && self.show_captions()
             && let Some(rect) = self.caption_rect()
         {
             layer =
                 layer.child(self.render_element_box(CanvasSelection::Captions, rect, (cw, ch), cx));
         }
-        if let Some(shapes) = self.render_shapes_layer(cx) {
+        if active_card.is_none()
+            && let Some(shapes) = self.render_shapes_layer(cx)
+        {
             layer = layer.child(shapes);
         }
         for guide in &self.snap_guides {

@@ -117,6 +117,68 @@ pub(crate) fn title_card_layout(
     Some(layout)
 }
 
+pub fn title_card_text_bounds(output: (u32, u32), segment: &TextSegment) -> Option<[f32; 4]> {
+    let layout = segment_title_card_layout(output, segment)?;
+    Some(text_group_bounds(&layout))
+}
+
+fn text_group_bounds(layout: &TitleCardLayout) -> [f32; 4] {
+    let mut bounds = layout.text;
+    if let Some(secondary) = layout.secondary {
+        bounds[0] = bounds[0].min(secondary[0]);
+        bounds[1] = bounds[1].min(secondary[1]);
+        bounds[2] = bounds[2].max(secondary[2]);
+        bounds[3] = bounds[3].max(secondary[3]);
+    }
+    bounds
+}
+
+pub(crate) fn segment_title_card_layout(
+    output: (u32, u32),
+    segment: &TextSegment,
+) -> Option<TitleCardLayout> {
+    let card = segment.title_card.as_ref()?;
+    let has_image = matches!(
+        card.background,
+        cap_project::TitleCardBackground::ProjectImage { .. }
+    );
+    let mut layout = title_card_layout(output, card.template, has_image)?;
+    if !card.custom_text_layout {
+        return Some(layout);
+    }
+    if !segment.center.x.is_finite()
+        || !segment.center.y.is_finite()
+        || !segment.size.x.is_finite()
+        || !segment.size.y.is_finite()
+        || segment.size.x <= 0.0
+        || segment.size.y <= 0.0
+    {
+        return None;
+    }
+    let original = text_group_bounds(&layout);
+    let target = [
+        (segment.center.x - segment.size.x * 0.5) as f32 * output.0 as f32,
+        (segment.center.y - segment.size.y * 0.5) as f32 * output.1 as f32,
+        (segment.center.x + segment.size.x * 0.5) as f32 * output.0 as f32,
+        (segment.center.y + segment.size.y * 0.5) as f32 * output.1 as f32,
+    ];
+    let sx = (target[2] - target[0]) / (original[2] - original[0]);
+    let sy = (target[3] - target[1]) / (original[3] - original[1]);
+    let transform = |bounds: [f32; 4]| {
+        [
+            target[0] + (bounds[0] - original[0]) * sx,
+            target[1] + (bounds[1] - original[1]) * sy,
+            target[0] + (bounds[2] - original[0]) * sx,
+            target[1] + (bounds[3] - original[1]) * sy,
+        ]
+    };
+    layout.text = transform(layout.text);
+    layout.secondary = layout.secondary.map(transform);
+    layout.gap *= sx.min(sy);
+    layout.scale *= sx.min(sy);
+    Some(layout)
+}
+
 pub(crate) fn image_placement(
     source: (u32, u32),
     destination: [f32; 4],

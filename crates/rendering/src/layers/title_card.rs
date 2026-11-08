@@ -4,7 +4,9 @@ use super::{ImageLayer, TextLayer, text::TextBackgroundResources};
 use crate::{
     RenderVideoConstants, RenderingError,
     text::{PreparedText, parse_color},
-    title_cards::{TitleCardLayout, balanced_title_lines, stacked_bounds, title_card_layout},
+    title_cards::{
+        TitleCardLayout, balanced_title_lines, segment_title_card_layout, stacked_bounds,
+    },
 };
 
 pub(crate) struct TitleCardLayer {
@@ -57,8 +59,7 @@ impl TitleCardLayer {
         if !segment.font_size.is_finite() {
             return Err(RenderingError::TitleCard("Invalid title size".into()));
         }
-        let has_image = matches!(card.background, TitleCardBackground::ProjectImage { .. });
-        let layout = title_card_layout(output, card.template, has_image)
+        let layout = segment_title_card_layout(output, segment)
             .ok_or_else(|| RenderingError::TitleCard("Invalid output size".into()))?;
 
         if let TitleCardBackground::ProjectImage {

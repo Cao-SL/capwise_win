@@ -209,8 +209,7 @@ impl Drop for PreparedBackground {
 
 impl EditorWindow {
     fn cover_context(&self, target: &str) -> Option<GenerationContext> {
-        if self.assistant.open
-            && self.assistant.cover_active
+        if self.assistant.cover_active
             && self.sidebar.title_cards.cover.target.as_deref() == Some(target)
         {
             return context_for(&self.project_path, &self.project, target);
@@ -313,7 +312,11 @@ impl EditorWindow {
         cx.notify();
     }
 
-    fn generate_cover_background(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn generate_cover_background(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.sidebar.title_cards.cover.busy
             || self.sidebar.title_cards.cover.applying
             || self.sidebar.title_cards.cover.save_pending.is_some()

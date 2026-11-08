@@ -3885,6 +3885,11 @@ description = "動画・字幕・カバーの既定の保存先です。書き�
 default_location = "システムの前回の保存先を使用"
 
 [editor.assistant]
+no_changes = "変更が必要な一致項目はありません。プロジェクトは変更されていません。"
+favorites = "お気に入り"
+custom_model = "カスタムモデル：{model}"
+api_connection = "API 接続"
+agent_connection = "ローカル Agent · ACP"
 skills = "スキル"
 skill_search = "ローカルスキルを検索…"
 skill_notice = "選択したスキルをモデルに送信し、その手順で変更をプレビューします。スクリプトは実行しません。"

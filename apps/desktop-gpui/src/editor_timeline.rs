@@ -118,11 +118,8 @@ const RULER_MINOR_TICK: f32 = 5.;
 /// The gutter cell: a 22px tile at 4px of left padding, then the label.
 const TRACK_TILE_SIZE: f32 = 22.;
 const TRACK_TILE_INSET: f32 = 4.;
-/// The segment's radius, its left accent bar and the content inset that clears
-/// it (`0 10px 0 13px`).
 const SEGMENT_RADIUS: f32 = 8.;
-const SEGMENT_ACCENT_BAR: f32 = 3.;
-const SEGMENT_PADDING_LEFT: f32 = 13.;
+const SEGMENT_PADDING_LEFT: f32 = 10.;
 const SEGMENT_PADDING_RIGHT: f32 = 10.;
 /// The selected 3D shot's pose dots: 6px, 5px inside each edge, so the resize
 /// handles still own the outer pixels.
@@ -2937,17 +2934,7 @@ fn render_segment(
         .flex_row()
         .rounded(px(SEGMENT_RADIUS))
         .overflow_hidden()
-        .bg(seg_fill(theme, color, selected))
-        .child(
-            div()
-                .absolute()
-                .top(px(SEGMENT_RADIUS))
-                .bottom(px(SEGMENT_RADIUS))
-                .left(px(2.))
-                .w(px(SEGMENT_ACCENT_BAR))
-                .rounded_full()
-                .bg(color),
-        );
+        .bg(seg_fill(theme, color, selected));
 
     // The clip track's waveform and its per-second markings, both under the
     // label (`TL/ClipTrack.tsx:943-957`).
@@ -3714,8 +3701,6 @@ fn render_label(
         return div();
     };
 
-    // A narrow box cannot pay for the accent bar's clearance and still show
-    // anything, so it falls back to a symmetric inset.
     let (pad_left, pad_right) = if tier == LabelTier::Glyph {
         (4., 4.)
     } else if visible_width >= 60. {
