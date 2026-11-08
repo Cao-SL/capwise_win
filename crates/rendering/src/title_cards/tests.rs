@@ -160,6 +160,7 @@ fn title_card_is_complete_on_the_first_and_last_frames_and_absent_at_the_next_bo
 fn legacy_fullscreen_text_keeps_its_existing_edge_transition() {
     let mut legacy = TextSegment::new_title_card(TitleCardRole::Intro, "Legacy title");
     legacy.title_card = None;
+    legacy.end = legacy.start + 2.0;
     legacy.layout_transition = 0.5;
     let segments = [legacy];
     assert!(active_title_card(0.0, &segments, &[]).is_none());

@@ -136,6 +136,10 @@ DMG 用 `dmgbuild 1.6.5`，脚本第一次运行时会自动装到 `apps/desktop
 
    版本号正确、`url` 能下载。再用一台装着旧版的机器在菜单里"检查更新"，走完下载、重启。
 
+### 仓库分享图
+
+README 使用 `docs/assets/assistant-workbench.png` 的真实运行截图。GitHub 仓库的 Social preview 需要另到 **Settings → General → Social preview → Upload an image** 手动上传；本次 CLI 发布不会修改这项设置。
+
 ### Intel 版
 
 脚本只构建本机架构。要同时提供 Intel 版，在 Intel Mac 上对同一版本再跑一次，并先把 Apple Silicon 那次的 `dist/<版本>/latest.json` 拷过去：脚本会把 `darwin-x86_64` 合并进同一个清单，然后上传两个架构的文件和合并后的 `latest.json`。

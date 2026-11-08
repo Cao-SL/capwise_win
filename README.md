@@ -5,11 +5,13 @@
 把录屏做成一段讲得清楚、看得舒服的视频。
 A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
-[下载 macOS 版](https://github.com/joeseesun/capwise/releases/latest) · [报告问题](https://github.com/joeseesun/capwise/issues) · [构建文档](apps/desktop-gpui/README.md) · [许可证](LICENSE)
+[下载 macOS 版](https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg) · [报告问题](https://github.com/joeseesun/capwise/issues) · [构建文档](apps/desktop-gpui/README.md) · [许可证](LICENSE)
 
 ![灵录：视频、时间线与 AI 助手在同一工作区](docs/assets/assistant-workbench.png)
 
 产品演示、操作教程、课程讲解，不必在录屏、字幕、配音和封面工具之间来回搬运。灵录把这些步骤放在一个本地编辑器里：先录下来，再慢慢打磨。
+
+**0.2.0 发布验证：** Developer ID 签名、Apple 公证及 Gatekeeper 检查通过；实际导出与助手交互已在 Apple Silicon Mac 上验证。
 
 ## 你可以用它做什么
 
@@ -27,7 +29,7 @@ A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
 ## 五分钟开始
 
-1. 从 [GitHub Releases](https://github.com/joeseesun/capwise/releases/latest) 下载 Apple Silicon 版 DMG。
+1. 下载 Apple Silicon 版 [Capwise.dmg](https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg)。
 2. 打开 DMG，将 **Capwise** 拖到 **Applications**，再启动「灵录」。
 3. 按引导授权屏幕录制；需要录人声或摄像头时，再授予相应权限。
 4. 录制一段视频，或导入已有视频。在编辑器中处理字幕、画面和声音。
@@ -35,7 +37,7 @@ A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
 基础录制与编辑不需要注册 Cap 云服务账号。AI 功能可选：请在「设置 → AI 模型」中配置自己的服务。
 
-本次提供 **macOS 13+、Apple Silicon** 安装包。Intel、Windows 和 Linux 暂未提供本项目验证过的发布包。
+本次提供 **macOS 13.3+、Apple Silicon** 安装包。Intel、Windows 和 Linux 暂未提供本项目验证过的发布包。
 
 ## AI 助手如何工作
 
@@ -99,6 +101,7 @@ git clone https://github.com/joeseesun/capwise.git
 cd capwise
 bun install
 bun run cap-setup
+bash scripts/prepare-gpui-dependency.sh
 cd apps/desktop-gpui
 cargo build --bin cap-gpui
 ```
@@ -130,9 +133,11 @@ cargo build --bin cap-gpui
 
 ### Install
 
-Download the Apple Silicon DMG from [Releases](https://github.com/joeseesun/capwise/releases/latest), drag Capwise to Applications, and follow the recording permission guide. This release targets macOS 13+ on Apple Silicon. Intel, Windows, and Linux packages have not been verified for this fork.
+Download the Apple Silicon [Capwise.dmg](https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg), drag Capwise to Applications, and follow the recording permission guide. This release targets macOS 13.3+ on Apple Silicon. Intel, Windows, and Linux packages have not been verified for this fork.
 
 Core recording and editing do not require a Cap Cloud account. Optional AI features use your own model providers or installed ACP agents. Configure speech recognition, text generation, and image generation separately in Settings → AI Models.
+
+Version 0.2.0 is Developer ID signed and Apple notarized. Gatekeeper checks, an actual video export, and the core assistant interactions were verified on Apple Silicon.
 
 ### Highlights
 

@@ -6377,6 +6377,7 @@ mod style_image_tests {
             alpha: 255,
         };
         project.camera.background_blur.mode = cap_project::BackgroundBlurMode::Remove;
+        project.color_correction.camera = cap_project::ColorCorrection::default();
         project.timeline = Some(
             serde_json::from_value(serde_json::json!({
                 "segments": [], "zoomSegments": [],
@@ -11762,13 +11763,11 @@ mod per_frame_cache_tests {
         };
         let zoom = ZoomTransformTimeline::from_project(&project, &cursor, 1.0, size);
         let mut renderer = FrameRenderer::new(&constants);
-        let mut layers = RendererLayers::new_for_preparing_preview(
+        let mut layers = RendererLayers::new_with_options(
             &constants.device,
             &constants.queue,
             constants.is_software_adapter,
-            &project,
-        )
-        .expect("layers");
+        );
 
         let mut first_cursor_bind_group = None;
         let mut first_background_generation = None;
