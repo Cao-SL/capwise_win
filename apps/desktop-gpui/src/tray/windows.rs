@@ -17,6 +17,9 @@ use crate::{i18n::tr, main_window::Mode};
 const TRAY_ID: &str = "cap-gpui-tray";
 const DEFAULT_ICON: &[u8] = include_bytes!("../../assets/tray/tray-default-icon.png");
 const STOP_ICON: &[u8] = include_bytes!("../../assets/tray/tray-stop-icon.png");
+/// Matches `productName` in tauri.conf.json. A proper noun, so it is not
+/// translated -- every locale's tray strings already spell it this way.
+const PRODUCT_NAME: &str = "Capwise";
 
 enum Event {
     Menu(MenuId),
@@ -96,7 +99,7 @@ fn create_tray(mode: Mode, entries: &[Entry]) -> anyhow::Result<Tray> {
     let native_menu = build_native_menu(entries)?;
     let icon = TrayIconBuilder::new()
         .with_id(TRAY_ID)
-        .with_tooltip("Cap")
+        .with_tooltip(PRODUCT_NAME)
         .with_icon(decode_tray_icon(DEFAULT_ICON)?)
         .with_menu(Box::new(native_menu.menu.clone()))
         .build()?;
@@ -233,7 +236,7 @@ pub fn set_recording(recording: bool, cx: &mut App) {
     let tooltip = if recording {
         tr::tray::tooltip_recording()
     } else {
-        "Cap"
+        PRODUCT_NAME
     };
     if let Err(error) = tray.icon.set_tooltip(Some(tooltip)) {
         tracing::warn!("failed to update the Windows tray tooltip: {error}");
