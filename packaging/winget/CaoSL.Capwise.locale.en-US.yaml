@@ -1,0 +1,26 @@
+# Winget default-locale manifest (schema 1.6.0).
+PackageIdentifier: CaoSL.Capwise
+PackageVersion: 0.3.9
+PackageLocale: en-US
+Publisher: Cao SL
+PublisherUrl: https://github.com/Cao-SL
+PublisherSupportUrl: https://github.com/Cao-SL/capwise_win/issues
+PackageName: Capwise
+PackageUrl: https://github.com/Cao-SL/capwise_win
+License: AGPL-3.0-only
+LicenseUrl: https://github.com/Cao-SL/capwise_win/blob/main/LICENSE
+Copyright: Copyright (c) 2023-present Cap Software, Inc.
+ShortDescription: Screen recording and editing studio
+Description: >-
+  Capwise is a local-first screen recording and editing studio. Record the
+  screen, camera and audio, then refine captions, zooms, music, narration and
+  covers in one workspace. Projects stay on the machine; AI features are
+  optional and use your own model providers.
+Moniker: capwise
+Tags:
+  - screen-recording
+  - screencast
+  - video-editor
+  - captions
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

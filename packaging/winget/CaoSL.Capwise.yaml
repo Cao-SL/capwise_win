@@ -1,0 +1,7 @@
+# Winget version manifest (schema 1.6.0).
+# Template: replace PackageVersion before publishing each release.
+PackageIdentifier: CaoSL.Capwise
+PackageVersion: 0.3.9
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

@@ -1,0 +1,19 @@
+# Winget installer manifest (schema 1.6.0).
+# Template: replace InstallerUrl and InstallerSha256 with the real values from
+# the GitHub release. The hash is printed by build-windows-update-manifest.ps1.
+PackageIdentifier: CaoSL.Capwise
+PackageVersion: 0.3.9
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+  - silent
+  - silentWithProgress
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+Installers:
+  - Architecture: x64
+    InstallerUrl: REPLACE_WITH_HTTPS_INSTALLER_URL
+    InstallerSha256: REPLACE_WITH_INSTALLER_SHA256_UPPERCASE_HEX
+ManifestType: installer
+ManifestVersion: 1.6.0
