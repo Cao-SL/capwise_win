@@ -1914,6 +1914,8 @@ pub fn open_teleprompter(cx: &mut App) {
     cx.spawn(async move |cx| {
         if let Some(native) = &native {
             place_teleprompter_frame(native, bounds);
+            #[cfg(target_os = "windows")]
+            platform::install_transient_window_chrome(native);
             // `applyMacOSWindowMaterial("teleprompter")`: radius 22 on glass.
             let kind = platform::install_window_material(
                 native,

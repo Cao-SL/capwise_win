@@ -20,6 +20,7 @@ mod hidden_frame;
 mod power_events;
 mod session_end;
 mod url_scheme;
+mod window_chrome;
 
 #[derive(Clone, Copy)]
 pub struct NativeWindow(isize);
@@ -68,7 +69,14 @@ pub fn native_window(window: &Window) -> Option<NativeWindow> {
 }
 
 pub fn install_main_window_frame_policy(native: &NativeWindow) -> std::io::Result<()> {
+    window_chrome::install(native.hwnd(), false);
     hidden_frame::install(native.hwnd())
+}
+
+/// Acrylic + rounded corners for a short-lived panel (teleprompter, pickers).
+/// Mica would keep sampling a desktop that is about to be covered.
+pub fn install_transient_window_chrome(native: &NativeWindow) {
+    window_chrome::install(native.hwnd(), true);
 }
 
 pub fn install_session_end_handler(
