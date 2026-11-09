@@ -662,6 +662,12 @@ fn recover_incomplete_recording_in(
     })?;
     let recovered = RecoveryManager::salvage(&incomplete)
         .map_err(|error| recovery_failure_message(&error, &canonical_path))?;
+    if let Err(error) = crate::recording_defaults::StudioLayout::apply_recovered(
+        &recovered.project_path,
+        crate::recording_defaults::has_studio_camera(&recovered.meta),
+    ) {
+        tracing::warn!(%error, "Could not restore the Studio layout");
+    }
     let display = match &recovered.meta {
         StudioRecordingMeta::SingleSegment { segment } => {
             segment.display.path.to_path(&recovered.project_path)

@@ -912,6 +912,12 @@ title = "Halten Sie Ihre Aufnahme sauber"
 add_to_project = "Zum aktuellen Projekt hinzufügen"
 record_new = "Neuen Clip aufnehmen"
 
+[main.studio_layout]
+heading = "Videolayout"
+pip = "Bild-in-Bild"
+screen_left = "Bildschirm links"
+camera_left = "Kamera links"
+
 [main.device]
 camera = "Kamera"
 fallback_camera = "Kamera"
@@ -1895,6 +1901,7 @@ pixel_size = "Pixelgröße"
 pixelate = "Verpixeln"
 
 [editor.panel.scene]
+camera_first = "Kamera zuerst"
 camera_layout = "Kamera-Layout"
 camera_position = "Kameraposition"
 camera_zoom = "Kamera-Zoom"

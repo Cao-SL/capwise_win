@@ -913,6 +913,12 @@ title = "保持画面整洁"
 add_to_project = "添加到当前项目"
 record_new = "录制新片段"
 
+[main.studio_layout]
+heading = "成片布局"
+pip = "画中画"
+screen_left = "左屏右人"
+camera_left = "左人右屏"
+
 [main.device]
 camera = "摄像头"
 fallback_camera = "摄像头"
@@ -1905,6 +1911,7 @@ pixel_size = "像素大小"
 pixelate = "像素化"
 
 [editor.panel.scene]
+camera_first = "摄像头在前"
 camera_layout = "摄像头布局"
 camera_position = "摄像头位置"
 camera_zoom = "摄像头缩放"

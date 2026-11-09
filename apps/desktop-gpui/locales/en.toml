@@ -915,6 +915,12 @@ title = "Keep your capture clean"
 add_to_project = "Add to your current project"
 record_new = "Record a new clip"
 
+[main.studio_layout]
+heading = "Video layout"
+pip = "Picture-in-picture"
+screen_left = "Screen left"
+camera_left = "Camera left"
+
 [main.device]
 camera = "Camera"
 fallback_camera = "Camera"
@@ -1907,6 +1913,7 @@ pixel_size = "Pixel Size"
 pixelate = "Pixelate"
 
 [editor.panel.scene]
+camera_first = "Camera first"
 camera_layout = "Camera Layout"
 camera_position = "Camera Position"
 camera_zoom = "Camera Zoom"

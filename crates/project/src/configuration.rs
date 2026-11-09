@@ -1434,6 +1434,8 @@ pub struct SplitLayout {
     pub screen_position: XY<f64>,
     pub camera_zoom: f64,
     pub camera_position: XY<f64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub camera_first: bool,
 }
 
 impl Default for SplitLayout {
@@ -1443,6 +1445,7 @@ impl Default for SplitLayout {
             screen_position: XY::new(0.5, 0.5),
             camera_zoom: 1.0,
             camera_position: XY::new(0.5, 0.5),
+            camera_first: false,
         }
     }
 }

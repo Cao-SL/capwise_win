@@ -36,6 +36,7 @@ pub enum RecordingMode {
 #[derive(Clone)]
 pub struct StartConfig {
     pub mode: RecordingMode,
+    pub(crate) studio_layout: crate::recording_defaults::StudioLayout,
     pub target: ScreenCaptureTarget,
     /// Microphone by name -- the identity `MicrophoneFeed` keys on.
     pub microphone: Option<String>,
@@ -2367,6 +2368,15 @@ async fn start_internal(
     // Cloud auth gate removed — instant mode works offline.
 
     let project_dir = create_project_dir(&config.target, config.mode)?;
+    if config.mode == RecordingMode::Studio
+        && config.camera.is_some()
+        && !matches!(config.target, ScreenCaptureTarget::CameraOnly)
+        && let Err(error) = config.studio_layout.save_intent(&project_dir)
+    {
+        tracing::warn!(%error, "Could not save the Studio layout");
+        let _ = std::fs::remove_dir(&project_dir);
+        return Err(error).context("saving the Studio layout");
+    }
     let project_name = project_dir
         .file_stem()
         .and_then(|name| name.to_str())

@@ -4131,6 +4131,7 @@ pub fn begin_recording(mut config: StartConfig, cx: &mut App) {
     }
     if session.read(cx).editor_recording_target().is_some() {
         config.mode = RecordingMode::Studio;
+        config.studio_layout = Default::default();
     }
     #[cfg(target_os = "linux")]
     {
@@ -7877,6 +7878,7 @@ mod tests {
             generation: 7,
             config: Some(StartConfig {
                 mode,
+                studio_layout: Default::default(),
                 target: ScreenCaptureTarget::Display {
                     id: "1".parse().unwrap(),
                 },

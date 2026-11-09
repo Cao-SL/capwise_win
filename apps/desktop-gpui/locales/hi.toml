@@ -912,6 +912,12 @@ title = "अपना कैप्चर साफ़ रखें"
 add_to_project = "अपने मौजूदा प्रोजेक्ट में जोड़ें"
 record_new = "नई क्लिप रिकॉर्ड करें"
 
+[main.studio_layout]
+heading = "वीडियो लेआउट"
+pip = "पिक्चर-इन-पिक्चर"
+screen_left = "बाईं ओर स्क्रीन"
+camera_left = "बाईं ओर कैमरा"
+
 [main.device]
 camera = "कैमरा"
 fallback_camera = "कैमरा"
@@ -1895,6 +1901,7 @@ pixel_size = "पिक्सल आकार"
 pixelate = "पिक्सलेट"
 
 [editor.panel.scene]
+camera_first = "कैमरा पहले"
 camera_layout = "कैमरा लेआउट"
 camera_position = "कैमरा पोज़िशन"
 camera_zoom = "कैमरा ज़ूम"

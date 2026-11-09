@@ -959,6 +959,7 @@ pub struct MainWindow {
     device_format_pending: Option<PendingDeviceFormat>,
     device_format_notice: Option<String>,
     system_audio: bool,
+    studio_layout: crate::recording_defaults::StudioLayout,
     /// Which display/window is selected for each split target.
     selected_display: Option<DisplayOption>,
     selected_window: Option<WindowOption>,
@@ -1260,6 +1261,7 @@ impl MainWindow {
             device_format_pending: None,
             device_format_notice: None,
             system_audio: crate::store::recording_system_audio(),
+            studio_layout: crate::recording_defaults::StudioLayout::preferred(),
             selected_display: None,
             selected_window: None,
             panel: None,
@@ -2421,6 +2423,7 @@ impl MainWindow {
         };
         let config = recording::StartConfig {
             mode,
+            studio_layout: self.studio_layout,
             target,
             device_settings,
             input_readiness,
@@ -6971,6 +6974,73 @@ impl MainWindow {
             )
     }
 
+    fn render_studio_layout(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::recording_defaults::StudioLayout;
+        let theme = self.theme;
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(5.))
+            .child(
+                div()
+                    .px(px(4.))
+                    .text_size(px(10.))
+                    .line_height(px(14.))
+                    .text_color(theme.gray_11)
+                    .child(tr::main::studio_layout::heading()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(px(6.))
+                    .children(StudioLayout::OPTIONS.map(|layout| {
+                        let selected = self.studio_layout == layout;
+                        let (id, label) = match layout {
+                            StudioLayout::PictureInPicture => {
+                                ("studio-layout-pip", tr::main::studio_layout::pip())
+                            }
+                            StudioLayout::ScreenLeft => (
+                                "studio-layout-screen-left",
+                                tr::main::studio_layout::screen_left(),
+                            ),
+                            StudioLayout::CameraLeft => (
+                                "studio-layout-camera-left",
+                                tr::main::studio_layout::camera_left(),
+                            ),
+                        };
+                        div()
+                            .id(id)
+                            .when(self.keyboard_nav, ui::keyboard_nav::stop)
+                            .role(gpui::Role::Button)
+                            .aria_label(label)
+                            .aria_selected(selected)
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .items_center()
+                            .justify_center()
+                            .gap(px(3.))
+                            .h(px(53.))
+                            .rounded(px(8.))
+                            .map(|this| glass_button(this, theme, selected))
+                            .hover(move |this| this.bg(capture_hover_fill(theme, selected)))
+                            .active(move |this| this.bg(capture_press_fill(theme, selected)))
+                            .child(studio_layout_diagram(layout, theme, selected))
+                            .child(div().text_size(px(10.)).truncate().child(label))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if this.studio_layout != layout && this.device_changes_allowed(cx) {
+                                    this.studio_layout = layout;
+                                    if !layout.remember() {
+                                        tracing::warn!("Could not save the default Studio layout");
+                                    }
+                                    cx.notify();
+                                }
+                            }))
+                    })),
+            )
+    }
+
     /// `BaseControls`: camera, microphone, system audio.
     fn render_base_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
@@ -7024,6 +7094,13 @@ impl MainWindow {
                         }
                     })),
                 ),
+            )
+            .when(
+                self.effective_mode(cx) == Mode::Studio
+                    && self.session.read(cx).editor_recording_target().is_none()
+                    && self.camera_id.is_some()
+                    && self.target != Some(TargetType::CameraOnly),
+                |this| this.child(self.render_studio_layout(cx)),
             )
             .child(
                 div().flex().flex_col().child(
@@ -7287,6 +7364,49 @@ impl PillState {
 
 /// The recovery toast's `3 segments · ~2m 5s` line, one message per shape so
 /// each language can order and pluralize it.
+fn studio_layout_diagram(
+    layout: crate::recording_defaults::StudioLayout,
+    theme: Theme,
+    selected: bool,
+) -> impl IntoElement {
+    use crate::recording_defaults::StudioLayout;
+    let screen = theme.body_fill(8);
+    let camera = if selected {
+        theme.blue_9
+    } else {
+        theme.gray_10
+    };
+    let width = px(36.);
+    div()
+        .relative()
+        .flex()
+        .w(width)
+        .h(px(21.))
+        .p(px(2.))
+        .gap(px(2.))
+        .rounded(px(3.))
+        .bg(theme.body_fill(4))
+        .map(|diagram| match layout {
+            StudioLayout::PictureInPicture => diagram
+                .child(div().size_full().rounded(px(2.)).bg(screen))
+                .child(
+                    div()
+                        .absolute()
+                        .bottom(px(3.))
+                        .right(px(3.))
+                        .size(px(7.))
+                        .rounded_full()
+                        .bg(camera),
+                ),
+            StudioLayout::ScreenLeft => diagram
+                .child(div().flex_1().h_full().rounded(px(2.)).bg(screen))
+                .child(div().w(px(9.)).h_full().rounded(px(2.)).bg(camera)),
+            StudioLayout::CameraLeft => diagram
+                .child(div().w(px(9.)).h_full().rounded(px(2.)).bg(camera))
+                .child(div().flex_1().h_full().rounded(px(2.)).bg(screen)),
+        })
+}
+
 fn recovery_segments_label(count: usize, duration: u64) -> String {
     let duration = if duration == 0 {
         return tr::main::recovery::segments(count);

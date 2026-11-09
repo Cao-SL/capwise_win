@@ -3486,6 +3486,19 @@ const SPLIT_STACK_ASPECT_THRESHOLD: f32 = 1.0;
 /// Mirrored in the editor overlay (SplitScreenOverlay.tsx) so its drag panes
 /// line up with the rendered cards.
 const FLOATING_PADDING_FRAC: f32 = 0.05;
+
+fn split_pane_order(
+    [left, top, right, bottom]: [f32; 4],
+    [width, height]: [f32; 2],
+    horizontal: bool,
+    camera_first: bool,
+) -> [f32; 4] {
+    match (camera_first, horizontal) {
+        (true, true) => [width - right, top, width - left, bottom],
+        (true, false) => [left, height - bottom, right, height - top],
+        (false, _) => [left, top, right, bottom],
+    }
+}
 /// Share of the content span (after padding + gap) given to the camera card
 /// when the cards sit side-by-side. The remainder goes to the screen card.
 const FLOATING_CAMERA_FRAC: f32 = 0.30;
@@ -4572,18 +4585,32 @@ impl ProjectUniforms {
                     } else {
                         0.0
                     };
-                    let screen_target = lerp_bounds(screen_full, screen_card, card_share);
-                    let camera_target = lerp_bounds(camera_full, camera_card, card_share);
-
-                    let params = scene_segments
+                    let mut panes = scene_segments
                         .iter()
-                        .find(|s| {
-                            matches!(s.mode, SceneMode::SplitScreen | SceneMode::Floating)
-                                && timeline_time >= s.start - s.transition_in.max(0.0)
-                                && timeline_time < s.end + s.transition_out.max(0.0)
+                        .filter(|s| matches!(s.mode, SceneMode::SplitScreen | SceneMode::Floating));
+                    let params = panes
+                        .clone()
+                        .find(|s| timeline_time >= s.start && timeline_time < s.end)
+                        .or_else(|| {
+                            panes.find(|s| {
+                                timeline_time >= s.start - s.transition_in.max(0.0)
+                                    && timeline_time < s.end + s.transition_out.max(0.0)
+                            })
                         })
                         .and_then(|s| s.split_layout)
                         .unwrap_or_default();
+                    let screen_target = split_pane_order(
+                        lerp_bounds(screen_full, screen_card, card_share),
+                        [out_w, out_h],
+                        horizontal,
+                        params.camera_first,
+                    );
+                    let camera_target = split_pane_order(
+                        lerp_bounds(camera_full, camera_card, card_share),
+                        [out_w, out_h],
+                        horizontal,
+                        params.camera_first,
+                    );
 
                     let screen_src_origin = [crop.position.x as f32, crop.position.y as f32];
                     let screen_src_size = [crop.size.x as f32, crop.size.y as f32];
@@ -5798,6 +5825,28 @@ mod tests {
             Coord::<FrameSpace>::new(start),
             Coord::<FrameSpace>::new(end),
         )
+    }
+
+    #[test]
+    fn camera_first_moves_each_pane_without_changing_its_size() {
+        let screen = [5.0, 5.0, 105.0, 95.0];
+        let camera = [110.0, 5.0, 155.0, 95.0];
+        assert_eq!(
+            split_pane_order(screen, [160.0, 100.0], true, false),
+            screen
+        );
+        assert_eq!(
+            split_pane_order(screen, [160.0, 100.0], true, true),
+            [55.0, 5.0, 155.0, 95.0]
+        );
+        assert_eq!(
+            split_pane_order(camera, [160.0, 100.0], true, true),
+            [5.0, 5.0, 50.0, 95.0]
+        );
+        assert_eq!(
+            split_pane_order([5.0, 110.0, 95.0, 155.0], [100.0, 160.0], false, true),
+            [5.0, 5.0, 95.0, 50.0]
+        );
     }
 
     #[test]

@@ -1,8 +1,109 @@
 use std::path::Path;
 
-use cap_project::{ProjectConfiguration, RecordingMeta, StudioRecordingMeta};
+use cap_project::{
+    AspectRatio, ProjectConfiguration, RecordingMeta, SceneMode, SceneSegment, SplitLayout,
+    StudioRecordingMeta,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::recording_setup::SetupInputs;
+
+const STUDIO_LAYOUT_FILE: &str = "studio-layout.json";
+const STUDIO_LAYOUT_SETTING: &str = "studioLayout";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum StudioLayout {
+    #[default]
+    PictureInPicture,
+    ScreenLeft,
+    CameraLeft,
+}
+
+impl StudioLayout {
+    pub(crate) const OPTIONS: [Self; 3] =
+        [Self::PictureInPicture, Self::ScreenLeft, Self::CameraLeft];
+
+    pub(crate) fn preferred() -> Self {
+        crate::store::store_section(crate::store::RECORDING_SETTINGS)
+            .get(STUDIO_LAYOUT_SETTING)
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn remember(self) -> bool {
+        serde_json::to_value(self).is_ok_and(|value| {
+            crate::store::set_store_setting(
+                crate::store::RECORDING_SETTINGS,
+                STUDIO_LAYOUT_SETTING,
+                value,
+            )
+        })
+    }
+
+    pub(crate) fn save_intent(self, path: &Path) -> std::io::Result<()> {
+        if self == Self::PictureInPicture {
+            return Ok(());
+        }
+        std::fs::write(path.join(STUDIO_LAYOUT_FILE), serde_json::to_vec(&self)?)
+    }
+
+    pub(crate) fn for_project(path: &Path) -> std::io::Result<Self> {
+        match std::fs::read(path.join(STUDIO_LAYOUT_FILE)) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(crate) fn apply(self, project: &mut ProjectConfiguration, has_camera: bool) -> bool {
+        if self == Self::PictureInPicture || !has_camera {
+            return false;
+        }
+        let Some(timeline) = project.timeline.as_mut() else {
+            return false;
+        };
+        let end = timeline.duration();
+        if !timeline.scene_segments.is_empty() || !end.is_finite() || end <= 0.0 {
+            return false;
+        }
+        project.aspect_ratio = Some(AspectRatio::Wide);
+        project.camera.hide = false;
+        timeline.scene_segments.push(SceneSegment {
+            start: 0.0,
+            end,
+            mode: SceneMode::Floating,
+            split_layout: Some(SplitLayout {
+                camera_first: self == Self::CameraLeft,
+                ..Default::default()
+            }),
+            transition_in: 0.0,
+            transition_out: 0.0,
+        });
+        true
+    }
+
+    pub(crate) fn apply_recovered(path: &Path, has_camera: bool) -> std::io::Result<()> {
+        let layout = Self::for_project(path)?;
+        if layout != Self::PictureInPicture && has_camera {
+            let mut project = ProjectConfiguration::load(path)?;
+            if layout.apply(&mut project, has_camera) {
+                project.write(path)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn has_studio_camera(meta: &StudioRecordingMeta) -> bool {
+    match meta {
+        StudioRecordingMeta::SingleSegment { segment } => segment.camera.is_some(),
+        StudioRecordingMeta::MultipleSegments { inner } => inner
+            .segments
+            .iter()
+            .any(|segment| segment.camera.is_some()),
+    }
+}
 
 pub(crate) fn prepare_tracks(path: &Path) -> anyhow::Result<()> {
     prepare_tracks_with_settings(path, &crate::store::GeneralSettings::load())
@@ -12,8 +113,9 @@ fn prepare_tracks_with_settings(
     path: &Path,
     settings: &crate::store::GeneralSettings,
 ) -> anyhow::Result<()> {
-    crate::recording_setup::prepare_new(path, SetupInputs::capture(settings))
-        .map_err(anyhow::Error::msg)
+    let mut inputs = SetupInputs::capture(settings);
+    inputs.studio_layout = StudioLayout::for_project(path)?;
+    crate::recording_setup::prepare_new(path, inputs).map_err(anyhow::Error::msg)
 }
 
 pub(crate) fn prepare_project(
@@ -29,14 +131,7 @@ pub(crate) fn prepare_project(
     String,
 > {
     let meta = RecordingMeta::load_for_project(path).map_err(|error| error.to_string())?;
-    let has_camera = match meta.studio_meta() {
-        Some(StudioRecordingMeta::SingleSegment { segment }) => segment.camera.is_some(),
-        Some(StudioRecordingMeta::MultipleSegments { inner }) => inner
-            .segments
-            .iter()
-            .any(|segment| segment.camera.is_some()),
-        None => false,
-    };
+    let has_camera = meta.studio_meta().is_some_and(has_studio_camera);
     let has_audio = match meta.studio_meta() {
         Some(StudioRecordingMeta::SingleSegment { segment }) => segment.audio.is_some(),
         Some(StudioRecordingMeta::MultipleSegments { inner }) => inner
@@ -128,12 +223,60 @@ pub(crate) fn prepare_project(
             keyboard.settings.enabled = !timeline.keyboard_segments.is_empty();
         }
     }
+    inputs.studio_layout.apply(&mut project, has_camera);
     Ok((project, workflow, has_audio))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn studio_layout_follows_the_recording_and_covers_the_retimed_project() {
+        for (layout, camera_first) in [
+            (StudioLayout::ScreenLeft, false),
+            (StudioLayout::CameraLeft, true),
+        ] {
+            let dir = fixture(false);
+            let path = dir.path();
+            assert_eq!(
+                StudioLayout::for_project(path).unwrap(),
+                StudioLayout::PictureInPicture
+            );
+            layout.save_intent(path).unwrap();
+            let inputs = SetupInputs {
+                workflow: None,
+                voice_enabled: false,
+                camera_preference: None,
+                auto_zoom: false,
+                zoom_amount: 2.0,
+                keyboard: false,
+                auto_captions: false,
+                caption_defaults: None,
+                studio_layout: StudioLayout::for_project(path).unwrap(),
+            };
+            let mut project = ProjectConfiguration::load(path).unwrap();
+            project.timeline.as_mut().unwrap().segments[0].timescale = 2.0;
+            let (screen_only, _, _) = prepare_project(path, project.clone(), &inputs).unwrap();
+            assert!(screen_only.timeline.unwrap().scene_segments.is_empty());
+
+            let meta = path.join("recording-meta.json");
+            let mut recording: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&meta).unwrap()).unwrap();
+            recording["segments"][0]["camera"] = serde_json::json!({"path":"camera.mp4","fps":30});
+            std::fs::write(&meta, serde_json::to_vec(&recording).unwrap()).unwrap();
+            let (prepared, _, _) = prepare_project(path, project, &inputs).unwrap();
+            prepared.write(path).unwrap();
+            let mut loaded = ProjectConfiguration::load(path).unwrap();
+            let scene = &loaded.timeline.as_ref().unwrap().scene_segments[0];
+            assert!(matches!(loaded.aspect_ratio, Some(AspectRatio::Wide)));
+            assert!(matches!(scene.mode, SceneMode::Floating));
+            assert_eq!((scene.start, scene.end), (0.0, 5.0));
+            assert_eq!((scene.transition_in, scene.transition_out), (0.0, 0.0));
+            assert_eq!(scene.split_layout.unwrap().camera_first, camera_first);
+            assert!(!layout.apply(&mut loaded, true));
+        }
+    }
 
     fn fixture(with_events: bool) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();

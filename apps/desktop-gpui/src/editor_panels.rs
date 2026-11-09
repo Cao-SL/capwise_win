@@ -6693,6 +6693,34 @@ impl EditorWindow {
             );
 
         panel
+            .when(split_mode, |panel| {
+                panel.child(
+                    ui::Field::inline(&theme, tr::editor::panel::scene::camera_first()).value(
+                        ui::Toggle::plain(
+                            &theme,
+                            "scene-camera-first",
+                            segment
+                                .split_layout
+                                .is_some_and(|layout| layout.camera_first),
+                        )
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.edit_scene_segment(
+                                "scene-camera-first",
+                                index,
+                                window,
+                                cx,
+                                move |segment| {
+                                    let layout =
+                                        segment.split_layout.get_or_insert_with(Default::default);
+                                    layout.camera_first = !layout.camera_first;
+                                    true
+                                },
+                            );
+                        }))
+                        .into_any_element(),
+                    ),
+                )
+            })
             .child(self.more_settings("scene", cx, move |this, cx| {
                 let column = div().flex().flex_col().gap(px(16.)).child(
                     ui::Field::section(&theme, tr::editor::panel::scene::transition()).child(

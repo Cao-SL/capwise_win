@@ -26,6 +26,8 @@ pub(crate) struct SetupInputs {
     pub keyboard: bool,
     pub auto_captions: bool,
     pub caption_defaults: Option<CaptionSettings>,
+    #[serde(default)]
+    pub studio_layout: crate::recording_defaults::StudioLayout,
 }
 
 impl SetupInputs {
@@ -44,6 +46,7 @@ impl SetupInputs {
             keyboard: settings.capture_keyboard_events,
             auto_captions: settings.auto_captions_after_recording,
             caption_defaults: styles.captions.map(|captions| captions.settings),
+            studio_layout: Default::default(),
         }
     }
 }
@@ -645,6 +648,7 @@ mod tests {
                 keyboard: false,
                 auto_captions: true,
                 caption_defaults: None,
+                studio_layout: Default::default(),
             }
         }
 

@@ -912,6 +912,12 @@ title = "余計なものを映さずに録画"
 add_to_project = "現在のプロジェクトに追加"
 record_new = "新しいクリップを録画"
 
+[main.studio_layout]
+heading = "動画レイアウト"
+pip = "ピクチャ・イン・ピクチャ"
+screen_left = "左に画面"
+camera_left = "左にカメラ"
+
 [main.device]
 camera = "カメラ"
 fallback_camera = "カメラ"
@@ -1895,6 +1901,7 @@ pixel_size = "ピクセルサイズ"
 pixelate = "モザイク"
 
 [editor.panel.scene]
+camera_first = "カメラを先頭に"
 camera_layout = "カメラのレイアウト"
 camera_position = "カメラの位置"
 camera_zoom = "カメラのズーム"

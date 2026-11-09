@@ -912,6 +912,12 @@ title = "Gardez votre capture propre"
 add_to_project = "Ajouter à votre projet actuel"
 record_new = "Enregistrer un nouveau clip"
 
+[main.studio_layout]
+heading = "Mise en page vidéo"
+pip = "Image dans l’image"
+screen_left = "Écran à gauche"
+camera_left = "Caméra à gauche"
+
 [main.device]
 camera = "Caméra"
 fallback_camera = "Caméra"
@@ -1895,6 +1901,7 @@ pixel_size = "Taille des pixels"
 pixelate = "Pixeliser"
 
 [editor.panel.scene]
+camera_first = "Caméra en premier"
 camera_layout = "Disposition de la caméra"
 camera_position = "Position de la caméra"
 camera_zoom = "Zoom de la caméra"
