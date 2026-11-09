@@ -85,6 +85,8 @@ mod markers;
 mod overlay_shortcuts;
 mod scenes;
 mod snap;
+#[cfg(target_os = "windows")]
+pub(crate) mod streaming;
 mod style_preset_ui;
 mod transitions;
 
@@ -697,6 +699,10 @@ pub(crate) enum EditorPreviewFrame {
     Image(Arc<RenderImage>),
     #[cfg(target_os = "macos")]
     Surface(CVPixelBuffer),
+    /// Windows: one persistent D3D11 texture per window, updated in place.
+    /// The handle is cloned per frame but always refers to the same stream.
+    #[cfg(target_os = "windows")]
+    Stream(gpui::StreamingImage),
 }
 
 impl EditorPreviewFrame {
@@ -709,6 +715,10 @@ impl EditorPreviewFrame {
             #[cfg(target_os = "macos")]
             Self::Surface(surface) => {
                 window.paint_surface_fitted(bounds, bounds, corners, surface.clone())
+            }
+            #[cfg(target_os = "windows")]
+            Self::Stream(image) => {
+                let _ = window.paint_streaming_image_fitted(bounds, bounds, corners, image, false);
             }
         }
     }
@@ -953,6 +963,13 @@ pub struct StatsSnapshot {
 }
 
 impl PumpStats {
+    /// Records the cost of getting one rendered frame onto the screen, whether
+    /// that is the CPU `frame_image` conversion or the Windows streaming upload.
+    pub fn record_conversion(&self, nanos: u64) {
+        self.convert_nanos.fetch_add(nanos, Ordering::Relaxed);
+        self.convert_samples.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn record_paint(&self, frame_sequence: u64) {
         self.painted.fetch_add(1, Ordering::Relaxed);
         if self
@@ -14826,14 +14843,13 @@ pub(crate) fn surface_preview_frame(frame: cap_rendering::SurfaceFrame) -> Edito
 }
 
 /// [`frame_image`], timed. The pump calls this so the CPU conversion's cost is
-/// a number rather than a hunch.
+/// a number rather than a hunch. Windows uses the streaming upload instead and
+/// records its own (much smaller) cost through `PumpStats::record_conversion`.
+#[cfg(not(target_os = "windows"))]
 pub fn frame_image_timed(frame: &RenderedFrame, stats: &PumpStats) -> Option<Arc<RenderImage>> {
     let started = Instant::now();
     let image = frame_image(frame);
-    stats
-        .convert_nanos
-        .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
-    stats.convert_samples.fetch_add(1, Ordering::Relaxed);
+    stats.record_conversion(started.elapsed().as_nanos() as u64);
     image
 }
 

@@ -5615,15 +5615,31 @@ fn start_preparing_editor(
     })
     .detach();
     cx.spawn(async move |cx| {
+        #[cfg(target_os = "windows")]
+        let mut stream = editor_window::streaming::PreviewStream::new();
         while let Ok(preparing) = frames.recv_async().await {
             let frame = match preparing.output {
                 cap_editor::EditorFrameOutput::Rgba(frame) => {
-                    let image = cx
-                        .background_executor()
-                        .spawn(async move { editor_window::frame_image(&frame) })
-                        .await;
-                    let Some(image) = image else { continue };
-                    editor_window::EditorPreviewFrame::Image(image)
+                    #[cfg(target_os = "windows")]
+                    {
+                        if let Err(error) = stream.push(frame) {
+                            tracing::warn!(
+                                %error,
+                                "a preparing frame could not be uploaded for display"
+                            );
+                            continue;
+                        }
+                        editor_window::EditorPreviewFrame::Stream(stream.image().clone())
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        let image = cx
+                            .background_executor()
+                            .spawn(async move { editor_window::frame_image(&frame) })
+                            .await;
+                        let Some(image) = image else { continue };
+                        editor_window::EditorPreviewFrame::Image(image)
+                    }
                 }
                 #[cfg(target_os = "macos")]
                 cap_editor::EditorFrameOutput::Surface(surface) => {
@@ -5958,25 +5974,49 @@ fn load_editor_project_candidate(
         cx.spawn({
             let stats = stats.clone();
             let pump_instance = Arc::downgrade(&instance);
+            #[cfg(target_os = "windows")]
+            let mut stream = editor_window::streaming::PreviewStream::new();
             async move |cx| {
                 while let Ok((output, layout)) = frame_rx.recv_async().await {
                     let (frame, number) = match output {
                         cap_editor::EditorFrameOutput::Rgba(rgba) => {
-                            let stats = stats.clone();
-                            let number = rgba.frame_number;
-                            let image = cx
-                                .background_executor()
-                                .spawn(
-                                    async move { editor_window::frame_image_timed(&rgba, &stats) },
+                            #[cfg(target_os = "windows")]
+                            {
+                                let number = rgba.frame_number;
+                                let started = std::time::Instant::now();
+                                if let Err(error) = stream.push(rgba) {
+                                    tracing::warn!(
+                                        %error,
+                                        "a rendered frame could not be uploaded for display"
+                                    );
+                                    continue;
+                                }
+                                stats.record_conversion(started.elapsed().as_nanos() as u64);
+                                (
+                                    editor_window::EditorPreviewFrame::Stream(
+                                        stream.image().clone(),
+                                    ),
+                                    number,
                                 )
-                                .await;
-                            let Some(image) = image else {
-                                tracing::warn!(
-                                    "a rendered frame could not be converted for display"
-                                );
-                                continue;
-                            };
-                            (editor_window::EditorPreviewFrame::Image(image), number)
+                            }
+                            #[cfg(not(target_os = "windows"))]
+                            {
+                                let stats = stats.clone();
+                                let number = rgba.frame_number;
+                                let image = cx
+                                    .background_executor()
+                                    .spawn(async move {
+                                        editor_window::frame_image_timed(&rgba, &stats)
+                                    })
+                                    .await;
+                                let Some(image) = image else {
+                                    tracing::warn!(
+                                        "a rendered frame could not be converted for display"
+                                    );
+                                    continue;
+                                };
+                                (editor_window::EditorPreviewFrame::Image(image), number)
+                            }
                         }
                         cap_editor::EditorFrameOutput::Nv12(frame) => {
                             tracing::warn!(
