@@ -130,6 +130,7 @@ const ICONS: &[(&str, &[u8])] = assets!("icons":
     "circle-number.svg",
     "monitor-outline.svg",
     "music.svg",
+    "panel-left.svg",
     "panel-right.svg",
     "rotate-3d.svg",
     "type.svg",
