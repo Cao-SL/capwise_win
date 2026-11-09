@@ -92,7 +92,7 @@ pub fn preview_dimensions(state: &CameraWindowState, frame_aspect: Option<f32>) 
     let aspect = match state.shape {
         CameraShape::Full => frame_aspect
             .filter(|aspect| aspect.is_finite() && *aspect > 0.)
-            .unwrap_or(WIDE_ASPECT),
+            .map_or(WIDE_ASPECT, |aspect| aspect.max(WIDE_ASPECT)),
         _ => 1.,
     };
     (base * aspect, base)
@@ -152,15 +152,22 @@ mod inline_preview_tests {
     }
 
     #[test]
-    fn source_preview_preserves_square_and_portrait_inputs() {
+    fn rectangle_preview_stays_wide_for_square_and_portrait_cameras() {
         let state = CameraWindowState {
             size: 230.,
             shape: CameraShape::Full,
             ..Default::default()
         };
-        assert_eq!(preview_dimensions(&state, Some(1.0)), (230., 230.));
-        let (width, height) = preview_dimensions(&state, Some(3. / 4.));
-        assert!((width / height - 0.75).abs() < 0.001);
+        for aspect in [1.0, 3. / 4., 4. / 3.] {
+            let (width, height) = preview_dimensions(&state, Some(aspect));
+            assert!((width / height - WIDE_ASPECT).abs() < 0.001, "{aspect}");
+        }
+        let (width, height) = preview_dimensions(&state, Some(21. / 9.));
+        assert!((width / height - 21. / 9.).abs() < 0.001);
+        for shape in [CameraShape::Round, CameraShape::Square] {
+            let state = CameraWindowState { shape, ..state };
+            assert_eq!(preview_dimensions(&state, Some(16. / 9.)), (230., 230.));
+        }
         assert_eq!(
             preview_dimensions(&state, Some(f32::NAN)),
             preview_dimensions(&state, None)
