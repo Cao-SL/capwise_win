@@ -129,9 +129,66 @@ fn keychain_get(service: &str, account: &str) -> Option<String> {
         .filter(|key| !key.is_empty())
 }
 
+#[cfg(not(target_os = "macos"))]
+mod store_backend {
+    use serde_json::{Map, Value};
+
+    use crate::{i18n::tr, store};
+
+    use super::SECTION;
+
+    const KEYS: &str = "apiKeys";
+
+    pub fn get(account: &str) -> Option<String> {
+        store::store_section(SECTION)
+            .get(KEYS)
+            .and_then(Value::as_object)
+            .and_then(|keys| keys.get(account))
+            .and_then(Value::as_str)
+            .map(|key| key.trim().to_string())
+            .filter(|key| !key.is_empty())
+    }
+
+    pub fn set(account: &str, key: &str) -> Result<(), String> {
+        write(account, Some(key))
+    }
+
+    pub fn remove(account: &str) -> Result<(), String> {
+        write(account, None)
+    }
+
+    fn write(account: &str, value: Option<&str>) -> Result<(), String> {
+        let written = store::update_store_section(SECTION, |section| {
+            let keys = section
+                .entry(KEYS.to_string())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !keys.is_object() {
+                *keys = Value::Object(Map::new());
+            }
+            let Some(keys) = keys.as_object_mut() else {
+                return false;
+            };
+            match value {
+                Some(key) => {
+                    keys.insert(account.to_string(), Value::String(key.to_string()));
+                }
+                None => {
+                    keys.remove(account);
+                }
+            }
+            true
+        });
+        if written {
+            Ok(())
+        } else {
+            Err(tr::asr::keychain_failed().to_string())
+        }
+    }
+}
+
 #[cfg(all(not(target_os = "macos"), not(test)))]
-fn keychain_get(_service: &str, _account: &str) -> Option<String> {
-    None
+fn keychain_get(_service: &str, account: &str) -> Option<String> {
+    store_backend::get(account)
 }
 
 fn read_key(kind: Kind, id: &str) -> Option<String> {
@@ -213,8 +270,7 @@ fn set_key_uncached(kind: Kind, id: &str, key: &str) -> Result<(), String> {
     }
     #[cfg(all(not(target_os = "macos"), not(test)))]
     {
-        let _ = (kind, id, key);
-        Err(tr::asr::keychain_failed().to_string())
+        store_backend::set(&account(kind, id), key)
     }
 }
 
@@ -270,7 +326,7 @@ fn delete_key(kind: Kind, id: &str) -> Result<(), String> {
             }
         }
         #[cfg(all(not(target_os = "macos"), not(test)))]
-        Err(tr::asr::keychain_failed().to_string())
+        store_backend::remove(&account(kind, id))
     })
 }
 
@@ -516,5 +572,95 @@ mod tests {
         assert!(delete_key_with(Kind::Stock, id, || Ok(())).is_ok());
         assert_eq!(keys().get(&account(Kind::Stock, id)), Some(&None));
         let _ = keys().remove(&account(Kind::Stock, id));
+    }
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+mod store_backend_tests {
+    use super::*;
+
+    struct TempStore(std::path::PathBuf);
+
+    impl TempStore {
+        fn new(name: &str, initial: Option<&str>) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "cap-gpui-ai-store-test-{}-{name}",
+                std::process::id()
+            ));
+            match initial {
+                Some(initial) => std::fs::write(&path, initial).unwrap(),
+                None => {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            store::set_test_tauri_store_path(Some(path.clone()));
+            Self(path)
+        }
+
+        fn read(&self) -> Value {
+            serde_json::from_slice(&std::fs::read(&self.0).unwrap()).unwrap()
+        }
+    }
+
+    impl Drop for TempStore {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+            store::set_test_tauri_store_path(None);
+        }
+    }
+
+    #[test]
+    fn keys_round_trip_and_preserve_unrelated_store_sections() {
+        let fixture = TempStore::new(
+            "round-trip",
+            Some(
+                r#"{"general_settings":{"theme":"dark"},"capwise_ai":{"llm":{"deepseek":{"baseUrl":"https://example.test","model":"m"}},"llmDefault":"deepseek"}}"#,
+            ),
+        );
+        let account = account(Kind::Llm, "deepseek");
+
+        store_backend::set(&account, "sk-synthetic-1234").unwrap();
+        assert_eq!(
+            store_backend::get(&account).as_deref(),
+            Some("sk-synthetic-1234")
+        );
+
+        let saved = fixture.read();
+        assert_eq!(saved["general_settings"]["theme"], "dark");
+        assert_eq!(saved[SECTION]["llm"]["deepseek"]["model"], "m");
+        assert_eq!(saved[SECTION]["llmDefault"], "deepseek");
+        assert_eq!(
+            saved[SECTION]["apiKeys"][account.as_str()],
+            "sk-synthetic-1234"
+        );
+
+        store_backend::remove(&account).unwrap();
+        assert_eq!(store_backend::get(&account), None);
+        assert!(
+            fixture.read()[SECTION]["apiKeys"]
+                .get(account.as_str())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn an_unreadable_store_turns_both_writes_into_errors() {
+        let _fixture = TempStore::new(
+            "unreadable",
+            Some("this is not json, so read_store refuses to overwrite it"),
+        );
+        let account = account(Kind::Asr, "doubao");
+        assert!(store_backend::set(&account, "sk-synthetic").is_err());
+        assert!(store_backend::remove(&account).is_err());
+        assert_eq!(store_backend::get(&account), None);
+    }
+
+    #[test]
+    fn whitespace_only_keys_are_treated_as_missing() {
+        let fixture = TempStore::new("whitespace", None);
+        let account = account(Kind::Image, "synthetic");
+        store_backend::set(&account, "   ").unwrap();
+        assert_eq!(store_backend::get(&account), None);
+        assert_eq!(fixture.read()[SECTION]["apiKeys"][account.as_str()], "   ");
     }
 }
