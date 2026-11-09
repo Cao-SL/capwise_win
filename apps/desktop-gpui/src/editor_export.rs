@@ -1254,6 +1254,8 @@ impl EditorWindow {
         ui.total_frames = 0;
         ui.output_path = None;
         cx.notify();
+        #[cfg(target_os = "windows")]
+        platform::remember_taskbar_window(window);
 
         ui.export_task = Some(cx.spawn_in(window, async move |this, cx| {
             let save_path = if destination == ExportDestination::File {
@@ -1384,6 +1386,8 @@ impl EditorWindow {
                     latest = Some((rendered, total));
                 }
                 if let Some((rendered, total)) = latest {
+                    #[cfg(target_os = "windows")]
+                    platform::set_taskbar_progress(rendered as u64, total as u64);
                     let _ = this.update(cx, |this, cx| {
                         if let Some(ui) = this.export.as_mut()
                             && ui.matches_attempt(&cancel)
@@ -1405,6 +1409,8 @@ impl EditorWindow {
                     .timer(Duration::from_millis(50))
                     .await;
             }
+            #[cfg(target_os = "windows")]
+            platform::clear_taskbar_progress();
 
             match export.await {
                 Ok(Ok(path)) => {
@@ -1585,6 +1591,8 @@ impl EditorWindow {
         ui.rendered = 0;
         ui.total_frames = 0;
         cx.notify();
+        #[cfg(target_os = "windows")]
+        platform::remember_taskbar_window(window);
 
         ui.export_task = Some(cx.spawn_in(window, async move |this, cx| {
             let save_path = RecordingMeta::load_for_project(&project_path)
@@ -1680,6 +1688,8 @@ impl EditorWindow {
                     latest = Some((rendered, total));
                 }
                 if let Some((rendered, total)) = latest {
+                    #[cfg(target_os = "windows")]
+                    platform::set_taskbar_progress(rendered as u64, total as u64);
                     let _ = this.update(cx, |this, cx| {
                         if let Some(ui) = this.export.as_mut()
                             && ui.matches_attempt(&cancel)
@@ -1701,6 +1711,8 @@ impl EditorWindow {
                     .timer(Duration::from_millis(50))
                     .await;
             }
+            #[cfg(target_os = "windows")]
+            platform::clear_taskbar_progress();
 
             match export.await {
                 Ok(Ok(path)) => {
