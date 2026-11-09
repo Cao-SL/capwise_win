@@ -3,6 +3,10 @@ name: Capwise platform candidates
 on:
   workflow_dispatch:
     inputs:
+      mac_candidate_run:
+        description: Workflow run with an existing Intel Mac app candidate
+        required: false
+        type: string
       linux_candidate_run:
         description: Workflow run with an existing Linux package candidate
         required: false
@@ -20,7 +24,7 @@ permissions:
 
 jobs:
   build:
-    if: inputs.linux_candidate_run == ''
+    if: inputs.linux_candidate_run == '' && inputs.mac_candidate_run == ''
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -75,8 +79,7 @@ jobs:
           cargo +1.95.0 build --manifest-path apps/desktop-gpui/Cargo.toml --release --locked --bin cap-gpui
           apps/desktop-gpui/scripts/release.sh "$version" --dry-run --skip-build
           app="apps/desktop-gpui/target/release-work/Capwise.app"
-          test "$(lipo -archs "$app/Contents/MacOS/Capwise")" = x86_64
-          "$app/Contents/MacOS/cap-cli" --version
+          apps/desktop-gpui/scripts/verify-capwise-mac.sh "$app"
           mkdir -p candidate
           cp apps/desktop-gpui/dist/"$version"/*_x86_64.app.tar.gz candidate/
 
@@ -168,3 +171,24 @@ jobs:
           name: capwise-linux-x64
           path: candidate/
           if-no-files-found: error
+
+  mac-verify:
+    if: inputs.mac_candidate_run != ''
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: capwise-mac-intel
+          path: incoming/
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.mac_candidate_run }}
+
+      - name: Launch the Intel Mac package
+        run: |
+          archives=(incoming/*.app.tar.gz)
+          test "${#archives[@]}" -eq 1
+          tar -xzf "${archives[0]}"
+          apps/desktop-gpui/scripts/verify-capwise-mac.sh Capwise.app
