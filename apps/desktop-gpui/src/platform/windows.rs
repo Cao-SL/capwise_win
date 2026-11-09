@@ -82,6 +82,17 @@ unsafe extern "system" {
     fn DwmSetWindowAttribute(hwnd: HWND, attribute: u32, value: *const c_void, size: u32) -> i32;
 }
 
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn GetWindowLongW(hwnd: HWND, index: i32) -> i32;
+    fn SetWindowLongW(hwnd: HWND, index: i32, value: i32) -> i32;
+    fn SetLayeredWindowAttributes(hwnd: HWND, key: u32, alpha: u8, flags: u32) -> i32;
+}
+
+const GWL_EXSTYLE: i32 = -20;
+const WS_EX_LAYERED: i32 = 0x0008_0000;
+const LWA_ALPHA: u32 = 0x0000_0002;
+
 pub fn apply_window_theme(
     window: &Window,
     appearance: ForcedAppearance,
@@ -147,8 +158,64 @@ pub fn teleprompter_level() -> isize {
     1
 }
 
-pub fn set_window_alpha(_native: &NativeWindow, _alpha: f64) -> f64 {
-    1.
+/// The teleprompter slider's range, with a fully opaque fallback for a value
+/// that is not a number (the store is plain JSON and can be edited by hand).
+fn clamped_alpha(alpha: f64) -> f64 {
+    if alpha.is_finite() {
+        alpha.clamp(0.45, 1.0)
+    } else {
+        1.0
+    }
+}
+
+/// Byte the layered-window API expects for a 0.45..1.0 alpha.
+fn alpha_byte(alpha: f64) -> u8 {
+    (clamped_alpha(alpha) * 255.0).round() as u8
+}
+
+/// `NSWindow.setAlphaValue:` on Windows. A layered window with `LWA_ALPHA`
+/// is the closest equivalent: it keeps the gpui D3D surface untouched and
+/// lets DWM blend the whole window, including its caption controls.
+///
+/// Returns the alpha actually applied, matching the macOS probe log. A fully
+/// opaque request clears the layered bit again so a window at 100% stays on
+/// the normal (non-layered) composition path.
+pub fn set_window_alpha(native: &NativeWindow, alpha: f64) -> f64 {
+    let alpha = clamped_alpha(alpha);
+    let hwnd = native.hwnd();
+    unsafe {
+        let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        let layered = style & WS_EX_LAYERED != 0;
+        if alpha >= 1.0 {
+            if layered {
+                SetWindowLongW(hwnd, GWL_EXSTYLE, style & !WS_EX_LAYERED);
+            }
+            return 1.0;
+        }
+        // SetWindowLongW returns the previous value, so 0 is both a legitimate
+        // old style and a failure. Read the style back instead of trusting it.
+        if !layered {
+            SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED);
+            if GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED == 0 {
+                tracing::warn!(
+                    error = %std::io::Error::last_os_error(),
+                    "could not make the window layered"
+                );
+                return 1.0;
+            }
+        }
+        if SetLayeredWindowAttributes(hwnd, 0, alpha_byte(alpha), LWA_ALPHA) == 0 {
+            tracing::warn!(
+                error = %std::io::Error::last_os_error(),
+                "could not apply the window alpha"
+            );
+            if !layered {
+                SetWindowLongW(hwnd, GWL_EXSTYLE, style);
+            }
+            return 1.0;
+        }
+    }
+    alpha
 }
 
 /// Whether the window is already left out of screen captures.
@@ -740,10 +807,23 @@ pub fn unregister_escape_hotkey() {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Rect, logical_to_physical, overlap_is_visible, physical_to_logical, to_rect};
+    use super::{
+        Rect, alpha_byte, logical_to_physical, overlap_is_visible, physical_to_logical, to_rect,
+    };
 
     fn display(physical: Rect, logical: Rect) -> super::DisplayGeometry {
         super::DisplayGeometry { physical, logical }
+    }
+
+    #[test]
+    fn alpha_byte_clamps_to_the_teleprompter_slider_range() {
+        assert_eq!(alpha_byte(0.0), 115);
+        assert_eq!(alpha_byte(0.45), 115);
+        assert_eq!(alpha_byte(0.92), 235);
+        assert_eq!(alpha_byte(1.0), 255);
+        assert_eq!(alpha_byte(2.0), 255);
+        assert_eq!(alpha_byte(f64::NAN), 255);
+        assert_eq!(alpha_byte(f64::INFINITY), 255);
     }
 
     #[test]
