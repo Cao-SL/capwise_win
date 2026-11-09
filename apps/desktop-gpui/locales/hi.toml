@@ -1412,6 +1412,7 @@ mode_title = "रिकॉर्डिंग मोड बदलें"
 mode_body = "Instant रिकॉर्डिंग रोकते ही आपको शेयर करने के लिए एक लिंक देता है। Studio एडिटिंग के लिए पूरी क्वालिटी में रिकॉर्ड करता है।"
 
 [overlay.area]
+split_ratio = "अगल-बगल · 5:4"
 draw = "एक क्षेत्र बनाएँ"
 free_ratio = "फ़्री"
 hint = "क्षेत्र चुनने के लिए क्लिक करके खींचें"
@@ -1911,6 +1912,7 @@ pixel_size = "पिक्सल आकार"
 pixelate = "पिक्सलेट"
 
 [editor.panel.scene]
+fit_screen = "पूरी स्क्रीन दिखाएँ"
 camera_first = "कैमरा पहले"
 camera_layout = "कैमरा लेआउट"
 camera_position = "कैमरा पोज़िशन"

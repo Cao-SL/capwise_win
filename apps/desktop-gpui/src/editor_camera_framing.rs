@@ -231,7 +231,11 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) {
         let time = self.playhead_time();
+        let durations = self.clip_display_durations.clone();
         self.edit_project_global("camera-scene-layout", window, cx, |project| {
+            if project.timeline.is_none() && choice != StudioLayout::PictureInPicture {
+                crate::editor_edits::ensure_timeline(project, &durations);
+            }
             let Some(timeline) = project.timeline.as_mut() else {
                 return false;
             };
@@ -288,6 +292,7 @@ impl EditorWindow {
                     .split_layout
                     .get_or_insert_with(|| cap_project::SplitLayout {
                         camera_framing: SplitCameraFraming::Relaxed,
+                        fit_screen: true,
                         ..Default::default()
                     });
                 layout.force_horizontal = true;

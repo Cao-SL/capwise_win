@@ -1412,6 +1412,7 @@ mode_title = "Changer de mode d'enregistrement"
 mode_body = "Instant vous donne un lien à partager dès que vous arrêtez. Studio enregistre en pleine qualité pour le montage."
 
 [overlay.area]
+split_ratio = "Côte à côte · 5:4"
 draw = "Dessinez une zone"
 free_ratio = "Libre"
 hint = "Cliquez et faites glisser pour sélectionner une zone"
@@ -1911,6 +1912,7 @@ pixel_size = "Taille des pixels"
 pixelate = "Pixeliser"
 
 [editor.panel.scene]
+fit_screen = "Afficher tout l’écran"
 camera_first = "Caméra en premier"
 camera_layout = "Disposition de la caméra"
 camera_position = "Position de la caméra"

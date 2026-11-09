@@ -1,9 +1,9 @@
 use anyhow::Result;
 use cap_project::{
     AspectRatio, Camera, CameraXPosition, CameraYPosition, ClipOffsets, ClipTransitionType,
-    CornerStyle, Crop, CursorEvents, CursorType, FrameConfiguration, FrameStyle, OverlayTrackKind,
-    ProjectConfiguration, ProjectStyleCache, RecordingMeta, SceneMode, StudioRecordingMeta,
-    TimelineFrameMapping, TimelineSource, XY,
+    CornerStyle, Crop, CursorEvents, CursorType, FLOATING_SPLIT_PADDING, FrameConfiguration,
+    FrameStyle, OverlayTrackKind, ProjectConfiguration, ProjectStyleCache, RecordingMeta,
+    SceneMode, StudioRecordingMeta, TimelineFrameMapping, TimelineSource, XY, floating_split_panes,
 };
 use composite_frame::{ColorGradeUniformParams, CompositeVideoFrameUniforms};
 use core::f64;
@@ -3481,12 +3481,6 @@ const CAMERA_EDGE_CROP_INSET_PX: f32 = 2.0;
 /// top/bottom instead.
 const SPLIT_STACK_ASPECT_THRESHOLD: f32 = 1.0;
 
-/// Floating split layout ([`SceneMode::Floating`]): outer padding around the
-/// cards AND the gap between them, as a fraction of the output's smaller axis.
-/// Mirrored in the editor overlay (SplitScreenOverlay.tsx) so its drag panes
-/// line up with the rendered cards.
-const FLOATING_PADDING_FRAC: f32 = 0.05;
-
 fn split_pane_order(
     [left, top, right, bottom]: [f32; 4],
     [width, height]: [f32; 2],
@@ -3499,11 +3493,6 @@ fn split_pane_order(
         (false, _) => [left, top, right, bottom],
     }
 }
-/// Share of the content span (after padding + gap) given to the camera card
-/// when the cards sit side-by-side. The remainder goes to the screen card.
-const FLOATING_CAMERA_FRAC: f32 = 0.30;
-/// As above when the cards stack vertically (portrait/narrow outputs).
-const FLOATING_CAMERA_FRAC_STACKED: f32 = 0.40;
 /// Corner radius of both floating cards as a fraction of the output's smaller
 /// axis. The mode supplies its own radius (instead of the background/camera
 /// rounding settings, which are tuned for full-frame and PiP sizes) so the two
@@ -4572,24 +4561,7 @@ impl ProjectUniforms {
                         ([0.0, 0.0, out_w, mid], [0.0, mid, out_w, out_h])
                     };
 
-                    // Floating variant: the panes become padded cards floating
-                    // over the background instead of full-bleed halves.
-                    let pad = out_w.min(out_h) * FLOATING_PADDING_FRAC;
-                    let (screen_card, camera_card) = if horizontal {
-                        let content_w = (out_w - pad * 3.0).max(2.0);
-                        let camera_w = content_w * FLOATING_CAMERA_FRAC;
-                        (
-                            [pad, pad, pad + (content_w - camera_w), out_h - pad],
-                            [out_w - pad - camera_w, pad, out_w - pad, out_h - pad],
-                        )
-                    } else {
-                        let content_h = (out_h - pad * 3.0).max(2.0);
-                        let camera_h = content_h * FLOATING_CAMERA_FRAC_STACKED;
-                        (
-                            [pad, pad, out_w - pad, pad + (content_h - camera_h)],
-                            [pad, out_h - pad - camera_h, out_w - pad, out_h - pad],
-                        )
-                    };
+                    let (screen_card, camera_card) = floating_split_panes(out_w, out_h, horizontal);
 
                     // Blend the halves toward the floating cards by the share
                     // of the split that is the floating variant, so back-to-back
@@ -4626,6 +4598,18 @@ impl ProjectUniforms {
                     let screen_src_size = [crop.size.x as f32, crop.size.y as f32];
                     let camera_src_size = [camera_size.x as f32, camera_size.y as f32];
 
+                    let (screen_target, screen_zoom) = if params.fit_screen {
+                        (
+                            cap_project::SplitCameraFraming::Fit.pane_bounds(
+                                screen_target,
+                                screen_src_size[0] / screen_src_size[1].max(1.),
+                            ),
+                            1.,
+                        )
+                    } else {
+                        (screen_target, params.screen_zoom as f32)
+                    };
+
                     let screen = SplitPaneLayout {
                         target: screen_target,
                         crop: fit_crop_to_target(
@@ -4637,13 +4621,13 @@ impl ProjectUniforms {
                                 params.screen_position.x as f32,
                                 params.screen_position.y as f32,
                             ],
-                            params.screen_zoom as f32,
+                            screen_zoom,
                         ),
                         focal: [
                             params.screen_position.x as f32,
                             params.screen_position.y as f32,
                         ],
-                        zoom: params.screen_zoom as f32,
+                        zoom: screen_zoom,
                         src_origin: screen_src_origin,
                         src_size: screen_src_size,
                     };
@@ -4804,7 +4788,7 @@ impl ProjectUniforms {
             let takeover_display_fade = takeover.map_or(1.0, |tk| tk.display_fade());
             let takeover_accessory_fade = takeover.map_or(1.0, |tk| tk.accessory_fade());
             let takeover_card_t = takeover.map_or(0.0, |tk| tk.card_style_t());
-            let takeover_padding = output_size.x.min(output_size.y) as f32 * FLOATING_PADDING_FRAC;
+            let takeover_padding = output_size.x.min(output_size.y) as f32 * FLOATING_SPLIT_PADDING;
             let pre_takeover_bounds = final_target_bounds;
             let takeover_target = takeover.map(|tk| {
                 tk.display_target(

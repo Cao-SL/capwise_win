@@ -1412,6 +1412,7 @@ mode_title = "Aufnahmemodus ändern"
 mode_body = "Mit Instant erhalten Sie einen Link zum Teilen, sobald Sie die Aufnahme beenden. Studio nimmt in voller Qualität zur Bearbeitung auf."
 
 [overlay.area]
+split_ratio = "Nebeneinander · 5:4"
 draw = "Bereich aufziehen"
 free_ratio = "Frei"
 hint = "Klicken und ziehen Sie, um einen Bereich auszuwählen"
@@ -1911,6 +1912,7 @@ pixel_size = "Pixelgröße"
 pixelate = "Verpixeln"
 
 [editor.panel.scene]
+fit_screen = "Ganzen Bildschirm zeigen"
 camera_first = "Kamera zuerst"
 camera_layout = "Kamera-Layout"
 camera_position = "Kameraposition"

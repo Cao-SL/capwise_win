@@ -1416,6 +1416,7 @@ mode_title = "更改录制模式"
 mode_body = "Instant 会在你停止录制的那一刻给你一个分享链接。Studio 以完整画质录制，方便后期编辑。"
 
 [overlay.area]
+split_ratio = "分屏推荐 · 5:4"
 draw = "绘制一个区域"
 free_ratio = "自由"
 hint = "点击并拖动以选择区域"
@@ -1921,6 +1922,7 @@ pixel_size = "像素大小"
 pixelate = "像素化"
 
 [editor.panel.scene]
+fit_screen = "显示完整屏幕"
 camera_first = "摄像头在前"
 camera_layout = "摄像头布局"
 camera_position = "摄像头位置"

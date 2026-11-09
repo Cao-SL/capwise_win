@@ -91,10 +91,14 @@ fn live_dock_frame([x, y, width, height]: [f32; 4], camera_left: bool) -> Option
     if available_width < 120. || available_height < CAMERA_TOOLBAR_HEIGHT + 90. {
         return None;
     }
-    let pane_width = (width * 0.18).clamp(190., 300.).min(available_width);
-    let pane_height = (pane_width * 1.7 + CAMERA_TOOLBAR_HEIGHT)
-        .min(height * 0.66)
-        .min(available_height);
+    let (_, camera) = cap_project::floating_split_panes(16., 9., true);
+    let aspect = (camera[2] - camera[0]) / (camera[3] - camera[1]);
+    let video_height = (height * 0.66).min(available_height) - CAMERA_TOOLBAR_HEIGHT;
+    let pane_width = (width * 0.18)
+        .clamp(190., 300.)
+        .min(available_width)
+        .min(video_height.max(1.) * aspect);
+    let pane_height = pane_width / aspect + CAMERA_TOOLBAR_HEIGHT;
     let left = if camera_left {
         x + inset
     } else {
@@ -1726,6 +1730,8 @@ pub struct CameraWindow {
     chrome_visible: bool,
     studio_layout: StudioLayout,
     undocked_bounds: Option<gpui::Bounds<gpui::Pixels>>,
+    #[cfg(target_os = "macos")]
+    dock_frame: Option<[f32; 4]>,
     layout_menu: Option<ui::MenuState>,
     layout_focus: gpui::FocusHandle,
     resizing: Option<ResizeDrag>,
@@ -1942,14 +1948,22 @@ impl CameraWindow {
         let toolbar = cx.new(|cx| CameraToolbarView::new(&camera, cx));
         let targets = crate::target_overlay::TargetSelect::global(cx);
         let mut recording_mode = targets.read(cx).recording_mode;
-        cx.observe(&targets, move |this: &mut Self, targets, cx| {
-            let next = targets.read(cx).recording_mode;
-            if next != recording_mode {
-                recording_mode = next;
-                this.layout_menu = None;
-                cx.notify();
-            }
-        })
+        cx.observe_in(
+            &targets,
+            window,
+            move |this: &mut Self, targets, window, cx| {
+                let next = targets.read(cx).recording_mode;
+                if next != recording_mode {
+                    recording_mode = next;
+                    this.layout_menu = None;
+                    cx.notify();
+                }
+                #[cfg(target_os = "macos")]
+                this.sync_studio_preview(window, cx);
+                #[cfg(not(target_os = "macos"))]
+                let _ = window;
+            },
+        )
         .detach();
 
         // `currentWindow.onMoved` + the 400ms position sync
@@ -1964,17 +1978,12 @@ impl CameraWindow {
             &crate::session::RecordingSession::global(cx),
             window,
             |this, session, window, cx| {
-                let session = session.read(cx);
-                #[cfg(target_os = "macos")]
-                let dock = session
-                    .live_camera_layout()
-                    .map(|config| (config.studio_layout, config.target.clone()));
-                let active = session.phase != crate::session::Phase::Idle;
+                let active = session.read(cx).phase != crate::session::Phase::Idle;
                 if active && this.layout_menu.take().is_some() {
                     cx.notify();
                 }
                 #[cfg(target_os = "macos")]
-                this.sync_live_dock(dock, window, cx);
+                this.sync_studio_preview(window, cx);
                 #[cfg(not(target_os = "macos"))]
                 let _ = window;
             },
@@ -1990,6 +1999,8 @@ impl CameraWindow {
             chrome_visible: false,
             studio_layout: StudioLayout::preferred(),
             undocked_bounds: None,
+            #[cfg(target_os = "macos")]
+            dock_frame: None,
             layout_menu: None,
             layout_focus: cx.focus_handle(),
             resizing: None,
@@ -2031,6 +2042,8 @@ impl CameraWindow {
         if !inline {
             self.apply_window_size(window, cx);
         }
+        #[cfg(target_os = "macos")]
+        self.sync_studio_preview(window, cx);
         cx.notify();
     }
 
@@ -2577,52 +2590,92 @@ impl CameraWindow {
     }
 
     #[cfg(target_os = "macos")]
-    fn sync_live_dock(
-        &mut self,
-        dock: Option<(
-            StudioLayout,
-            cap_recording::screen_capture::ScreenCaptureTarget,
-        )>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match (dock.filter(|_| !self.inline), self.undocked_bounds) {
-            (Some((layout, target)), None) => {
-                let Some(display) = target
-                    .display()
-                    .and_then(|display| display.raw_handle().logical_bounds())
-                else {
-                    return;
-                };
-                let area = [
-                    display.position().x() as f32,
-                    display.position().y() as f32,
-                    display.size().width() as f32,
-                    display.size().height() as f32,
-                ];
-                let Some(frame) = live_dock_frame(area, layout == StudioLayout::CameraLeft) else {
-                    return;
-                };
+    pub(crate) fn has_split_preview(&self) -> bool {
+        self.dock_frame.is_some()
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn sync_studio_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let session = crate::session::RecordingSession::global(cx);
+        let state = session.read(cx);
+        let preview = if self.inline {
+            None
+        } else if state.phase != crate::session::Phase::Idle {
+            state.live_camera_layout().map(|config| {
+                (
+                    config.studio_layout,
+                    config.target.display().map(|display| display.id()),
+                )
+            })
+        } else if self.studio_layout_controls(cx)
+            && self.studio_layout != StudioLayout::PictureInPicture
+        {
+            let targets = crate::target_overlay::TargetSelect::global(cx);
+            let target = targets.read(cx);
+            let display = target
+                .active_window()
+                .filter(|_| target.mode == Some(crate::main_window::TargetType::Window))
+                .map(|window| window.display_id.clone())
+                .or_else(|| target.mode.and(target.cursor_display.clone()));
+            Some((self.studio_layout, display))
+        } else {
+            None
+        };
+
+        let next = preview.and_then(|(layout, display)| {
+            let area = display
+                .as_ref()
+                .and_then(scap_targets::Display::from_id)
+                .and_then(|display| display.raw_handle().logical_bounds())
+                .map(|bounds| {
+                    [
+                        bounds.position().x() as f32,
+                        bounds.position().y() as f32,
+                        bounds.size().width() as f32,
+                        bounds.size().height() as f32,
+                    ]
+                })
+                .or_else(|| {
+                    window.display(cx).map(|display| {
+                        let bounds = display.bounds();
+                        [
+                            bounds.origin.x.into(),
+                            bounds.origin.y.into(),
+                            bounds.size.width.into(),
+                            bounds.size.height.into(),
+                        ]
+                    })
+                })?;
+            live_dock_frame(area, layout == StudioLayout::CameraLeft)
+        });
+
+        if self.dock_frame == next {
+            return;
+        }
+        self.dock_frame = next;
+        if let Some(frame) = next {
+            if self.undocked_bounds.is_none() {
                 self.position_save_generation.fetch_add(1, Ordering::AcqRel);
-                self.undocked_bounds = Some(window.bounds());
+                self.undocked_bounds = Some(
+                    crate::app_windows::take_camera_picker_origin(cx)
+                        .unwrap_or_else(|| window.bounds()),
+                );
+                self.picker_size = None;
                 self.resizing = None;
                 self.hovered_handle = None;
-                self.move_window(frame, window, cx);
             }
-            (None, Some(original)) => {
-                self.undocked_bounds = None;
-                self.move_window(
-                    [
-                        f32::from(original.origin.x),
-                        f32::from(original.origin.y),
-                        f32::from(original.size.width),
-                        f32::from(original.size.height),
-                    ],
-                    window,
-                    cx,
-                );
-            }
-            _ => return,
+            self.move_window(frame, window, cx);
+        } else if let Some(original) = self.undocked_bounds.take() {
+            self.move_window(
+                [
+                    original.origin.x.into(),
+                    original.origin.y.into(),
+                    original.size.width.into(),
+                    original.size.height.into(),
+                ],
+                window,
+                cx,
+            );
         }
         self.sync_preview_chrome(cx);
         cx.notify();
@@ -2807,6 +2860,8 @@ impl CameraWindow {
             {
                 self.mutate_state(window, cx, |state| state.shape = shape);
             }
+            #[cfg(target_os = "macos")]
+            self.sync_studio_preview(window, cx);
         }
         cx.notify();
     }
@@ -2843,6 +2898,9 @@ impl CameraWindow {
         #[cfg(not(target_os = "macos"))]
         let (mirror_failed, blur_failed) = (false, false);
         let studio_layout = self.studio_layout_controls(cx);
+        let setup = studio_layout
+            && crate::session::RecordingSession::global(cx).read(cx).phase
+                == crate::session::Phase::Idle;
         let shape_icon = match self.state.shape {
             CameraShape::Round => "icons/circle.svg",
             CameraShape::Square => "icons/square.svg",
@@ -2869,7 +2927,8 @@ impl CameraWindow {
                     .border_color(gpui::hsla(0., 0., 1., 0.2))
                     .text_color(theme.gray_10)
                     .when(
-                        !self.chrome_visible
+                        !setup
+                            && !self.chrome_visible
                             && self.resizing.is_none()
                             && self.layout_menu.is_none(),
                         |this| this.invisible(),
@@ -2902,7 +2961,7 @@ impl CameraWindow {
                             },
                         ))
                     })
-                    .when(studio_layout && self.undocked_bounds.is_none(), |toolbar| {
+                    .when(setup, |toolbar| {
                         toolbar.child(self.toolbar_button(
                             "layout",
                             "icons/columns-2.svg",

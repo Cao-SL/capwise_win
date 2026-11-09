@@ -80,11 +80,15 @@ impl StudioLayout {
                 camera_first: self == Self::CameraLeft,
                 force_horizontal: true,
                 camera_framing: SplitCameraFraming::Relaxed,
+                fit_screen: true,
                 ..Default::default()
             }),
             transition_in: 0.0,
             transition_out: 0.0,
         });
+        project
+            .aspect_ratio
+            .get_or_insert(cap_project::AspectRatio::Wide);
         true
     }
 
@@ -289,6 +293,7 @@ mod tests {
             let split = scene.split_layout.unwrap();
             assert_eq!(split.camera_first, camera_first);
             assert!(split.force_horizontal);
+            assert!(split.fit_screen);
             assert_eq!(split.camera_framing, SplitCameraFraming::Relaxed);
             assert!(!layout.apply(&mut loaded, true));
         }

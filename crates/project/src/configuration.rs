@@ -1427,6 +1427,28 @@ pub enum SceneMode {
     Floating,
 }
 
+pub const FLOATING_SPLIT_PADDING: f32 = 0.05;
+pub const WIDE_SPLIT_CAPTURE_RATIO: (u32, u32) = (5, 4);
+
+pub fn floating_split_panes(width: f32, height: f32, horizontal: bool) -> ([f32; 4], [f32; 4]) {
+    let pad = width.min(height) * FLOATING_SPLIT_PADDING;
+    if horizontal {
+        let camera = (width - pad * 3.).max(2.) * 0.30;
+        let divider = width - pad - camera;
+        (
+            [pad, pad, divider - pad, height - pad],
+            [divider, pad, width - pad, height - pad],
+        )
+    } else {
+        let camera = (height - pad * 3.).max(2.) * 0.40;
+        let divider = height - pad - camera;
+        (
+            [pad, pad, width - pad, divider - pad],
+            [pad, divider, width - pad, height - pad],
+        )
+    }
+}
+
 #[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SplitCameraFraming {
@@ -1470,6 +1492,8 @@ pub struct SplitLayout {
     #[serde(skip_serializing_if = "SplitCameraFraming::is_fill")]
     pub camera_framing: SplitCameraFraming,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub fit_screen: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub camera_first: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub force_horizontal: bool,
@@ -1483,6 +1507,7 @@ impl Default for SplitLayout {
             camera_zoom: 1.0,
             camera_position: XY::new(0.5, 0.5),
             camera_framing: SplitCameraFraming::Fill,
+            fit_screen: false,
             camera_first: false,
             force_horizontal: false,
         }

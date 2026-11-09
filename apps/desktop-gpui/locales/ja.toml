@@ -1412,6 +1412,7 @@ mode_title = "録画モードを変更"
 mode_body = "Instantは録画を止めた瞬間に共有リンクを作成します。Studioは編集用にフル画質で録画します。"
 
 [overlay.area]
+split_ratio = "左右分割 · 5:4"
 draw = "範囲を描く"
 free_ratio = "自由"
 hint = "クリックしてドラッグし、範囲を選択"
@@ -1911,6 +1912,7 @@ pixel_size = "ピクセルサイズ"
 pixelate = "モザイク"
 
 [editor.panel.scene]
+fit_screen = "画面全体を表示"
 camera_first = "カメラを先頭に"
 camera_layout = "カメラのレイアウト"
 camera_position = "カメラの位置"

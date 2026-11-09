@@ -2033,7 +2033,8 @@ impl EditorWindow {
         }
 
         let split = self.camera_uses_split_layout();
-        let layout = self.sidebar.style_target.is_none() && self.project.timeline.is_some();
+        let layout = self.sidebar.style_target.is_none()
+            && self.summary().is_some_and(|summary| summary.has_camera);
         div()
             .flex()
             .flex_col()

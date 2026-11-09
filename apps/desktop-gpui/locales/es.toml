@@ -1412,6 +1412,7 @@ mode_title = "Cambiar el modo de grabación"
 mode_body = "Instant te da un enlace para compartir en cuanto detienes la grabación. Studio graba con la máxima calidad para editar."
 
 [overlay.area]
+split_ratio = "En paralelo · 5:4"
 draw = "Dibuja un área"
 free_ratio = "Libre"
 hint = "Haz clic y arrastra para seleccionar un área"
@@ -1911,6 +1912,7 @@ pixel_size = "Tamaño de píxel"
 pixelate = "Pixelar"
 
 [editor.panel.scene]
+fit_screen = "Mostrar toda la pantalla"
 camera_first = "Cámara primero"
 camera_layout = "Diseño de la cámara"
 camera_position = "Posición de cámara"
