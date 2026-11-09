@@ -140,9 +140,13 @@ DMG 用 `dmgbuild 1.6.5`，脚本第一次运行时会自动装到 `apps/desktop
 
 README 使用 `docs/assets/assistant-workbench.png` 的真实运行截图。GitHub 仓库的 Social preview 需要另到 **Settings → General → Social preview → Upload an image** 手动上传；本次 CLI 发布不会修改这项设置。
 
-### Intel 版
+### Intel、Linux 和 Windows 候选包
 
-脚本只构建本机架构。要同时提供 Intel 版，在 Intel Mac 上对同一版本再跑一次，并先把 Apple Silicon 那次的 `dist/<版本>/latest.json` 拷过去：脚本会把 `darwin-x86_64` 合并进同一个清单，然后上传两个架构的文件和合并后的 `latest.json`。
+GitHub Actions 的 `Capwise platform candidates` 在原生 Intel Mac、Ubuntu 24.04 x64 和 Windows x64 环境构建候选包。下载安装包与启动验证完成后，再决定哪些产物可以公开分发。工作流不需要生产签名凭据。
+
+Intel 候选包从工作流下载并解开后，可在持有签名凭据的 Mac 上用 `CAPWISE_PREBUILT_APP=/path/Capwise.app apps/desktop-gpui/scripts/release.sh <版本>` 签名和公证。脚本从主程序确定目标架构，并逐个核对内嵌二进制。将 Apple Silicon 的 `latest.json` 先复制到同一版本的产物目录，可以保留其更新条目。固定文件名 `Capwise.dmg` 由 Apple Silicon 构建生成。
+
+Linux 首先验证 Ubuntu 24.04 x64 的 `.deb`。发布时使用正式 minisign 密钥签署安装包，并把签名与下载地址写进同版本更新清单的 `linux-x86_64-deb` 条目。Windows 工作流产物是测试候选包，正式发布还需要 Windows 代码签名。
 
 ### GitHub Actions
 
