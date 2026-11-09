@@ -221,14 +221,21 @@ async function main() {
 				"Visual Studio C++ build tools installation was not found",
 			);
 
-		const libclangPath = path.join(
+		let libclangPath = path.join(
 			vcInstallDir.trim(),
 			"VC/Tools/LLVM/x64/bin/libclang.dll",
 		);
-		if (!(await fileExists(libclangPath)))
-			throw new Error(
-				`Visual Studio LLVM libclang was not found at ${libclangPath}`,
-			);
+		if (!(await fileExists(libclangPath))) {
+			const fallbackLibclang = path.join(targetDir, "native-deps", "libclang", "bin", "libclang.dll");
+			if (await fileExists(fallbackLibclang)) {
+				libclangPath = fallbackLibclang;
+				console.log(`Using fallback libclang at ${libclangPath}`);
+			} else {
+				throw new Error(
+					`Visual Studio LLVM libclang was not found at ${libclangPath}`,
+				);
+			}
+		}
 
 		cargoConfigContents += `LIBCLANG_PATH = "${libclangPath.replaceAll(
 			"\\",
