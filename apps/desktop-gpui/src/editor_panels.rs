@@ -6598,6 +6598,8 @@ impl EditorWindow {
         };
         let mode = segment.mode;
         let split_mode = matches!(mode, SceneMode::SplitScreen | SceneMode::Floating);
+        let can_crop_camera = segment.split_layout.unwrap_or_default().camera_framing
+            != cap_project::SplitCameraFraming::Fit;
         let has_camera = self.summary().is_some_and(|summary| summary.has_camera);
         let description = SCENE_MODES
             .iter()
@@ -6760,16 +6762,22 @@ impl EditorWindow {
                             ui::Field::stacked(&theme, tr::editor::panel::scene::screen_position())
                                 .child(this.render_pad(PadKey::SceneScreen(index), cx)),
                         )
-                        .child(this.slider_field(
-                            tr::editor::panel::scene::camera_zoom(),
-                            SliderKey::Panel(PanelSlider::SceneCameraZoom, index),
-                            "%",
-                            cx,
-                        ))
-                        .child(
-                            ui::Field::stacked(&theme, tr::editor::panel::scene::camera_position())
-                                .child(this.render_pad(PadKey::SceneCamera(index), cx)),
-                        )
+                        .when(can_crop_camera, |column| {
+                            column
+                                .child(this.slider_field(
+                                    tr::editor::panel::scene::camera_zoom(),
+                                    SliderKey::Panel(PanelSlider::SceneCameraZoom, index),
+                                    "%",
+                                    cx,
+                                ))
+                                .child(
+                                    ui::Field::stacked(
+                                        &theme,
+                                        tr::editor::panel::scene::camera_position(),
+                                    )
+                                    .child(this.render_pad(PadKey::SceneCamera(index), cx)),
+                                )
+                        })
                         .into_any_element()
                 } else {
                     column.into_any_element()

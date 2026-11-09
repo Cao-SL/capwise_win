@@ -914,6 +914,12 @@ add_to_project = "添加到当前项目"
 record_new = "录制新片段"
 
 [main.studio_layout]
+editor_layout = "画面布局"
+framing = "人物取景"
+framing_fill = "铺满"
+framing_relaxed = "宽松"
+framing_fit = "完整画面"
+at_playhead = "调整播放头所在的场景"
 side_by_side = "并排"
 round = "圆形"
 square = "方形"

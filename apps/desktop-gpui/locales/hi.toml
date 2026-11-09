@@ -913,6 +913,12 @@ add_to_project = "अपने मौजूदा प्रोजेक्ट �
 record_new = "नई क्लिप रिकॉर्ड करें"
 
 [main.studio_layout]
+editor_layout = "लेआउट"
+framing = "कैमरा फ़्रेमिंग"
+framing_fill = "भरें"
+framing_relaxed = "विस्तृत"
+framing_fit = "पूरा फ़्रेम"
+at_playhead = "प्लेहेड की स्थिति पर लागू"
 side_by_side = "साथ-साथ"
 round = "गोल"
 square = "वर्ग"

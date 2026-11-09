@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use cap_project::{
-    ProjectConfiguration, RecordingMeta, SceneMode, SceneSegment, SplitLayout, StudioRecordingMeta,
+    ProjectConfiguration, RecordingMeta, SceneMode, SceneSegment, SplitCameraFraming, SplitLayout,
+    StudioRecordingMeta,
 };
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +79,7 @@ impl StudioLayout {
             split_layout: Some(SplitLayout {
                 camera_first: self == Self::CameraLeft,
                 force_horizontal: true,
+                camera_framing: SplitCameraFraming::Relaxed,
                 ..Default::default()
             }),
             transition_in: 0.0,
@@ -287,6 +289,7 @@ mod tests {
             let split = scene.split_layout.unwrap();
             assert_eq!(split.camera_first, camera_first);
             assert!(split.force_horizontal);
+            assert_eq!(split.camera_framing, SplitCameraFraming::Relaxed);
             assert!(!layout.apply(&mut loaded, true));
         }
     }

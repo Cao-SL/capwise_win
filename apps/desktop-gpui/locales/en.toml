@@ -916,6 +916,12 @@ add_to_project = "Add to your current project"
 record_new = "Record a new clip"
 
 [main.studio_layout]
+editor_layout = "Layout"
+framing = "Camera framing"
+framing_fill = "Fill"
+framing_relaxed = "Relaxed"
+framing_fit = "Full frame"
+at_playhead = "Applies at the playhead"
 side_by_side = "Side by side"
 round = "Circle"
 square = "Square"

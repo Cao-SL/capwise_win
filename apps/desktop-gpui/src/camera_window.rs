@@ -83,6 +83,44 @@ const WIDE_ASPECT: f32 = 16. / 9.;
 const LOADING_FADE_OUT_SECONDS: f32 = 0.28;
 const CUTOUT_REVEAL_SECONDS: f32 = 0.45;
 
+#[cfg(target_os = "macos")]
+fn live_dock_frame([x, y, width, height]: [f32; 4], camera_left: bool) -> Option<[f32; 4]> {
+    let inset = 20.;
+    let available_width = width - 2. * inset;
+    let available_height = height - 2. * inset;
+    if available_width < 120. || available_height < CAMERA_TOOLBAR_HEIGHT + 90. {
+        return None;
+    }
+    let pane_width = (width * 0.18).clamp(190., 300.).min(available_width);
+    let pane_height = (pane_width * 1.7 + CAMERA_TOOLBAR_HEIGHT)
+        .min(height * 0.66)
+        .min(available_height);
+    let left = if camera_left {
+        x + inset
+    } else {
+        x + width - inset - pane_width
+    };
+    Some([
+        left,
+        y + (height - pane_height) * 0.5,
+        pane_width,
+        pane_height,
+    ])
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[test]
+fn live_dock_tracks_either_edge_of_the_captured_display() {
+    let display = [-1440., -50., 1440., 900.];
+    let left = live_dock_frame(display, true).unwrap();
+    let right = live_dock_frame(display, false).unwrap();
+    assert_eq!(left[0], -1420.);
+    assert_eq!(right[0] + right[2], -20.);
+    assert_eq!(left[1..], right[1..]);
+    assert!(left[1] > display[1] && left[1] + left[3] < display[1] + display[3]);
+    assert!(live_dock_frame([0., 0., 100., 900.], true).is_none());
+}
+
 pub fn clamp_size(scale: f32) -> f32 {
     scale.clamp(CAMERA_MIN_SIZE, CAMERA_MAX_SIZE)
 }
@@ -1106,6 +1144,7 @@ struct CameraPreviewView {
     painted_cutout_frame: Option<Arc<gpui::RenderImage>>,
     theme: Theme,
     radius: f32,
+    docked: bool,
     /// Clamped bubble size, for the issue overlay's scaled text metrics.
     size: f32,
     #[cfg(target_os = "macos")]
@@ -1214,6 +1253,7 @@ impl CameraPreviewView {
             painted_cutout_frame: None,
             theme,
             radius,
+            docked: false,
             size,
             #[cfg(target_os = "macos")]
             latest_frame: None,
@@ -1274,8 +1314,9 @@ impl CameraPreviewView {
         previous
     }
 
-    fn set_chrome(&mut self, radius: f32, size: f32, cx: &mut Context<Self>) {
-        if self.radius != radius || self.size != size {
+    fn set_chrome(&mut self, radius: f32, size: f32, docked: bool, cx: &mut Context<Self>) {
+        if self.radius != radius || self.size != size || self.docked != docked {
+            self.docked = docked;
             self.radius = radius;
             self.size = size;
             cx.notify();
@@ -1360,8 +1401,31 @@ impl Render for CameraPreviewView {
             .size_full()
             .overflow_hidden()
             .rounded(px(radius))
-            .when(radius > 0., |this| this.bg(theme.gray_1))
+            .when(radius > 0. && !self.docked, |this| this.bg(theme.gray_1))
             .text_color(theme.gray_12);
+
+        let video = div().size_full();
+        let mut video = if self.docked {
+            let viewport = window.viewport_size();
+            let width = f32::from(viewport.width);
+            let height = (f32::from(viewport.height) - CAMERA_TOOLBAR_HEIGHT).max(1.);
+            let aspect = self
+                .frame_dims
+                .or(self.retained_dims)
+                .map_or(WIDE_ASPECT, |(w, h)| w as f32 / h.max(1) as f32);
+            let [x, y, right, bottom] = cap_project::SplitCameraFraming::Relaxed
+                .pane_bounds([0., 0., width, height], aspect);
+            video
+                .absolute()
+                .left(px(x))
+                .top(px(y))
+                .w(px(right - x))
+                .h(px(bottom - y))
+                .rounded(px(radius))
+                .overflow_hidden()
+        } else {
+            video.relative()
+        };
 
         #[cfg(target_os = "macos")]
         if let Some(buffer) = self
@@ -1375,7 +1439,7 @@ impl Render for CameraPreviewView {
             // computes the same fitted box the old `img()` element used, and
             // `paint_surface_fitted` UV-crops it to the element bounds so the
             // corner radii round the visible rect (circle shape included).
-            container = container.child(
+            video = video.child(
                 gpui::canvas(
                     |_, _, _| {},
                     move |bounds, _, window, _| {
@@ -1408,7 +1472,7 @@ impl Render for CameraPreviewView {
             // the loading disc fades out; a raw surface cannot take opacity,
             // but the bubble's opaque glass covers it during its own fade.
             let reveal = loading.map_or(1., |(_, opacity, _)| 1. - opacity);
-            container = container.child(
+            video = video.child(
                 gpui::img(image)
                     .size_full()
                     .object_fit(gpui::ObjectFit::Cover)
@@ -1419,7 +1483,7 @@ impl Render for CameraPreviewView {
         #[cfg(not(target_os = "macos"))]
         if let Some(image) = self.latest_frame.clone() {
             self.paints.fetch_add(1, Ordering::Relaxed);
-            container = container.child(
+            video = video.child(
                 gpui::img(image)
                     .size_full()
                     .rounded(px(radius))
@@ -1434,16 +1498,18 @@ impl Render for CameraPreviewView {
                     .rounded(px(radius))
                     .object_fit(gpui::ObjectFit::Cover),
             );
-            container = if self.reveal_started.is_some() {
-                container.child(overlay.with_animation(
+            video = if self.reveal_started.is_some() {
+                video.child(overlay.with_animation(
                     "camera-preview-reveal",
                     Animation::new(Duration::from_millis(180)),
                     |element, progress| element.opacity(1. - progress),
                 ))
             } else {
-                container.child(overlay)
+                video.child(overlay)
             };
         }
+
+        container = container.child(video);
 
         if let Some((started, opacity, animate)) = loading {
             container = container.child(camera_loading::camera_loading(
@@ -1659,6 +1725,7 @@ pub struct CameraWindow {
     size_generation: Arc<AtomicU64>,
     chrome_visible: bool,
     studio_layout: StudioLayout,
+    undocked_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     layout_menu: Option<ui::MenuState>,
     layout_focus: gpui::FocusHandle,
     resizing: Option<ResizeDrag>,
@@ -1706,7 +1773,7 @@ impl CameraWindow {
             }
             #[cfg(target_os = "macos")]
             let bounds = {
-                let bounds = window.bounds();
+                let bounds = self.undocked_bounds.unwrap_or_else(|| window.bounds());
                 [
                     f64::from(f32::from(bounds.origin.x)),
                     f64::from(f32::from(bounds.origin.y)) + f64::from(CAMERA_TOOLBAR_HEIGHT),
@@ -1893,14 +1960,23 @@ impl CameraWindow {
         })
         .detach();
 
-        cx.observe(
+        cx.observe_in(
             &crate::session::RecordingSession::global(cx),
-            |this, session, cx| {
-                if session.read(cx).phase != crate::session::Phase::Idle
-                    && this.layout_menu.take().is_some()
-                {
+            window,
+            |this, session, window, cx| {
+                let session = session.read(cx);
+                #[cfg(target_os = "macos")]
+                let dock = session
+                    .live_camera_layout()
+                    .map(|config| (config.studio_layout, config.target.clone()));
+                let active = session.phase != crate::session::Phase::Idle;
+                if active && this.layout_menu.take().is_some() {
                     cx.notify();
                 }
+                #[cfg(target_os = "macos")]
+                this.sync_live_dock(dock, window, cx);
+                #[cfg(not(target_os = "macos"))]
+                let _ = window;
             },
         )
         .detach();
@@ -1913,6 +1989,7 @@ impl CameraWindow {
             size_generation: Arc::new(AtomicU64::new(0)),
             chrome_visible: false,
             studio_layout: StudioLayout::preferred(),
+            undocked_bounds: None,
             layout_menu: None,
             layout_focus: cx.focus_handle(),
             resizing: None,
@@ -2352,10 +2429,16 @@ impl CameraWindow {
     /// Pushes the chrome inputs the preview renders with (its own notify is
     /// the only thing that busts its cache).
     fn sync_preview_chrome(&mut self, cx: &mut Context<Self>) {
-        let radius = picker_preview_radius(&self.state, self.picker_size);
+        let docked = self.undocked_bounds.is_some();
+        let radius = if docked {
+            14.
+        } else {
+            picker_preview_radius(&self.state, self.picker_size)
+        };
         let size = clamp_size(self.state.size);
-        self.preview
-            .update(cx, |preview, cx| preview.set_chrome(radius, size, cx));
+        self.preview.update(cx, |preview, cx| {
+            preview.set_chrome(radius, size, docked, cx)
+        });
     }
 
     fn mutate_state(
@@ -2400,15 +2483,12 @@ impl CameraWindow {
     /// *bottom*-left, so the anchor and the clamp both go through one native
     /// `setFrame:` instead.
     fn apply_window_size(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.inline {
+        if self.inline || self.undocked_bounds.is_some() {
             return;
         }
         let (width, height) = self
             .picker_size
             .unwrap_or_else(|| window_size(&self.state, self.frame_aspect()));
-        let generation = self.size_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        let generations = self.size_generation.clone();
-
         let bounds = window.bounds();
         let (x, y) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
         let (mut new_x, mut new_y) = (x, y);
@@ -2435,6 +2515,18 @@ impl CameraWindow {
             }
         }
 
+        self.move_window([new_x, new_y, width, height], window, cx);
+    }
+
+    fn move_window(
+        &self,
+        [new_x, new_y, width, height]: [f32; 4],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let generation = self.size_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        let generations = self.size_generation.clone();
+
         #[cfg(target_os = "windows")]
         if let Some(native) = platform::native_window(window) {
             cx.spawn(async move |_, _| {
@@ -2456,6 +2548,8 @@ impl CameraWindow {
 
         #[cfg(not(target_os = "windows"))]
         if let Some(native) = platform::native_window(window) {
+            let origin = window.bounds().origin;
+            let (x, y) = (f32::from(origin.x), f32::from(origin.y));
             let (frame_x, frame_y, _, frame_height) = platform::window_frame(&native);
             // AppKit y grows upward: keep the gpui-space top edge, then apply
             // the clamp deltas (gpui +y = AppKit -y).
@@ -2482,6 +2576,58 @@ impl CameraWindow {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    fn sync_live_dock(
+        &mut self,
+        dock: Option<(
+            StudioLayout,
+            cap_recording::screen_capture::ScreenCaptureTarget,
+        )>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match (dock.filter(|_| !self.inline), self.undocked_bounds) {
+            (Some((layout, target)), None) => {
+                let Some(display) = target
+                    .display()
+                    .and_then(|display| display.raw_handle().logical_bounds())
+                else {
+                    return;
+                };
+                let area = [
+                    display.position().x() as f32,
+                    display.position().y() as f32,
+                    display.size().width() as f32,
+                    display.size().height() as f32,
+                ];
+                let Some(frame) = live_dock_frame(area, layout == StudioLayout::CameraLeft) else {
+                    return;
+                };
+                self.position_save_generation.fetch_add(1, Ordering::AcqRel);
+                self.undocked_bounds = Some(window.bounds());
+                self.resizing = None;
+                self.hovered_handle = None;
+                self.move_window(frame, window, cx);
+            }
+            (None, Some(original)) => {
+                self.undocked_bounds = None;
+                self.move_window(
+                    [
+                        f32::from(original.origin.x),
+                        f32::from(original.origin.y),
+                        f32::from(original.size.width),
+                        f32::from(original.size.height),
+                    ],
+                    window,
+                    cx,
+                );
+            }
+            _ => return,
+        }
+        self.sync_preview_chrome(cx);
+        cx.notify();
+    }
+
     fn persist(&self, cx: &mut Context<Self>) {
         let state = self.state;
         cx.background_executor()
@@ -2495,6 +2641,9 @@ impl CameraWindow {
     /// the window's logical top-left, skipped when it has not moved a whole
     /// pixel.
     fn queue_position_save(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.undocked_bounds.is_some() {
+            return;
+        }
         let origin = window.bounds().origin;
         let (x, y) = (f32::from(origin.x), f32::from(origin.y));
         let capture_scale = f64::from(crate::target_overlay::capture_scale_factor(window));
@@ -2734,24 +2883,26 @@ impl CameraWindow {
                         cx,
                         |this, _, cx| this.close(cx),
                     ))
-                    .child(self.toolbar_button(
-                        "size",
-                        "icons/enlarge.svg",
-                        self.state.size >= CAMERA_PRESET_LARGE,
-                        scale,
-                        None,
-                        cx,
-                        |this, window, cx| {
-                            this.mutate_state(window, cx, |state| {
-                                state.size = if state.size < CAMERA_PRESET_LARGE {
-                                    CAMERA_PRESET_LARGE
-                                } else {
-                                    CAMERA_PRESET_SMALL
-                                };
-                            })
-                        },
-                    ))
-                    .when(studio_layout, |toolbar| {
+                    .when(self.undocked_bounds.is_none(), |toolbar| {
+                        toolbar.child(self.toolbar_button(
+                            "size",
+                            "icons/enlarge.svg",
+                            self.state.size >= CAMERA_PRESET_LARGE,
+                            scale,
+                            None,
+                            cx,
+                            |this, window, cx| {
+                                this.mutate_state(window, cx, |state| {
+                                    state.size = if state.size < CAMERA_PRESET_LARGE {
+                                        CAMERA_PRESET_LARGE
+                                    } else {
+                                        CAMERA_PRESET_SMALL
+                                    };
+                                })
+                            },
+                        ))
+                    })
+                    .when(studio_layout && self.undocked_bounds.is_none(), |toolbar| {
                         toolbar.child(self.toolbar_button(
                             "layout",
                             "icons/columns-2.svg",
@@ -2777,25 +2928,28 @@ impl CameraWindow {
                             },
                         ))
                     })
-                    .when(!studio_layout, |toolbar| {
-                        toolbar.child(self.toolbar_button(
-                            "shape",
-                            shape_icon,
-                            self.state.shape != CameraShape::Round,
-                            scale,
-                            None,
-                            cx,
-                            |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.shape = match state.shape {
-                                        CameraShape::Round => CameraShape::Square,
-                                        CameraShape::Square => CameraShape::Full,
-                                        CameraShape::Full => CameraShape::Round,
-                                    };
-                                })
-                            },
-                        ))
-                    })
+                    .when(
+                        !studio_layout && self.undocked_bounds.is_none(),
+                        |toolbar| {
+                            toolbar.child(self.toolbar_button(
+                                "shape",
+                                shape_icon,
+                                self.state.shape != CameraShape::Round,
+                                scale,
+                                None,
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.shape = match state.shape {
+                                            CameraShape::Round => CameraShape::Square,
+                                            CameraShape::Square => CameraShape::Full,
+                                            CameraShape::Full => CameraShape::Round,
+                                        };
+                                    })
+                                },
+                            ))
+                        },
+                    )
                     // Preview-only, like both Tauri paths (the WGSL UV flip /
                     // the legacy `scaleX(-1)`); the recorded camera track is
                     // never mirrored by either app.
@@ -3123,7 +3277,11 @@ impl Render for CameraWindow {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, window, _| {
-                    if this.resizing.is_none() && !this.inline && this.layout_menu.is_none() {
+                    if this.resizing.is_none()
+                        && !this.inline
+                        && this.layout_menu.is_none()
+                        && this.undocked_bounds.is_none()
+                    {
                         window.start_window_move();
                     }
                 }),
@@ -3174,7 +3332,9 @@ impl Render for CameraWindow {
                     .clone()
                     .cached(StyleRefinement::default().w_full().flex_1()),
             )
-            .child(self.render_resize_handles(cx))
+            .when(self.undocked_bounds.is_none(), |root| {
+                root.child(self.render_resize_handles(cx))
+            })
             .children(self.render_layout_menu(cx))
     }
 }

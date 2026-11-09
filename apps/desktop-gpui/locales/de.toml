@@ -913,6 +913,12 @@ add_to_project = "Zum aktuellen Projekt hinzufügen"
 record_new = "Neuen Clip aufnehmen"
 
 [main.studio_layout]
+editor_layout = "Layout"
+framing = "Bildausschnitt"
+framing_fill = "Füllen"
+framing_relaxed = "Weiter"
+framing_fit = "Ganzes Bild"
+at_playhead = "Gilt an der Abspielposition"
 side_by_side = "Nebeneinander"
 round = "Kreis"
 square = "Quadrat"

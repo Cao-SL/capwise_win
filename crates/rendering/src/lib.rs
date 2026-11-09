@@ -4611,6 +4611,16 @@ impl ProjectUniforms {
                         horizontal,
                         params.camera_first,
                     );
+                    let camera_target = params.camera_framing.pane_bounds(
+                        camera_target,
+                        camera_size.x as f32 / camera_size.y.max(1) as f32,
+                    );
+                    let camera_zoom =
+                        if params.camera_framing == cap_project::SplitCameraFraming::Fit {
+                            1.0
+                        } else {
+                            params.camera_zoom as f32
+                        };
 
                     let screen_src_origin = [crop.position.x as f32, crop.position.y as f32];
                     let screen_src_size = [crop.size.x as f32, crop.size.y as f32];
@@ -4648,13 +4658,13 @@ impl ProjectUniforms {
                                 params.camera_position.x as f32,
                                 params.camera_position.y as f32,
                             ],
-                            params.camera_zoom as f32,
+                            camera_zoom,
                         ),
                         focal: [
                             params.camera_position.x as f32,
                             params.camera_position.y as f32,
                         ],
-                        zoom: params.camera_zoom as f32,
+                        zoom: camera_zoom,
                         src_origin: [0.0, 0.0],
                         src_size: camera_src_size,
                     };

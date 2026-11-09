@@ -913,6 +913,12 @@ add_to_project = "現在のプロジェクトに追加"
 record_new = "新しいクリップを録画"
 
 [main.studio_layout]
+editor_layout = "レイアウト"
+framing = "カメラの画角"
+framing_fill = "全面"
+framing_relaxed = "ゆったり"
+framing_fit = "フルフレーム"
+at_playhead = "再生ヘッド位置のシーンに適用"
 side_by_side = "並べて表示"
 round = "円形"
 square = "正方形"

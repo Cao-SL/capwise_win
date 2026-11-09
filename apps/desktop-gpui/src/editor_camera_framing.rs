@@ -1,4 +1,4 @@
-use cap_project::{CameraShape, XY};
+use cap_project::{CameraShape, SceneMode, SceneSegment, SplitCameraFraming, XY};
 use gpui::{
     AnyElement, AppContext, Context, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
     MouseButton, ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription,
@@ -10,6 +10,7 @@ use crate::{
     editor_tabs::{CameraSlider, OpenMenu, SidebarMenu},
     editor_window::EditorWindow,
     i18n::tr,
+    recording_defaults::StudioLayout,
     ui,
 };
 
@@ -41,7 +42,261 @@ fn parse_ratio(width: &str, height: &str) -> Option<XY<u32>> {
     .then_some(XY::new(x, y))
 }
 
+const LAYOUT_CHOICES: [(StudioLayout, fn() -> &'static str, &str); 3] = [
+    (
+        StudioLayout::PictureInPicture,
+        tr::main::studio_layout::pip,
+        "icons/app-window.svg",
+    ),
+    (
+        StudioLayout::ScreenLeft,
+        tr::main::studio_layout::screen_left,
+        "icons/panel-right.svg",
+    ),
+    (
+        StudioLayout::CameraLeft,
+        tr::main::studio_layout::camera_left,
+        "icons/panel-left.svg",
+    ),
+];
+
+const FRAMING_CHOICES: [(SplitCameraFraming, fn() -> &'static str); 3] = [
+    (
+        SplitCameraFraming::Fill,
+        tr::main::studio_layout::framing_fill,
+    ),
+    (
+        SplitCameraFraming::Relaxed,
+        tr::main::studio_layout::framing_relaxed,
+    ),
+    (
+        SplitCameraFraming::Fit,
+        tr::main::studio_layout::framing_fit,
+    ),
+];
+
+fn camera_scene_time(time: f64, end: f64) -> f64 {
+    time.clamp(0., (end - 1e-9).max(0.))
+}
+
+fn camera_scene_at(scenes: &[SceneSegment], time: f64) -> Option<usize> {
+    scenes
+        .iter()
+        .position(|scene| time >= scene.start && time < scene.end)
+}
+
+fn scene_camera_layout(scene: &SceneSegment) -> Option<StudioLayout> {
+    match scene.mode {
+        SceneMode::SplitScreen | SceneMode::Floating => Some(
+            if scene.split_layout.is_some_and(|layout| layout.camera_first) {
+                StudioLayout::CameraLeft
+            } else {
+                StudioLayout::ScreenLeft
+            },
+        ),
+        SceneMode::Default => Some(StudioLayout::PictureInPicture),
+        SceneMode::CameraOnly | SceneMode::HideCamera => None,
+    }
+}
+
 impl EditorWindow {
+    pub(crate) fn camera_scene_index_at(&self, playhead: f64) -> Option<usize> {
+        let timeline = self.project.timeline.as_ref()?;
+        let end = self.total_duration();
+        camera_scene_at(&timeline.scene_segments, camera_scene_time(playhead, end))
+    }
+
+    fn camera_scene(&self) -> Option<&SceneSegment> {
+        let index = self.camera_scene_index_at(self.playhead_time())?;
+        self.project.timeline.as_ref()?.scene_segments.get(index)
+    }
+
+    pub(crate) fn camera_uses_split_layout(&self) -> bool {
+        self.camera_scene()
+            .is_some_and(|scene| matches!(scene.mode, SceneMode::SplitScreen | SceneMode::Floating))
+    }
+
+    pub(crate) fn render_camera_layout_controls(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme;
+        let scene = self.camera_scene();
+        let active = scene.map_or(Some(StudioLayout::PictureInPicture), scene_camera_layout);
+        let framing = scene
+            .and_then(|scene| scene.split_layout)
+            .unwrap_or_default()
+            .camera_framing;
+        let mut column = div().flex().flex_col().gap(px(12.)).child(
+            ui::Field::stacked(&theme, tr::main::studio_layout::editor_layout()).child(
+                div().flex().flex_wrap().gap(px(6.)).children(
+                    LAYOUT_CHOICES.iter().copied().enumerate().map(
+                        |(index, (layout, label, icon))| {
+                            ui::EditorButton::plain(
+                                &theme,
+                                SharedString::from(format!("camera-layout-{index}")),
+                            )
+                            .choice(&theme)
+                            .pressed(active == Some(layout))
+                            .left_icon(icon)
+                            .label(label())
+                            .height(px(30.))
+                            .text_size(px(12.))
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    this.set_camera_scene_layout(layout, window, cx)
+                                },
+                            ))
+                        },
+                    ),
+                ),
+            ),
+        );
+        if self.camera_uses_split_layout() {
+            column = column.child(
+                ui::Field::stacked(&theme, tr::main::studio_layout::framing()).child(
+                    div().flex().flex_wrap().gap(px(6.)).children(
+                        FRAMING_CHOICES.iter().copied().enumerate().map(
+                            |(index, (choice, label))| {
+                                ui::EditorButton::plain(
+                                    &theme,
+                                    SharedString::from(format!("split-camera-framing-{index}")),
+                                )
+                                .choice(&theme)
+                                .pressed(framing == choice)
+                                .label(label())
+                                .height(px(30.))
+                                .text_size(px(12.))
+                                .on_click(cx.listener(
+                                    move |this, _, window, cx| {
+                                        let time = this.playhead_time();
+                                        this.edit_project_global_without_timeline(
+                                            "split-camera-framing",
+                                            window,
+                                            cx,
+                                            |project| {
+                                                let Some(timeline) = project.timeline.as_mut()
+                                                else {
+                                                    return false;
+                                                };
+                                                let time =
+                                                    camera_scene_time(time, timeline.duration());
+                                                let Some(index) =
+                                                    camera_scene_at(&timeline.scene_segments, time)
+                                                else {
+                                                    return false;
+                                                };
+                                                let segment = &mut timeline.scene_segments[index];
+                                                if !matches!(
+                                                    segment.mode,
+                                                    SceneMode::SplitScreen | SceneMode::Floating
+                                                ) {
+                                                    return false;
+                                                }
+                                                let layout = segment
+                                                    .split_layout
+                                                    .get_or_insert_with(Default::default);
+                                                if layout.camera_framing == choice {
+                                                    return false;
+                                                }
+                                                layout.camera_framing = choice;
+                                                true
+                                            },
+                                        );
+                                    },
+                                ))
+                            },
+                        ),
+                    ),
+                ),
+            );
+        }
+        if self.project.timeline.as_ref().is_some_and(|timeline| {
+            timeline
+                .scene_segments
+                .iter()
+                .any(|scene| scene.start > 0. || scene.end + 1e-9 < timeline.duration())
+        }) {
+            column = column.child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(Hsla::from(theme.editor.text_2))
+                    .child(tr::main::studio_layout::at_playhead()),
+            );
+        }
+        column.into_any_element()
+    }
+
+    fn set_camera_scene_layout(
+        &mut self,
+        choice: StudioLayout,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let time = self.playhead_time();
+        self.edit_project_global("camera-scene-layout", window, cx, |project| {
+            let Some(timeline) = project.timeline.as_mut() else {
+                return false;
+            };
+            let end = timeline.duration();
+            if !end.is_finite() || end <= 0. {
+                return false;
+            }
+            let time = camera_scene_time(time, end);
+            let scene = if let Some(index) = camera_scene_at(&timeline.scene_segments, time) {
+                &mut timeline.scene_segments[index]
+            } else {
+                if choice == StudioLayout::PictureInPicture {
+                    return false;
+                }
+                let index = timeline
+                    .scene_segments
+                    .partition_point(|scene| scene.end <= time);
+                let start = index
+                    .checked_sub(1)
+                    .map_or(0., |prev| timeline.scene_segments[prev].end);
+                let end = timeline
+                    .scene_segments
+                    .get(index)
+                    .map_or(end, |next| next.start);
+                timeline.scene_segments.insert(
+                    index,
+                    SceneSegment {
+                        start,
+                        end,
+                        mode: SceneMode::Default,
+                        split_layout: None,
+                        transition_in: 0.,
+                        transition_out: 0.,
+                    },
+                );
+                &mut timeline.scene_segments[index]
+            };
+
+            if scene_camera_layout(scene) == Some(choice)
+                && (choice == StudioLayout::PictureInPicture
+                    || scene
+                        .split_layout
+                        .is_some_and(|layout| layout.force_horizontal))
+            {
+                return false;
+            }
+            if choice == StudioLayout::PictureInPicture {
+                scene.mode = SceneMode::Default;
+            } else {
+                if !matches!(scene.mode, SceneMode::SplitScreen | SceneMode::Floating) {
+                    scene.mode = SceneMode::Floating;
+                }
+                let layout = scene
+                    .split_layout
+                    .get_or_insert_with(|| cap_project::SplitLayout {
+                        camera_framing: SplitCameraFraming::Relaxed,
+                        ..Default::default()
+                    });
+                layout.force_horizontal = true;
+                layout.camera_first = choice == StudioLayout::CameraLeft;
+            }
+            true
+        });
+    }
+
     pub(crate) fn camera_ratio_label(&self) -> SharedString {
         let camera = &self.style_control_project().camera;
         let label = match camera.aspect_ratio {

@@ -913,6 +913,12 @@ add_to_project = "Ajouter à votre projet actuel"
 record_new = "Enregistrer un nouveau clip"
 
 [main.studio_layout]
+editor_layout = "Disposition"
+framing = "Cadrage caméra"
+framing_fill = "Remplir"
+framing_relaxed = "Plan élargi"
+framing_fit = "Image entière"
+at_playhead = "S’applique à la tête de lecture"
 side_by_side = "Côte à côte"
 round = "Cercle"
 square = "Carré"

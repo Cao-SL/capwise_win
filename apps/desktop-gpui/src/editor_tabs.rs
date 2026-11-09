@@ -2032,38 +2032,49 @@ impl EditorWindow {
             return header;
         }
 
+        let split = self.camera_uses_split_layout();
+        let layout = self.sidebar.style_target.is_none() && self.project.timeline.is_some();
         div()
             .flex()
             .flex_col()
             .gap(px(16.))
             .child(header)
-            .child(self.render_camera_framing_controls(cx))
-            .child(self.render_camera_position(cx))
-            .child(self.slider_field(
-                tr::editor::tabs::camera::size_label(),
-                SliderKey::Camera(CameraSlider::Size),
-                "%",
-                cx,
-            ))
+            .when(layout, |column| {
+                column.child(self.render_camera_layout_controls(cx))
+            })
+            .when(!split, |column| {
+                column
+                    .child(self.render_camera_framing_controls(cx))
+                    .child(self.render_camera_position(cx))
+                    .child(self.slider_field(
+                        tr::editor::tabs::camera::size_label(),
+                        SliderKey::Camera(CameraSlider::Size),
+                        "%",
+                        cx,
+                    ))
+            })
             .child(self.slider_field(
                 tr::editor::tabs::camera::skin_smoothing(),
                 SliderKey::Camera(CameraSlider::SkinSmoothing),
                 "%",
                 cx,
             ))
-            .child(self.slider_field(
-                tr::editor::tabs::camera::rounded_corners(),
-                SliderKey::Camera(CameraSlider::Rounding),
-                "%",
-                cx,
-            ))
-            .child(self.corner_style_select(
-                SidebarMenu::CameraCornerStyle,
-                "camera-corner-style",
-                corner_label,
-                cx,
-            ))
-            .children(manual.map(|_| {
+            .when(!split, |column| {
+                column
+                    .child(self.slider_field(
+                        tr::editor::tabs::camera::rounded_corners(),
+                        SliderKey::Camera(CameraSlider::Rounding),
+                        "%",
+                        cx,
+                    ))
+                    .child(self.corner_style_select(
+                        SidebarMenu::CameraCornerStyle,
+                        "camera-corner-style",
+                        corner_label,
+                        cx,
+                    ))
+            })
+            .children(manual.filter(|_| !split).map(|_| {
                 div()
                     .flex()
                     .flex_row()

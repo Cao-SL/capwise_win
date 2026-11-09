@@ -3653,9 +3653,14 @@ impl EditorWindow {
         if (next - self.playhead).abs() < f64::EPSILON {
             return;
         }
+        let camera_scene_changed = self.sidebar.tab == crate::editor_sidebar::SidebarTab::Camera
+            && self.camera_scene_index_at(self.playhead) != self.camera_scene_index_at(next);
         self.playhead = next;
         self.view.playhead = next;
         self.view.playing = self.playing;
+        if camera_scene_changed {
+            self.invalidate_sidebar(cx);
+        }
         if self.playing && frame != self.playhead_epoch_start {
             // The first sample past the epoch's start frame is what proves
             // the engine is live. Samples *at* the start frame are the play
@@ -3946,12 +3951,13 @@ impl EditorWindow {
     /// by the timeline, the transport clock and what the window itself renders
     /// (the canvas overlay, the clip popover), so this invalidates those the
     /// way [`Self::invalidate_hover_chrome`] does instead of rebuilding the
-    /// header, toolbar and sidebar on every move. The one sidebar reader is
-    /// the 3D panel's "on the playhead" pose marker, which is only redrawn
-    /// when it changes. Playing and handoff seeks keep the full invalidation.
+    /// header, toolbar and sidebar on every move. The sidebar is redrawn when
+    /// the 3D pose marker or the camera scene changes. Playing and handoff seeks
+    /// keep the full invalidation.
     fn scrub_to_time(&mut self, time: f64, cx: &mut Context<Self>) {
         self.stop_canvas_text_edit(cx);
         let poses = self.camera3d_poses_at_playhead();
+        let previous = self.playhead;
         if !self.apply_seek(time) {
             return;
         }
@@ -3961,8 +3967,10 @@ impl EditorWindow {
             return;
         }
         self.invalidate_hover_chrome(cx);
-        if self.camera3d_poses_at_playhead() != poses {
-            self.sidebar_view.update(cx, |_, cx| cx.notify());
+        let camera_scene_changed = self.sidebar.tab == crate::editor_sidebar::SidebarTab::Camera
+            && self.camera_scene_index_at(previous) != self.camera_scene_index_at(self.playhead);
+        if self.camera3d_poses_at_playhead() != poses || camera_scene_changed {
+            self.invalidate_sidebar(cx);
         }
     }
 

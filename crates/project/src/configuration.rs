@@ -1427,6 +1427,39 @@ pub enum SceneMode {
     Floating,
 }
 
+#[derive(Type, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SplitCameraFraming {
+    #[default]
+    Fill,
+    Relaxed,
+    Fit,
+}
+
+impl SplitCameraFraming {
+    fn is_fill(&self) -> bool {
+        *self == Self::Fill
+    }
+
+    pub fn pane_bounds(self, pane: [f32; 4], source_aspect: f32) -> [f32; 4] {
+        let amount = match self {
+            Self::Fill => return pane,
+            Self::Relaxed => 0.5,
+            Self::Fit => 1.0,
+        };
+        let width = pane[2] - pane[0];
+        let height = pane[3] - pane[1];
+        let inset_x = (width - height * source_aspect).max(0.0) * amount * 0.5;
+        let inset_y = (height - width / source_aspect).max(0.0) * amount * 0.5;
+        [
+            pane[0] + inset_x,
+            pane[1] + inset_y,
+            pane[2] - inset_x,
+            pane[3] - inset_y,
+        ]
+    }
+}
+
 #[derive(Type, Serialize, Deserialize, Clone, Copy, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SplitLayout {
@@ -1434,6 +1467,8 @@ pub struct SplitLayout {
     pub screen_position: XY<f64>,
     pub camera_zoom: f64,
     pub camera_position: XY<f64>,
+    #[serde(skip_serializing_if = "SplitCameraFraming::is_fill")]
+    pub camera_framing: SplitCameraFraming,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub camera_first: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -1447,6 +1482,7 @@ impl Default for SplitLayout {
             screen_position: XY::new(0.5, 0.5),
             camera_zoom: 1.0,
             camera_position: XY::new(0.5, 0.5),
+            camera_framing: SplitCameraFraming::Fill,
             camera_first: false,
             force_horizontal: false,
         }
@@ -4073,6 +4109,24 @@ mod notch_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn split_camera_framing_retains_old_projects_and_increases_visible_source() {
+        let old: super::SplitLayout = serde_json::from_str("{}").unwrap();
+        use super::SplitCameraFraming::{Fill, Fit, Relaxed};
+        assert_eq!(old.camera_framing, Fill);
+        let pane = [50., 20., 210., 340.];
+        assert_eq!(Fill.pane_bounds(pane, 16. / 9.), pane);
+        assert_eq!(
+            Relaxed.pane_bounds(pane, 16. / 9.),
+            [50., 77.5, 210., 282.5]
+        );
+        assert_eq!(Fit.pane_bounds(pane, 16. / 9.), [50., 135., 210., 225.]);
+        assert_eq!(
+            Fit.pane_bounds([0., 0., 320., 160.], 0.5),
+            [120., 0., 200., 160.]
+        );
+    }
+
     use super::*;
     use serde_json::Value;
 
