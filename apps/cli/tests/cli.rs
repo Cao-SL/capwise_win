@@ -1107,7 +1107,18 @@ fn agent_installer_dry_run_is_machine_readable() {
     assert_eq!(json["target"], "codex");
     assert_eq!(json["dryRun"], true);
     assert_eq!(json["applied"], false);
-    assert_eq!(json["changes"].as_array().map(Vec::len), Some(2));
+    let changes = json["changes"].as_array().unwrap();
+    for skill in ["cap/SKILL.md", "cap-demo/SKILL.md"] {
+        assert!(changes.iter().any(|change| {
+            change["component"] == "skill"
+                && Path::new(change["path"].as_str().unwrap()).ends_with(skill)
+        }));
+    }
+    assert!(changes.iter().any(|change| {
+        change["component"] == "mcp"
+            && change["action"] == "merge"
+            && Path::new(change["path"].as_str().unwrap()).ends_with("config.toml")
+    }));
 }
 
 #[test]
@@ -1517,11 +1528,20 @@ fn auth_status_verifies_agent_credentials_with_the_server() {
     let server_url = format!("http://{}", listener.local_addr().unwrap());
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 4096];
-        let length = stream.read(&mut request).unwrap();
-        let request = String::from_utf8_lossy(&request[..length]);
-        assert!(request.starts_with("GET /api/v1/auth/status HTTP/1.1"));
-        assert!(request.contains("authorization: Bearer cap_cli_synthetic_agent_status"));
+        let mut request = BufReader::new(&mut stream).lines();
+        assert_eq!(
+            request.next().unwrap().unwrap(),
+            "GET /api/v1/auth/status HTTP/1.1"
+        );
+        assert!(
+            request
+                .map(Result::unwrap)
+                .take_while(|line| !line.is_empty())
+                .any(|line| line.split_once(':').is_some_and(|(name, value)| {
+                    name.eq_ignore_ascii_case("authorization")
+                        && value.trim() == "Bearer cap_cli_synthetic_agent_status"
+                }))
+        );
         let body = r#"{"authenticated":true,"tokenKind":"agent","expiresAt":"2027-01-01T00:00:00.000Z","scopes":["caps:read"],"requestId":"request-test"}"#;
         write!(
             stream,
@@ -1974,6 +1994,8 @@ fn title_card_outro_reanchors_and_keeps_identity_when_intro_is_added() {
         "outro",
         "--title",
         "下一步，自己试一次",
+        "--duration",
+        "2",
         "--expected-revision",
         initial["revision"].as_str().unwrap(),
         "--json",
@@ -1989,6 +2011,8 @@ fn title_card_outro_reanchors_and_keeps_identity_when_intro_is_added() {
         "intro",
         "--title",
         "从这里开始",
+        "--duration",
+        "2",
         "--expected-revision",
         outro["resultRevision"].as_str().unwrap(),
         "--json",
@@ -2155,6 +2179,8 @@ fn title_card_retimes_unsorted_scenes_without_swapping_their_content_or_unknown_
         "intro",
         "--title",
         "封面",
+        "--duration",
+        "2",
         "--expected-revision",
         read["revision"].as_str().unwrap(),
         "--json",
