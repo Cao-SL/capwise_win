@@ -70,6 +70,11 @@ const worker = (await readFile(`${root}public/sw.js`, "utf8")).replaceAll(
 await writeFile(`${root}dist/index.html`, html);
 await writeFile(`${root}dist/_headers`, headers);
 await writeFile(`${root}dist/sw.js`, worker);
+const styles = (await readFile(`${root}public/styles.css`, "utf8")).replace(
+	/(\/fonts\/[\w-]+\.woff2)"/g,
+	`$1?v=${version}"`,
+);
+await writeFile(`${root}dist/styles.css`, styles);
 for (const match of html.matchAll(/(?:src|href)="(\/[^"?#]*)/g)) {
 	const path = match[1];
 	if (path === "/") continue;

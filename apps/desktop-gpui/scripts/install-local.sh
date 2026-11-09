@@ -6,6 +6,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
+source "$HERE/scripts/macos-bundle-assets.sh"
 PROFILE="${PROFILE:-debug}"
 IDENTITY="${CAPWISE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)}"
 STAGE="$HERE/target/Capwise.app"
@@ -35,7 +36,6 @@ mkdir -p "$STAGE/Contents/Helpers/llama-server" "$STAGE/Contents/Resources/licen
 cp -a "$HERE/target/llama-server/llama-server" "$HERE"/target/llama-server/*.dylib "$STAGE/Contents/Helpers/llama-server/"
 cp "$HERE/target/llama-server/LICENSE" "$STAGE/Contents/Resources/licenses/llama.cpp-LICENSE.txt"
 mkdir -p "$STAGE/Contents/Resources/assets"
-cp -R "$HERE/assets/music" "$STAGE/Contents/Resources/assets/music"
 mkdir -p "$STAGE/Contents/Resources/fonts"
 cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
 cp "$HERE/target/$PROFILE/cap-gpui" "$STAGE/Contents/MacOS/Capwise"
@@ -47,7 +47,7 @@ ditto "$ROOT/target/native-deps/Spacedrive.framework" "$STAGE/Contents/Framework
 rm -rf "$STAGE/Contents/Frameworks/Spacedrive.framework/Versions/A/Headers" \
   "$STAGE/Contents/Frameworks/Spacedrive.framework/Headers"
 
-ditto "$HERE/assets/backgrounds" "$STAGE/Contents/Resources/assets/backgrounds"
+copy_capwise_assets "$HERE/assets" "$STAGE/Contents/Resources/assets"
 "$HERE/scripts/verify-capwise-mac.sh" "$STAGE" --resources-only
 
 sign() { codesign --force --timestamp=none --options runtime --sign "$IDENTITY" "$@"; }
