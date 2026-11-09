@@ -1412,7 +1412,7 @@ mode_title = "録画モードを変更"
 mode_body = "Instantは録画を止めた瞬間に共有リンクを作成します。Studioは編集用にフル画質で録画します。"
 
 [overlay.area]
-split_ratio = "左右分割 · 5:4"
+split_ratio = "5:4 · 分割向け"
 draw = "範囲を描く"
 free_ratio = "自由"
 hint = "クリックしてドラッグし、範囲を選択"
@@ -2494,6 +2494,7 @@ off = "オフ"
 remove = "背景を削除"
 
 [editor.tabs.camera.shape]
+circle = "円形"
 source = "元の比率"
 square = "正方形 1:1"
 

@@ -1412,7 +1412,7 @@ mode_title = "Aufnahmemodus ändern"
 mode_body = "Mit Instant erhalten Sie einen Link zum Teilen, sobald Sie die Aufnahme beenden. Studio nimmt in voller Qualität zur Bearbeitung auf."
 
 [overlay.area]
-split_ratio = "Nebeneinander · 5:4"
+split_ratio = "5:4 · Geteilt"
 draw = "Bereich aufziehen"
 free_ratio = "Frei"
 hint = "Klicken und ziehen Sie, um einen Bereich auszuwählen"
@@ -2494,6 +2494,7 @@ off = "Aus"
 remove = "Hintergrund entfernen"
 
 [editor.tabs.camera.shape]
+circle = "Kreis"
 source = "Originalverhältnis"
 square = "Quadrat 1:1"
 

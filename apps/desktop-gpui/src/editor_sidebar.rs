@@ -1183,6 +1183,25 @@ impl EditorWindow {
         } else {
             self.project_changed_without_timeline(window, cx);
         }
+        if self.sidebar.style_target.is_none()
+            && matches!(
+                reason,
+                "source-none"
+                    | "source"
+                    | "wallpaper"
+                    | "image"
+                    | "color-preset"
+                    | "gradient-preset"
+                    | "gradient-randomize"
+                    | "animated-gradient"
+                    | "animated-gradient-setting"
+            )
+        {
+            crate::recording_defaults::RecordingBackground::remember(
+                &self.project.background.source,
+                reason == "source-none",
+            );
+        }
         self.remember_animated_gradient_selection(previous_animated_gradient, window, cx);
         self.note_sidebar_edit(reason);
     }

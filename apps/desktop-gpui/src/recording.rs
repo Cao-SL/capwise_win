@@ -473,12 +473,27 @@ async fn finalize_studio(
                     .and_then(|_| camera_snapshot.map(|snapshot| snapshot.shape)),
                 placement,
             );
-            if !preset_applied {
-                let library = serde_json::from_value(serde_json::Value::Object(
-                    crate::store::store_section("animated_gradients"),
-                ))
-                .unwrap_or_default();
-                apply_animated_gradient_to_project_config(&project_path, &capture_target, &library);
+            if !preset_applied && !matches!(capture_target, ScreenCaptureTarget::CameraOnly) {
+                let preference = crate::recording_defaults::RecordingBackground::preferred();
+                let legacy_gradient_applied = preference.is_none() && {
+                    let library = serde_json::from_value(serde_json::Value::Object(
+                        crate::store::store_section("animated_gradients"),
+                    ))
+                    .unwrap_or_default();
+                    apply_animated_gradient_to_project_config(
+                        &project_path,
+                        &capture_target,
+                        &library,
+                    )
+                };
+                if !legacy_gradient_applied
+                    && let Err(error) = apply_recording_background_to_project_config(
+                        &project_path,
+                        preference.as_ref(),
+                    )
+                {
+                    tracing::warn!(%error, "Could not apply the recording background");
+                }
             }
             if crate::store::studio_sound_by_default()
                 && let Err(error) = enable_studio_sound(&project_path)
@@ -1686,6 +1701,7 @@ fn write_bundle_thumbnail(project_dir: &std::path::Path, source_video: &std::pat
 pub(crate) fn preparing_presentation(
     project: &cap_project::ProjectConfiguration,
     camera_snapshot: Option<StudioCameraSnapshot>,
+    background_project: Option<&std::path::Path>,
 ) -> Result<cap_project::ProjectConfiguration, String> {
     let library = serde_json::from_value(serde_json::Value::Object(crate::store::store_section(
         "animated_gradients",
@@ -1701,6 +1717,7 @@ pub(crate) fn preparing_presentation(
         camera_snapshot.map_or_else(current_camera_blur, |snapshot| snapshot.blur),
         &library,
         &crate::presets::PresetsStore::load(),
+        background_project,
     )?;
     if crate::store::studio_sound_by_default() {
         config.audio.improve = true;
@@ -1720,15 +1737,31 @@ fn preparing_presentation_for(
     blur: crate::store::BlurMode,
     library: &cap_project::AnimatedGradientLibrary,
     presets: &crate::presets::PresetsStore,
+    background_project: Option<&std::path::Path>,
 ) -> Result<cap_project::ProjectConfiguration, String> {
     if blur != crate::store::BlurMode::Off {
         return Err("Camera blur requires ordinary editor loading".into());
     }
     let preset = presets.apply_default(project);
-    if preset.is_none() && library.selected && library.last_used.is_some() {
+    let preference = background_project
+        .and_then(|_| crate::recording_defaults::RecordingBackground::preferred());
+    if preset.is_none()
+        && preference.as_ref().map_or(
+            library.selected && library.last_used.is_some(),
+            crate::recording_defaults::RecordingBackground::is_animated,
+        )
+    {
         return Err("Animated-gradient preferences require ordinary editor loading".into());
     }
+    let use_background = preset.is_none();
     let mut project = preset.unwrap_or_else(|| project.clone());
+    if use_background && let Some(path) = background_project {
+        crate::recording_defaults::apply_recording_background(
+            &mut project,
+            path,
+            preference.as_ref(),
+        );
+    }
     // Finalization replaces any saved blur with the live toggle, which is off here.
     project.camera.background_blur = cap_project::BackgroundBlurConfig::default();
     project.camera.skin_smoothing = 0.0;
@@ -1854,6 +1887,17 @@ fn enable_notch_overlay(project_path: &std::path::Path) -> std::io::Result<()> {
     result
 }
 
+fn apply_recording_background_to_project_config(
+    path: &std::path::Path,
+    preference: Option<&crate::recording_defaults::RecordingBackground>,
+) -> std::io::Result<()> {
+    let mut project = cap_project::ProjectConfiguration::load(path)?;
+    if crate::recording_defaults::apply_recording_background(&mut project, path, preference) {
+        project.write(path)?;
+    }
+    Ok(())
+}
+
 fn apply_animated_gradient_to_project_config(
     project_dir: &std::path::Path,
     capture_target: &ScreenCaptureTarget,
@@ -1977,7 +2021,10 @@ fn apply_camera_blur_to_project_config(
     apply_camera_preview_to_project_config(project_dir, blur, false, None, None)
 }
 
-fn apply_camera_preview_shape(camera: &mut cap_project::Camera, shape: crate::store::CameraShape) {
+pub(crate) fn apply_camera_preview_shape(
+    camera: &mut cap_project::Camera,
+    shape: crate::store::CameraShape,
+) {
     use crate::store::CameraShape;
     camera.shape = match shape {
         CameraShape::Round | CameraShape::Square => cap_project::CameraShape::Square,
@@ -5366,6 +5413,7 @@ mod preparing_presentation_tests {
             crate::store::BlurMode::Off,
             &cap_project::AnimatedGradientLibrary::default(),
             &crate::presets::PresetsStore::default(),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -5385,6 +5433,7 @@ mod preparing_presentation_tests {
                     blur,
                     &cap_project::AnimatedGradientLibrary::default(),
                     &crate::presets::PresetsStore::default(),
+                    None,
                 )
                 .is_err()
             );
@@ -5400,6 +5449,7 @@ mod preparing_presentation_tests {
                 crate::store::BlurMode::Off,
                 &library,
                 &crate::presets::PresetsStore::default(),
+                None,
             )
             .is_err()
         );
@@ -5422,6 +5472,7 @@ mod preparing_presentation_tests {
             crate::store::BlurMode::Off,
             &cap_project::AnimatedGradientLibrary::default(),
             &presets,
+            None,
         )
         .unwrap();
         assert!(!shown.camera.background_blur.is_active());
@@ -5450,9 +5501,14 @@ mod preparing_presentation_tests {
             last_used: Some(cap_project::AnimatedGradientConfig::default()),
             ..Default::default()
         };
-        let shown =
-            preparing_presentation_for(&project, crate::store::BlurMode::Off, &library, &presets)
-                .unwrap();
+        let shown = preparing_presentation_for(
+            &project,
+            crate::store::BlurMode::Off,
+            &library,
+            &presets,
+            None,
+        )
+        .unwrap();
         assert_eq!(shown.background.padding, 24.0);
         assert_eq!(
             serde_json::to_value(&shown.timeline).unwrap(),

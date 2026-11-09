@@ -113,34 +113,102 @@ pub(crate) const PRESETS: &[AgentPreset] = &[
     },
 ];
 
-pub(crate) fn connections() -> Vec<AgentConnection> {
-    store::store_section("capwise_agents")
+const STORE_SECTION: &str = "capwise_agents";
+
+fn saved_connections(section: &serde_json::Map<String, Value>) -> Vec<AgentConnection> {
+    section
         .get("connections")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
         .unwrap_or_default()
 }
 
+fn disconnected(section: &serde_json::Map<String, Value>) -> Vec<String> {
+    section
+        .get("disconnected")
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .unwrap_or_default()
+}
+
+pub(crate) fn connections() -> Vec<AgentConnection> {
+    saved_connections(&store::store_section(STORE_SECTION))
+}
+
+pub(crate) fn automatically_connectable(detected: &[AgentConnection]) -> Vec<AgentConnection> {
+    let section = store::store_section(STORE_SECTION);
+    let connected = saved_connections(&section);
+    let blocked = disconnected(&section);
+    detected
+        .iter()
+        .filter(|agent| {
+            !blocked.contains(&agent.id) && !connected.iter().any(|saved| saved.id == agent.id)
+        })
+        .cloned()
+        .collect()
+}
+
+impl AgentConnection {
+    pub(crate) fn update_models(&mut self, mut models: Vec<AgentModel>) {
+        models.retain(|model| !model.id.trim().is_empty());
+        if !models.iter().any(|model| model.id == self.model) {
+            self.model = models
+                .first()
+                .map_or_else(String::new, |model| model.id.clone());
+        }
+        self.models = models;
+    }
+}
+
 pub(crate) fn save(connection: AgentConnection) -> Result<(), String> {
-    let mut saved = connections();
-    saved.retain(|old| old.id != connection.id);
-    saved.push(connection);
-    persist(&saved)
+    save_connection(connection, false).map(|_| ())
 }
 
-pub(crate) fn remove(id: &str) -> Result<(), String> {
-    let mut saved = connections();
-    saved.retain(|old| old.id != id);
-    persist(&saved)
+pub(crate) fn save_detected(connection: AgentConnection) -> Result<bool, String> {
+    save_connection(connection, true)
 }
 
-fn persist(saved: &[AgentConnection]) -> Result<(), String> {
-    let value =
-        serde_json::to_value(saved).map_err(|_| tr::settings::agents::save_failed().to_owned())?;
-    if store::set_store_setting("capwise_agents", "connections", value) {
-        Ok(())
+fn save_connection(connection: AgentConnection, automatic: bool) -> Result<bool, String> {
+    let mut skipped = false;
+    let saved = store::update_store_section(STORE_SECTION, |section| {
+        let mut connections = saved_connections(section);
+        let mut blocked = disconnected(section);
+        if automatic
+            && (blocked.contains(&connection.id)
+                || connections.iter().any(|old| old.id == connection.id))
+        {
+            skipped = true;
+            return false;
+        }
+        connections.retain(|old| old.id != connection.id);
+        blocked.retain(|id| *id != connection.id);
+        connections.push(connection);
+        section.insert("connections".into(), json!(connections));
+        section.insert("disconnected".into(), json!(blocked));
+        true
+    });
+    if saved || skipped {
+        Ok(saved)
     } else {
         Err(tr::settings::agents::save_failed().into())
     }
+}
+
+pub(crate) fn remove(id: &str) -> Result<(), String> {
+    let saved = store::update_store_section(STORE_SECTION, |section| {
+        let mut connections = saved_connections(section);
+        let mut blocked = disconnected(section);
+        connections.retain(|old| old.id != id);
+        if !blocked.iter().any(|item| item == id) {
+            blocked.push(id.into());
+        }
+        section.insert("connections".into(), json!(connections));
+        section.insert("disconnected".into(), json!(blocked));
+        true
+    });
+    if !saved {
+        return Err(tr::settings::agents::save_failed().into());
+    }
+    crate::ai_store::clear_agent_default(&crate::llm::agent_content_id(id, ""));
+    Ok(())
 }
 
 fn search_paths() -> Vec<PathBuf> {

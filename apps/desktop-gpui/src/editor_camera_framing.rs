@@ -1,4 +1,6 @@
-use cap_project::{CameraShape, SceneMode, SceneSegment, SplitCameraFraming, XY};
+use cap_project::{
+    Camera, CameraShape, CornerStyle, SceneMode, SceneSegment, SplitCameraFraming, XY,
+};
 use gpui::{
     AnyElement, AppContext, Context, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
     MouseButton, ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription,
@@ -97,6 +99,24 @@ fn scene_camera_layout(scene: &SceneSegment) -> Option<StudioLayout> {
         SceneMode::Default => Some(StudioLayout::PictureInPicture),
         SceneMode::CameraOnly | SceneMode::HideCamera => None,
     }
+}
+
+fn camera_is_circle(camera: &Camera) -> bool {
+    camera.rounding >= 100.
+        && matches!(camera.rounding_type, CornerStyle::Rounded)
+        && camera
+            .aspect_ratio
+            .map_or(matches!(camera.shape, CameraShape::Square), |ratio| {
+                ratio.x > 0 && ratio.x == ratio.y
+            })
+}
+
+fn set_camera_framing(camera: &mut Camera, shape: CameraShape, ratio: Option<XY<u32>>) {
+    if camera_is_circle(camera) {
+        camera.rounding = 25.;
+    }
+    camera.shape = shape;
+    camera.aspect_ratio = ratio;
 }
 
 impl EditorWindow {
@@ -304,6 +324,9 @@ impl EditorWindow {
 
     pub(crate) fn camera_ratio_label(&self) -> SharedString {
         let camera = &self.style_control_project().camera;
+        if camera_is_circle(camera) {
+            return tr::editor::tabs::camera::shape::circle().into();
+        }
         let label = match camera.aspect_ratio {
             Some(XY { x: 16, y: 9 }) => tr::editor::tabs::camera::framing::wide().to_string(),
             Some(XY { x: 4, y: 3 }) => tr::editor::tabs::camera::framing::standard().to_string(),
@@ -325,10 +348,12 @@ impl EditorWindow {
 
     pub(crate) fn camera_ratio_items(&self, kind: SidebarMenu) -> Vec<ui::MenuItem> {
         let camera = &self.style_control_project().camera;
+        let circle = camera_is_circle(camera);
         let is = |x, y| {
-            camera
-                .aspect_ratio
-                .is_some_and(|ratio| ratio.x == x && ratio.y == y)
+            !circle
+                && camera
+                    .aspect_ratio
+                    .is_some_and(|ratio| ratio.x == x && ratio.y == y)
         };
         if kind == SidebarMenu::CameraMoreShape {
             vec![
@@ -347,11 +372,14 @@ impl EditorWindow {
                 ui::MenuItem::new(tr::editor::tabs::camera::framing::standard(), is(4, 3)),
                 ui::MenuItem::new(
                     tr::editor::tabs::camera::shape::square(),
-                    camera.aspect_ratio.is_none() && matches!(camera.shape, CameraShape::Square),
+                    !circle
+                        && camera.aspect_ratio.is_none()
+                        && matches!(camera.shape, CameraShape::Square),
                 ),
+                ui::MenuItem::new(tr::editor::tabs::camera::shape::circle(), circle),
                 ui::MenuItem::new(
                     tr::editor::tabs::camera::framing::more(),
-                    camera.aspect_ratio.is_some() && !is(16, 9) && !is(4, 3),
+                    !circle && camera.aspect_ratio.is_some() && !is(16, 9) && !is(4, 3),
                 ),
             ]
         }
@@ -365,7 +393,7 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if (kind == SidebarMenu::CameraShape && index == 4)
+        if (kind == SidebarMenu::CameraShape && index == 5)
             || (kind == SidebarMenu::CameraMoreShape && index == 0)
         {
             if let Some(state) = anchor {
@@ -387,6 +415,19 @@ impl EditorWindow {
             self.open_camera_ratio_dialog(window, cx);
             return;
         }
+        if kind == SidebarMenu::CameraShape && index == 4 {
+            self.edit_project("camera-circle", window, cx, |project| {
+                if camera_is_circle(&project.camera) {
+                    return false;
+                }
+                crate::recording::apply_camera_preview_shape(
+                    &mut project.camera,
+                    crate::store::CameraShape::Round,
+                );
+                true
+            });
+            return;
+        }
         let (shape, ratio) = match (kind, index) {
             (SidebarMenu::CameraShape, 0) => (CameraShape::Source, None),
             (SidebarMenu::CameraShape, 1) => (CameraShape::Source, Some(XY::new(16, 9))),
@@ -397,8 +438,7 @@ impl EditorWindow {
             _ => return,
         };
         self.edit_project("camera-aspect-ratio", window, cx, move |project| {
-            project.camera.shape = shape;
-            project.camera.aspect_ratio = ratio;
+            set_camera_framing(&mut project.camera, shape, ratio);
             true
         });
     }
@@ -542,8 +582,7 @@ impl EditorWindow {
         };
         self.close_camera_ratio_dialog(window, cx);
         self.edit_project("camera-custom-ratio", window, cx, move |project| {
-            project.camera.shape = CameraShape::Source;
-            project.camera.aspect_ratio = Some(ratio);
+            set_camera_framing(&mut project.camera, CameraShape::Source, Some(ratio));
             true
         });
     }
@@ -683,6 +722,19 @@ impl EditorWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_recorded_circle_stays_recognizable_and_can_return_to_a_square() {
+        let mut camera = Camera::default();
+        crate::recording::apply_camera_preview_shape(&mut camera, crate::store::CameraShape::Round);
+        let mut reopened: Camera =
+            serde_json::from_value(serde_json::to_value(camera).unwrap()).unwrap();
+        assert!(camera_is_circle(&reopened));
+        assert_eq!(reopened.framing_aspect_ratio([1920., 1080.]), 1.);
+        set_camera_framing(&mut reopened, CameraShape::Square, None);
+        assert!(!camera_is_circle(&reopened));
+        assert_eq!(reopened.framing_aspect_ratio([1920., 1080.]), 1.);
+    }
 
     #[test]
     fn custom_ratio_rejects_invalid_input_and_preserves_dimensions() {

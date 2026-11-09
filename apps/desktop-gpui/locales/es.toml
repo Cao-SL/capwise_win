@@ -1412,7 +1412,7 @@ mode_title = "Cambiar el modo de grabación"
 mode_body = "Instant te da un enlace para compartir en cuanto detienes la grabación. Studio graba con la máxima calidad para editar."
 
 [overlay.area]
-split_ratio = "En paralelo · 5:4"
+split_ratio = "5:4 · Dividido"
 draw = "Dibuja un área"
 free_ratio = "Libre"
 hint = "Haz clic y arrastra para seleccionar un área"
@@ -2494,6 +2494,7 @@ off = "Desactivado"
 remove = "Quitar fondo"
 
 [editor.tabs.camera.shape]
+circle = "Círculo"
 source = "Proporción original"
 square = "Cuadrado 1:1"
 

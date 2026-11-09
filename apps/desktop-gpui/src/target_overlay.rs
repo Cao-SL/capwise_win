@@ -847,7 +847,7 @@ const QUICK_AREA_RATIOS: [Option<(u32, u32)>; 5] = [
     None,
     Some((16, 9)),
     Some((4, 3)),
-    Some((1, 1)),
+    Some(cap_project::WIDE_SPLIT_CAPTURE_RATIO),
     Some((9, 16)),
 ];
 
@@ -3600,6 +3600,9 @@ impl OverlayWindow {
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| this.set_area_ratio(ratio, cx)))
                 .child(match ratio {
+                    Some(ratio) if ratio == cap_project::WIDE_SPLIT_CAPTURE_RATIO => {
+                        tr::overlay::area::split_ratio().to_string()
+                    }
                     Some((width, height)) => format!("{width}:{height}"),
                     None => tr::overlay::area::free_ratio().to_string(),
                 })
@@ -3946,7 +3949,7 @@ impl OverlayWindow {
     }
 
     fn open_aspect_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let items = self.aspect_menu_items(cx);
+        let items = self.aspect_menu_items();
         self.mode_menu = None;
         self.countdown_menu = None;
         self.device_menu = None;
@@ -3955,20 +3958,14 @@ impl OverlayWindow {
         cx.notify();
     }
 
-    fn aspect_menu_items(&self, cx: &App) -> Vec<crate::ui::MenuItem> {
-        let split = self.select.read(cx).recording_mode == Mode::Studio
-            && crate::feeds::Feeds::global(cx).read(cx).camera.is_some()
-            && crate::recording_defaults::StudioLayout::preferred()
-                != crate::recording_defaults::StudioLayout::PictureInPicture;
+    fn aspect_menu_items(&self) -> Vec<crate::ui::MenuItem> {
         more_area_ratios()
             .into_iter()
             .map(|ratio| {
-                let label = if split && ratio == cap_project::WIDE_SPLIT_CAPTURE_RATIO {
-                    tr::overlay::area::split_ratio().into()
-                } else {
-                    format!("{}:{}", ratio.0, ratio.1)
-                };
-                crate::ui::MenuItem::new(label, self.area_ratio == Some(ratio))
+                crate::ui::MenuItem::new(
+                    format!("{}:{}", ratio.0, ratio.1),
+                    self.area_ratio == Some(ratio),
+                )
             })
             .collect()
     }
@@ -3979,7 +3976,7 @@ impl OverlayWindow {
             crate::ui::Menu::plain(
                 &self.theme,
                 "overlay-aspect-menu",
-                self.aspect_menu_items(cx),
+                self.aspect_menu_items(),
                 state,
             )
             .on_select(cx.listener(|this, index: &usize, _, cx| {
@@ -4906,7 +4903,7 @@ mod tests {
     #[test]
     fn quick_and_more_ratios_cover_every_ratio_once() {
         let more = more_area_ratios();
-        assert_eq!(more, vec![(5, 4), (16, 10), (21, 9), (3, 2), (2, 1)]);
+        assert_eq!(more, vec![(1, 1), (16, 10), (21, 9), (3, 2), (2, 1)]);
         let mut all: Vec<Option<(u32, u32)>> = QUICK_AREA_RATIOS.to_vec();
         all.extend(more.into_iter().map(Some));
         all.sort();

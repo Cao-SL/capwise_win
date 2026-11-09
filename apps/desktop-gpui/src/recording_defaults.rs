@@ -1,8 +1,11 @@
-use std::path::Path;
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    path::Path,
+};
 
 use cap_project::{
-    ProjectConfiguration, RecordingMeta, SceneMode, SceneSegment, SplitCameraFraming, SplitLayout,
-    StudioRecordingMeta,
+    BackgroundSource, ProjectConfiguration, RecordingMeta, SceneMode, SceneSegment,
+    SplitCameraFraming, SplitLayout, StudioRecordingMeta,
 };
 use serde::{Deserialize, Serialize};
 
@@ -102,6 +105,130 @@ impl StudioLayout {
         }
         Ok(())
     }
+}
+
+const LAST_BACKGROUND: &str = "lastBackground";
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum RecordingBackground {
+    None,
+    Wallpaper(String),
+    Source(BackgroundSource),
+}
+
+impl RecordingBackground {
+    pub(crate) fn preferred() -> Option<Self> {
+        crate::store::store_section(crate::store::RECORDING_SETTINGS)
+            .remove(LAST_BACKGROUND)
+            .and_then(|value| serde_json::from_value(value).ok())
+    }
+
+    pub(crate) fn remember(source: &BackgroundSource, disabled: bool) {
+        let selection = if disabled {
+            Self::None
+        } else {
+            match source {
+                BackgroundSource::Wallpaper { path: Some(path) } => {
+                    match crate::editor_sidebar::wallpaper_id_for_path(path) {
+                        Some(id) => Self::Wallpaper(id.into()),
+                        None => Self::Source(source.clone()),
+                    }
+                }
+                BackgroundSource::Image { path: None }
+                | BackgroundSource::Wallpaper { path: None } => return,
+                _ => Self::Source(source.clone()),
+            }
+        };
+        if let Ok(value) = serde_json::to_value(selection)
+            && !crate::store::set_store_setting(
+                crate::store::RECORDING_SETTINGS,
+                LAST_BACKGROUND,
+                value,
+            )
+        {
+            tracing::warn!("Could not remember the recording background");
+        }
+    }
+
+    pub(crate) fn is_animated(&self) -> bool {
+        matches!(
+            self,
+            Self::Source(BackgroundSource::AnimatedGradient { .. })
+        )
+    }
+
+    fn source(&self) -> Option<BackgroundSource> {
+        match self {
+            Self::None => None,
+            Self::Wallpaper(id) => wallpaper_source(id),
+            Self::Source(source) => match source {
+                BackgroundSource::Image { path } | BackgroundSource::Wallpaper { path }
+                    if !path
+                        .as_deref()
+                        .is_some_and(|path| Path::new(path).is_file()) =>
+                {
+                    None
+                }
+                _ => Some(source.clone()),
+            },
+        }
+    }
+}
+
+fn wallpaper_source(id: &str) -> Option<BackgroundSource> {
+    let path = crate::editor_sidebar::wallpaper_path(id)?;
+    Some(BackgroundSource::Wallpaper {
+        path: Some(path.to_string_lossy().into_owned()),
+    })
+}
+
+fn recording_wallpaper(path: &Path) -> Option<BackgroundSource> {
+    let ids = &crate::editor_sidebar::WALLPAPER_NAMES;
+    let mut hash = DefaultHasher::new();
+    path.hash(&mut hash);
+    let start = hash.finish() as usize % ids.len();
+    ids.iter()
+        .cycle()
+        .skip(start)
+        .take(ids.len())
+        .find_map(|id| wallpaper_source(id))
+}
+
+pub(crate) fn apply_recording_background(
+    project: &mut ProjectConfiguration,
+    path: &Path,
+    preference: Option<&RecordingBackground>,
+) -> bool {
+    let background = &mut project.background;
+    if !matches!(
+        background.source,
+        BackgroundSource::Color {
+            value: [255, 255, 255],
+            alpha: 255
+        }
+    ) {
+        return false;
+    }
+    if matches!(preference, Some(RecordingBackground::None)) {
+        background.padding = 0.;
+        background.rounding = 0.;
+        return true;
+    }
+    let Some(source) = preference
+        .and_then(RecordingBackground::source)
+        .or_else(|| recording_wallpaper(path))
+    else {
+        return false;
+    };
+    background.source = source;
+    if background.padding == 0. {
+        background.padding = crate::editor_sidebar::DEFAULT_BACKGROUND_PADDING;
+    }
+    if background.rounding == 0. {
+        background.rounding = crate::editor_sidebar::DEFAULT_BACKGROUND_ROUNDING;
+    }
+    true
 }
 
 pub(crate) fn has_studio_camera(meta: &StudioRecordingMeta) -> bool {

@@ -1,3 +1,7 @@
+use std::{collections::HashSet, time::Duration};
+
+use futures_util::{StreamExt as _, stream};
+
 use crate::{
     i18n::tr,
     llm,
@@ -24,6 +28,8 @@ pub(crate) struct AgentsSettings {
     busy: Option<String>,
     notice: Option<String>,
     task: Option<gpui::Task<()>>,
+    auto_pending: HashSet<String>,
+    auto_task: Option<gpui::Task<()>>,
 }
 
 impl AgentsSettings {
@@ -41,7 +47,7 @@ impl AgentsSettings {
         let args = cx.new(|cx| ui::TextInputState::single_line(window, cx));
         args.update(cx, |input, cx| input.set_text("[]", cx));
         Self {
-            detected: local_agents::detect_all(),
+            detected: Vec::new(),
             name: cx.new(|cx| ui::TextInputState::single_line(window, cx)),
             command: cx.new(|cx| ui::TextInputState::single_line(window, cx)),
             args,
@@ -53,18 +59,81 @@ impl AgentsSettings {
             busy: None,
             notice: None,
             task: None,
+            auto_pending: HashSet::new(),
+            auto_task: None,
         }
     }
 }
 
 impl SettingsWindow {
+    pub(crate) fn detect_and_connect_agents(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = &mut self.pages.agents;
+        if state.auto_task.is_some() {
+            return;
+        }
+        state.detected = local_agents::detect_all();
+        let candidates = local_agents::automatically_connectable(&state.detected);
+        state.auto_pending = candidates.iter().map(|agent| agent.id.clone()).collect();
+        if candidates.is_empty() {
+            cx.notify();
+            return;
+        }
+        state.auto_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let Ok(task) = cx.update(|_, cx| {
+                gpui_tokio::Tokio::spawn(cx, async move {
+                    stream::iter(candidates)
+                        .map(|mut connection| async move {
+                            let models = tokio::time::timeout(Duration::from_secs(15), local_agents::probe(&connection)).await;
+                            let Ok(Ok(models)) = models else { return None };
+                            connection.update_models(models);
+                            let id = llm::agent_content_id(&connection.id, &connection.model);
+                            let has_model = !connection.model.is_empty();
+                            match local_agents::save_detected(connection) {
+                                Ok(true) if has_model => Some(id),
+                                Err(error) => {
+                                    tracing::warn!(%error, "Could not save a detected ACP assistant");
+                                    None
+                                }
+                                _ => None,
+                            }
+                        })
+                        .buffered(3)
+                        .filter_map(std::future::ready)
+                        .collect::<Vec<_>>()
+                        .await
+                })
+            }) else {
+                return;
+            };
+            let models = task.await.unwrap_or_default();
+            this.update_in(cx, |this, _, cx| {
+                this.pages.agents.auto_pending.clear();
+                this.pages.agents.auto_task = None;
+                if let Some(model) = models.first()
+                    && crate::ai_store::llm_default().is_none()
+                    && llm::default_provider().is_none()
+                {
+                    crate::ai_store::set_llm_default_if_empty(model);
+                }
+                cx.notify();
+            }).ok();
+        }));
+        cx.notify();
+    }
+
     fn connect_agent(
         &mut self,
         mut connection: AgentConnection,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pages.agents.busy.is_some() {
+        if self.pages.agents.busy.is_some()
+            || self.pages.agents.auto_pending.contains(&connection.id)
+        {
             return;
         }
         let prepare = connection.command.is_empty();
@@ -76,12 +145,8 @@ impl SettingsWindow {
                     if prepare {
                         connection = local_agents::prepare(&connection.id).await?;
                     }
-                    connection.models = local_agents::connect(&connection).await?;
-                    if !connection.model.is_empty()
-                        && !connection.models.iter().any(|m| m.id == connection.model)
-                    {
-                        connection.model.clear();
-                    }
+                    let models = local_agents::connect(&connection).await?;
+                    connection.update_models(models);
                     local_agents::save(connection)
                 })
             }) else {
@@ -136,8 +201,9 @@ impl SettingsWindow {
         } else {
             String::new()
         };
-        let busy = state.busy.is_some();
-        let is_connecting = state.busy.as_deref() == Some(id);
+        let auto_pending = state.auto_pending.contains(id);
+        let busy = state.busy.is_some() || auto_pending;
+        let is_connecting = state.busy.as_deref() == Some(id) || auto_pending;
         let picker_open = state.model_picker.as_deref() == Some(id);
         let mut actions = div().flex().items_center().gap(px(6.));
         if connected {
@@ -391,10 +457,10 @@ impl SettingsWindow {
                     )
                     .label(tr::settings::agents::detect())
                     .icon("icons/refresh-cw.svg")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.pages.agents.detected = local_agents::detect_all();
+                    .disabled(state.auto_task.is_some())
+                    .on_click(cx.listener(|this, _, window, cx| {
                         this.pages.agents.notice = None;
-                        cx.notify();
+                        this.detect_and_connect_agents(window, cx);
                     })),
                 )
                 .child(

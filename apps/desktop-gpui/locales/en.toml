@@ -1418,7 +1418,7 @@ mode_title = { text = "Change recording mode", context = "Hint title over the mo
 mode_body = "Instant gives you a link to share the moment you stop. Studio records in full quality for editing."
 
 [overlay.area]
-split_ratio = "Side by side · 5:4"
+split_ratio = "5:4 · Split"
 draw = "Draw an area"
 free_ratio = { text = "Free", context = "Aspect ratio button with no ratio locked; the button is about 56px wide." }
 hint = "Click and drag to select an area"
@@ -2517,6 +2517,7 @@ off = "Off"
 remove = "Remove Background"
 
 [editor.tabs.camera.shape]
+circle = "Circle"
 source = "Original ratio"
 square = "Square 1:1"
 

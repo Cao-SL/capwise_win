@@ -1412,7 +1412,7 @@ mode_title = "Changer de mode d'enregistrement"
 mode_body = "Instant vous donne un lien à partager dès que vous arrêtez. Studio enregistre en pleine qualité pour le montage."
 
 [overlay.area]
-split_ratio = "Côte à côte · 5:4"
+split_ratio = "5:4 · Partagé"
 draw = "Dessinez une zone"
 free_ratio = "Libre"
 hint = "Cliquez et faites glisser pour sélectionner une zone"
@@ -2494,6 +2494,7 @@ off = "Désactivé"
 remove = "Supprimer l'arrière-plan"
 
 [editor.tabs.camera.shape]
+circle = "Cercle"
 source = "Format d’origine"
 square = "Carré 1:1"
 

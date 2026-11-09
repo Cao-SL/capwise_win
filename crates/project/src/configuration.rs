@@ -3075,7 +3075,7 @@ impl CaptionSettings {
     }
 
     fn default_fade_duration() -> f32 {
-        0.15
+        0.03
     }
 
     fn default_linger_duration() -> f32 {
