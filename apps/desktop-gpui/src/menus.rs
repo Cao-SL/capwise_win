@@ -214,7 +214,7 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &ImportMedia, cx: &mut App| {
         crate::import::pick_and_import_media(cx);
     });
-    cx.on_action(|_: &Changelog, cx: &mut App| cx.open_url(&format!("{REPO_URL}/releases")));
+    cx.on_action(|_: &Changelog, cx: &mut App| cx.open_url(crate::installer::RELEASES_PAGE_URL));
     cx.on_action(|_: &HelpDocs, cx: &mut App| cx.open_url(&format!("{REPO_URL}#readme")));
     cx.on_action(|_: &HelpFeedback, cx: &mut App| cx.open_url(&format!("{REPO_URL}/issues/new")));
     cx.on_action(|_: &CloseWindow, cx: &mut App| close_key_window(cx));

@@ -6,7 +6,12 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, img, prelude::FluentBuilder as _, px,
 };
 
-use crate::{i18n::tr, settings_window::SettingsWindow, ui};
+use crate::{
+    i18n::tr,
+    settings_window::SettingsWindow,
+    ui,
+    updates::{self, UpdateStatus},
+};
 
 const REPO: &str = "https://github.com/joeseesun/capwise";
 const MONO_FONT: &str = "Menlo";
@@ -14,10 +19,17 @@ const MONO_FONT: &str = "Menlo";
 impl SettingsWindow {
     pub(crate) fn render_about(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         vec![
-            self.render_about_identity(cx).into_any_element(),
-            self.render_about_qr_cards().into_any_element(),
-            self.render_about_footer().into_any_element(),
-            self.render_about_advanced(cx).into_any_element(),
+            div()
+                .flex()
+                .flex_col()
+                .flex_shrink_0()
+                .gap(px(28.))
+                .child(self.render_about_identity(cx))
+                .child(self.render_update_download_policy(cx))
+                .child(self.render_about_qr_cards())
+                .child(self.render_about_footer())
+                .child(self.render_about_advanced(cx))
+                .into_any_element(),
         ]
     }
 
@@ -46,6 +58,14 @@ impl SettingsWindow {
 
     fn render_about_identity(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
+        let update_status = updates::status(cx);
+        let (update_label, update_ready) = Self::update_control_label(&update_status);
+        let update_busy = matches!(
+            update_status,
+            UpdateStatus::Checking
+                | UpdateStatus::Downloading { .. }
+                | UpdateStatus::Installing { .. }
+        );
         let link_button = |this: &Self,
                            id: &'static str,
                            icon: &'static str,
@@ -100,13 +120,13 @@ impl SettingsWindow {
                     .flex_wrap()
                     .justify_center()
                     .gap(px(8.))
-                    .child(link_button(
-                        self,
+                    .child(self.button(
                         "about-updates",
-                        "icons/refresh-cw.svg",
-                        tr::settings::about::check_updates(),
-                        format!("{REPO}/releases"),
+                        (ui::ButtonVariant::Gray, Some("icons/refresh-cw.svg")),
+                        update_label,
+                        update_busy,
                         cx,
+                        move |_, _, cx| Self::activate_update(update_ready, cx),
                     ))
                     .child(link_button(
                         self,
