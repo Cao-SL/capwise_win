@@ -113,6 +113,7 @@ const FORMATTED: &[&str] = &[
 #[test]
 fn editor_shell_surfaces_match_the_literals_they_replaced() {
     let pairs: &[(&str, &str)] = &[
+        (tr::editor::tabs::camera::shape::circle(), "Circle"),
         (
             tr::editor::tabs::captions::auto_draft::status_invalid(),
             "The automatic caption status could not be read. Existing captions were kept. Keep the current captions or generate them again.",

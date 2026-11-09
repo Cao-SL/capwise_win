@@ -240,17 +240,6 @@ missing_title = "Recommended Capwise windows are not excluded"
 restore = "Restore"
 title = "Excluded windows"
 
-[settings.general.updates]
-description = "Choose which Capwise builds you receive."
-nightly_description = "The newest builds, updated automatically in the background when you're not recording or exporting. May be unstable."
-nightly_switch_back = "Switching back to Stable will return you to the latest stable version, which may be older than your current build."
-stable_description = "Versioned releases (recommended)"
-title = "Updates"
-
-[settings.general.updates.channel]
-description = "Which release channel Capwise updates from."
-label = "Update channel"
-
 [settings.general.self_host]
 confirm_change = { text = "Are you sure you want to change the server URL to '{origin}'? You will need to sign in again.", context = "{origin} is a URL such as https://cap.example.com." }
 description = "Only change this if you are running your own instance of Capwise Web."
@@ -3277,7 +3266,6 @@ binary_missing = { text = "Bundled CLI binary not found at {path}", context = "{
 
 [settings.about]
 tagline = "Beautiful screen recordings that stay on your Mac."
-check_updates = "Check for updates"
 report_issue = "Report an issue"
 guide = "User guide"
 source = "Source code"
@@ -3920,7 +3908,6 @@ adjust_style = "Edit style"
 original_audio = "Original recording audio"
 no_microphone = "This recording has no microphone audio."
 voice_enhance = "Enhance voice"
-search_safe_hint = "Find and replace changes caption text only. Your video stays intact."
 edit_all_captions = "Edit all captions"
 caption_editor_hint = "Click any subtitle to edit it. Select text and right-click to delete it. Changes apply only to captions."
 delete_selected_text = "Delete selected text"

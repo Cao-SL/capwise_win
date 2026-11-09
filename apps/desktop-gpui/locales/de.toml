@@ -237,17 +237,6 @@ missing_title = "Empfohlene Capwise-Fenster sind nicht ausgeschlossen"
 restore = "Wiederherstellen"
 title = "Ausgeschlossene Fenster"
 
-[settings.general.updates]
-description = "Wählen Sie, welche Capwise-Builds Sie erhalten."
-nightly_description = "Die neuesten Builds, die im Hintergrund automatisch aktualisiert werden, wenn Sie gerade nicht aufnehmen oder exportieren. Möglicherweise instabil."
-nightly_switch_back = "Wenn Sie zu Stable zurückwechseln, erhalten Sie die neueste stabile Version, die älter sein kann als Ihr aktueller Build."
-stable_description = "Versionierte Releases (empfohlen)"
-title = "Updates"
-
-[settings.general.updates.channel]
-description = "Der Release-Kanal, über den Capwise aktualisiert wird."
-label = "Update-Kanal"
-
 [settings.general.self_host]
 confirm_change = "Möchten Sie die Server-URL wirklich in „{origin}“ ändern? Sie müssen sich danach erneut anmelden."
 description = "Ändern Sie dies nur, wenn Sie eine eigene Instanz von Capwise Web betreiben."
@@ -3524,7 +3513,6 @@ name = "Fertige Aufnahmen anzeigen"
 
 [settings.about]
 tagline = "Schöne Bildschirmaufnahmen, die auf deinem Mac bleiben."
-check_updates = "Nach Updates suchen"
 report_issue = "Problem melden"
 guide = "Benutzerhandbuch"
 source = "Quellcode"
@@ -3884,7 +3872,6 @@ adjust_style = "Stil bearbeiten"
 original_audio = "Originalton"
 no_microphone = "Diese Aufnahme enthält keinen Mikrofonton."
 voice_enhance = "Stimme verbessern"
-search_safe_hint = "Suchen und Ersetzen ändert nur Untertiteltexte. Das Video bleibt erhalten."
 edit_all_captions = "Alle Untertitel bearbeiten"
 caption_editor_hint = "Klicke zum Bearbeiten auf einen Untertitel. Markierten Text kannst du per Rechtsklick löschen. Nur die Untertitel ändern sich."
 delete_selected_text = "Markierten Text löschen"

@@ -237,17 +237,6 @@ missing_title = "सुझाई गई Capwise विंडो बाहर न
 restore = "वापस लाएँ"
 title = "बाहर रखी गई विंडो"
 
-[settings.general.updates]
-description = "चुनें कि आपको Capwise के कौन-से बिल्ड मिलें।"
-nightly_description = "सबसे नए बिल्ड, जो रिकॉर्डिंग या एक्सपोर्ट न करते समय बैकग्राउंड में अपने-आप अपडेट होते हैं। ये अस्थिर हो सकते हैं।"
-nightly_switch_back = "Stable पर वापस जाने से आपको नवीनतम स्थिर वर्ज़न मिलेगा, जो आपके मौजूदा बिल्ड से पुराना हो सकता है।"
-stable_description = "वर्ज़न वाली रिलीज़ (सुझाई गई)"
-title = "अपडेट"
-
-[settings.general.updates.channel]
-description = "वह रिलीज़ चैनल जिससे Capwise अपडेट होता है।"
-label = "अपडेट चैनल"
-
 [settings.general.self_host]
 confirm_change = "क्या आप वाकई सर्वर URL को '{origin}' में बदलना चाहते हैं? आपको फिर से साइन इन करना होगा।"
 description = "इसे तभी बदलें जब आप Capwise Web का अपना इंस्टेंस चला रहे हों।"
@@ -3524,7 +3513,6 @@ name = "पर हई रकरग दखए"
 
 [settings.about]
 tagline = "सदर सन रकरग, ज आपक Mac पर ह रहत ह।"
-check_updates = "अपडट जच"
 report_issue = "समस रपर कर"
 guide = "उपयगकर गइड"
 source = "सत कड"
@@ -3884,7 +3872,6 @@ adjust_style = "शैली संपादित करें"
 original_audio = "मूल रिकॉर्डिंग का ऑडियो"
 no_microphone = "इस रिकॉर्डिंग में माइक्रोफ़ोन ऑडियो नहीं है।"
 voice_enhance = "आवाज़ बेहतर करें"
-search_safe_hint = "खोजें और बदलें केवल उपशीर्षक का टेक्स्ट बदलता है, वीडियो नहीं काटता।"
 edit_all_captions = "सभी सबटाइटल संपादित करें"
 caption_editor_hint = "संपादन के लिए किसी भी सबटाइटल पर क्लिक करें। टेक्स्ट चुनकर उसे राइट-क्लिक से हटाएँ। सिर्फ़ सबटाइटल बदलेंगे।"
 delete_selected_text = "चुना गया टेक्स्ट हटाएँ"

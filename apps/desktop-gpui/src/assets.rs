@@ -396,6 +396,7 @@ mod tests {
         include_str!("library.rs"),
         include_str!("controls_window.rs"),
         include_str!("camera_window.rs"),
+        include_str!("editor_camera_framing.rs"),
         include_str!("target_overlay.rs"),
         include_str!("settings_window.rs"),
         include_str!("settings_pages.rs"),

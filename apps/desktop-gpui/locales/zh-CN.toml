@@ -238,17 +238,6 @@ missing_title = "部分推荐排除的灵录窗口尚未排除"
 restore = "恢复"
 title = "排除的窗口"
 
-[settings.general.updates]
-description = "选择你要接收的灵录版本。"
-nightly_description = "最新的构建版本，会在你未录制或导出时于后台自动更新。可能不稳定。"
-nightly_switch_back = "切换回 Stable 会回到最新的稳定版，它可能比你当前的版本更旧。"
-stable_description = "正式发布版本（推荐）"
-title = "更新"
-
-[settings.general.updates.channel]
-description = "灵录获取更新的发布渠道。"
-label = "更新渠道"
-
 [settings.general.self_host]
 confirm_change = "确定要将服务器 URL 更改为“{origin}”吗？你需要重新登录。"
 description = "仅当你运行自己的灵录 Web 实例时才需要更改此项。"
@@ -3275,7 +3264,6 @@ binary_missing = "未在 {path} 找到内置的 CLI 程序"
 
 [settings.about]
 tagline = "好看的录屏，只留在你的 Mac 上。"
-check_updates = "检查更新"
 report_issue = "反馈问题"
 guide = "使用说明"
 source = "源代码"
@@ -3918,7 +3906,6 @@ adjust_style = "编辑样式"
 original_audio = "原视频声音"
 no_microphone = "这段录制没有麦克风音频。"
 voice_enhance = "人声增强"
-search_safe_hint = "查找替换只修改字幕文字，不会剪切视频。"
 edit_all_captions = "编辑全部字幕"
 caption_editor_hint = "点击任意一行即可编辑。选中文字后右键可删除，只修改字幕。"
 delete_selected_text = "删除选中文字"

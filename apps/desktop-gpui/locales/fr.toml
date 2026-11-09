@@ -237,17 +237,6 @@ missing_title = "Des fenêtres Capwise recommandées ne sont pas exclues"
 restore = "Restaurer"
 title = "Fenêtres exclues"
 
-[settings.general.updates]
-description = "Choisissez les versions de Capwise que vous recevez."
-nightly_description = "Les versions les plus récentes, mises à jour automatiquement en arrière-plan lorsque vous n'enregistrez pas et n'exportez pas. Peuvent être instables."
-nightly_switch_back = "Revenir au canal Stable vous ramènera à la dernière version stable, qui peut être plus ancienne que votre version actuelle."
-stable_description = "Versions numérotées (recommandé)"
-title = "Mises à jour"
-
-[settings.general.updates.channel]
-description = "Le canal de publication à partir duquel Capwise se met à jour."
-label = "Canal de mise à jour"
-
 [settings.general.self_host]
 confirm_change = "Voulez-vous vraiment remplacer l'URL du serveur par « {origin} » ? Vous devrez vous reconnecter."
 description = "Ne modifiez ce réglage que si vous hébergez votre propre instance de Capwise Web."
@@ -3524,7 +3513,6 @@ name = "Afficher les enregistrements terminés"
 
 [settings.about]
 tagline = "De belles captures vidéo qui restent sur votre Mac."
-check_updates = "Rechercher des mises à jour"
 report_issue = "Signaler un problème"
 guide = "Guide d'utilisation"
 source = "Code source"
@@ -3884,7 +3872,6 @@ adjust_style = "Modifier le style"
 original_audio = "Audio de l’enregistrement"
 no_microphone = "Cet enregistrement ne contient pas de piste microphone."
 voice_enhance = "Améliorer la voix"
-search_safe_hint = "Rechercher et remplacer ne modifie que les sous-titres, sans couper la vidéo."
 edit_all_captions = "Modifier tous les sous-titres"
 caption_editor_hint = "Cliquez sur un sous-titre pour le modifier. Sélectionnez du texte et faites un clic droit pour le supprimer. Seuls les sous-titres sont modifiés."
 delete_selected_text = "Supprimer le texte sélectionné"
