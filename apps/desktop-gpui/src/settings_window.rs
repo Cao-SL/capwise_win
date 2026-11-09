@@ -3328,9 +3328,10 @@ impl SettingsWindow {
         sections.push(self.render_language(cx).into_any_element());
         sections.extend([self.render_recording(cx).into_any_element()]);
         if self.settings.show_advanced_settings {
+            sections.push(self.render_recording_advanced(cx).into_any_element());
+            #[cfg(target_os = "macos")]
+            sections.push(self.render_app_section(cx).into_any_element());
             sections.extend([
-                self.render_recording_advanced(cx).into_any_element(),
-                self.render_app_section(cx).into_any_element(),
                 self.render_workflow_presets(cx).into_any_element(),
                 self.render_project_name(window, cx).into_any_element(),
                 self.render_excluded_windows(cx).into_any_element(),
@@ -3717,6 +3718,9 @@ impl SettingsWindow {
     }
 
     /// The macOS-only App section: `hideDockIcon`, `enableNotifications`.
+    /// Windows has no Dock and no notification permission prompt, so the two
+    /// toggles would only write keys nothing reads.
+    #[cfg(target_os = "macos")]
     fn render_app_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         self.section(
             tr::settings::general::app::title(),
