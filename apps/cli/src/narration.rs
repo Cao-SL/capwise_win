@@ -77,9 +77,9 @@ impl NarrationArgs {
     }
 
     async fn apply(self) -> Result<Value> {
-        self.apply_with(&speech::app_store_path(), |settings, text, captions| async move {
-            let key = speech_key().ok_or_else(|| {
-                error("TTS_NOT_CONFIGURED", "Set a Doubao TTS API key in Capwise's AI Models settings or CAPWISE_DOUBAO_TTS_API_KEY")
+        self.apply_with(&speech::app_store_path(), |settings, text, captions, reuse_recognition| async move {
+            let key = speech_key(reuse_recognition).ok_or_else(|| {
+                error("TTS_NOT_CONFIGURED", "Set a Doubao Speech API key in Capwise AI Models or CAPWISE_DOUBAO_TTS_API_KEY")
             })?;
             speech::synthesize(&settings, &key, &text, captions)
                 .await
@@ -90,7 +90,7 @@ impl NarrationArgs {
 
     async fn apply_with<F, T>(self, store_path: &Path, synthesize: F) -> Result<Value>
     where
-        F: FnOnce(speech::Settings, String, bool) -> T,
+        F: FnOnce(speech::Settings, String, bool, bool) -> T,
         T: Future<Output = Result<speech::Audio>>,
     {
         let text = if let Some(path) = self.text_file {
@@ -190,7 +190,7 @@ impl NarrationArgs {
             .max()
             .map_or(Some(0), |track| track.checked_add(1))
             .ok_or_else(|| error("INVALID_PROJECT", "No audio lane is available"))?;
-        let settings = load_settings(store_path)?;
+        let (settings, reuse_recognition) = load_settings(store_path)?;
         let mut result = json!({
             "schemaVersion": 1, "operation": "project.narrate", "provider": "doubao",
             "model": settings.resource_id, "voice": settings.speaker,
@@ -202,7 +202,8 @@ impl NarrationArgs {
             return Ok(result);
         }
 
-        let audio = synthesize(settings, text.to_string(), self.captions).await?;
+        let audio =
+            synthesize(settings, text.to_string(), self.captions, reuse_recognition).await?;
         if self.captions {
             let recordings = recordings.expect("caption timing loads recording durations");
             let durations: Vec<_> = recordings
@@ -252,10 +253,12 @@ impl NarrationArgs {
     }
 }
 
-fn load_settings(store_path: &Path) -> Result<speech::Settings> {
+fn load_settings(store_path: &Path) -> Result<(speech::Settings, bool)> {
     let raw: Value = match fs::read(store_path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(io_error)?,
-        Err(cause) if cause.kind() == ErrorKind::NotFound => return Ok(speech::Settings::default()),
+        Err(cause) if cause.kind() == ErrorKind::NotFound => {
+            return Ok((speech::Settings::default(), false));
+        }
         Err(cause) => return Err(io_error(cause)),
     };
     let saved = &raw[speech::SETTINGS_SECTION][speech::SETTINGS_KEY];
@@ -272,7 +275,10 @@ fn load_settings(store_path: &Path) -> Result<speech::Settings> {
     settings
         .validate()
         .map_err(|message| error("TTS_NOT_CONFIGURED", message))?;
-    Ok(settings)
+    let reuse_recognition = raw[speech::SETTINGS_SECTION]
+        .as_object()
+        .is_some_and(speech::can_reuse_recognition_key);
+    Ok((settings, reuse_recognition))
 }
 
 fn add_captions(
@@ -359,21 +365,30 @@ fn add_captions(
     Ok(track.len())
 }
 
-fn speech_key() -> Option<String> {
+fn speech_key(reuse_recognition: bool) -> Option<String> {
     let env = std::env::var("CAPWISE_DOUBAO_TTS_API_KEY")
         .ok()
         .map(|key| key.trim().to_string())
         .filter(|key| !key.is_empty());
     #[cfg(target_os = "macos")]
     let env = env.or_else(|| {
-        security_framework::passwords::get_generic_password(
-            speech::KEYCHAIN_SERVICE,
-            speech::KEYCHAIN_ACCOUNT,
-        )
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .filter(|key| !key.is_empty())
+        let read = |service, account| {
+            security_framework::passwords::get_generic_password(service, account)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .filter(|key| !key.is_empty())
+        };
+        read(speech::KEYCHAIN_SERVICE, speech::KEYCHAIN_ACCOUNT).or_else(|| {
+            reuse_recognition
+                .then(|| {
+                    read(speech::KEYCHAIN_SERVICE, speech::RECOGNITION_ACCOUNT)
+                        .or_else(|| read(speech::LEGACY_RECOGNITION_SERVICE, "doubao"))
+                })
+                .flatten()
+        })
     });
+    #[cfg(not(target_os = "macos"))]
+    let _ = reuse_recognition;
     env
 }
 
@@ -437,7 +452,7 @@ mod tests {
         let store = directory.path().join("store");
         fs::write(
             &store,
-            br#"{"capwise_ai":{"doubaoTts":{"resourceId":"seed-tts-2.0","speaker":"test_voice"}}}"#,
+            br#"{"capwise_ai":{"asr":{"doubao":{"baseUrl":"https://openspeech.bytedance.com/api/v3"}},"doubaoTts":{"resourceId":"seed-tts-2.0","speaker":"test_voice"}}}"#,
         )
         .unwrap();
         let args = |dry_run, expected_revision| NarrationArgs {
@@ -450,7 +465,8 @@ mod tests {
             expected_revision,
             format: OutputFormat::Json,
         };
-        let skip = |_, _, _| async { panic!("preview and revision conflicts must skip synthesis") };
+        let skip =
+            |_, _, _, _| async { panic!("preview and revision conflicts must skip synthesis") };
         let preview = args(true, None)
             .apply_with(&store, skip)
             .await
@@ -465,12 +481,16 @@ mod tests {
         assert_eq!(fs::read_dir(project.join("content")).unwrap().count(), 0);
 
         let applied = args(false, Some(revision(&original)))
-            .apply_with(&store, |settings, text, captions| async move {
-                assert_eq!(settings.speaker, "test_voice");
-                assert_eq!(text, "你好");
-                assert!(!captions);
-                Ok(synthetic_audio())
-            })
+            .apply_with(
+                &store,
+                |settings, text, captions, reuse_recognition| async move {
+                    assert_eq!(settings.speaker, "test_voice");
+                    assert_eq!(text, "你好");
+                    assert!(!captions);
+                    assert!(reuse_recognition);
+                    Ok(synthetic_audio())
+                },
+            )
             .await
             .ok()
             .unwrap();

@@ -2001,6 +2001,9 @@ impl SettingsWindow {
                 if let Some((tab, _, _)) = tabs.get(*index) {
                     this.pages.ai.tab = *tab;
                     this.reset_ai_tab(window, cx);
+                    if *tab == AiTab::Narration {
+                        this.check_speech_credential(window, cx);
+                    }
                 }
             }))
     }

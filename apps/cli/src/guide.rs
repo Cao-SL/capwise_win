@@ -425,7 +425,7 @@ fn build() -> Guide {
             },
             CommandDoc {
                 notes: Some(
-                    "Configure Doubao in Capwise AI Models > Speech Synthesis. On macOS the CLI reads the saved model, voice and Keychain credential. CAPWISE_DOUBAO_TTS_API_KEY is available for headless use. Use --text or --text-file and --start in edited output seconds. Use --captions for timed Chinese or English subtitles in a project without existing captions. --dry-run never contacts Doubao. Applying with --expected-revision sends the supplied text to Doubao and adds the returned audio to the project. Close the project in the editor before applying.",
+                    "Configure Doubao in Capwise AI Models > Speech Synthesis. On macOS the CLI reads the saved model, voice and Keychain credential. A dedicated synthesis key takes priority over the saved key for the official Doubao recognition endpoint. CAPWISE_DOUBAO_TTS_API_KEY is available for headless use and takes priority when set. Use --text or --text-file and --start in edited output seconds. Use --captions for timed Chinese or English subtitles in a project without existing captions. --dry-run never contacts Doubao. Applying with --expected-revision sends the supplied text to Doubao and adds the returned audio to the project. Close the project in the editor before applying.",
                 ),
                 ..cmd(
                     "project narrate",

@@ -13,7 +13,7 @@ use crate::{i18n::tr, store};
 const SECTION: &str = "capwise_ai";
 const LLM_DEFAULT: &str = "llmDefault";
 const KEYCHAIN_SERVICE: &str = cap_utils::speech::KEYCHAIN_SERVICE;
-const LEGACY_KEYCHAIN_SERVICE: &str = "com.capwise.app.asr";
+const LEGACY_KEYCHAIN_SERVICE: &str = cap_utils::speech::LEGACY_RECOGNITION_SERVICE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {

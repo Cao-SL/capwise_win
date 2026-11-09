@@ -8,11 +8,25 @@ pub const SETTINGS_SECTION: &str = "capwise_ai";
 pub const SETTINGS_KEY: &str = "doubaoTts";
 pub const KEYCHAIN_SERVICE: &str = "com.capwise.app.ai";
 pub const KEYCHAIN_ACCOUNT: &str = "tts.doubao";
+pub const RECOGNITION_ACCOUNT: &str = "asr.doubao";
+pub const LEGACY_RECOGNITION_SERVICE: &str = "com.capwise.app.asr";
+pub const RECOGNITION_ENDPOINT: &str = "https://openspeech.bytedance.com/api/v3";
+pub const API_KEY_URL: &str =
+    "https://console.volcengine.com/speech/new/setting/apikeys?projectName=default";
 pub const MODEL: &str = "seed-tts-2.0";
 pub const VOICE: &str = "zh_female_vv_uranus_bigtts";
 pub const ENDPOINT: &str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional";
 const SAMPLE_RATE: u32 = 24_000;
 const MAX_PCM_BYTES: usize = SAMPLE_RATE as usize * 2 * 600;
+
+pub fn can_reuse_recognition_key(section: &serde_json::Map<String, serde_json::Value>) -> bool {
+    section
+        .get("asr")
+        .and_then(|providers| providers.get("doubao"))
+        .and_then(|provider| provider.get("baseUrl"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|address| address.trim().trim_end_matches('/') == RECOGNITION_ENDPOINT)
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -312,5 +326,23 @@ mod tests {
         assert!(append_chunk(br#"{"code":45000000}"#, &mut Vec::new(), &mut Vec::new()).is_err());
         assert!(pcm_to_wav(vec![1, 0, 2]).is_err());
         assert!(pcm_to_wav(vec![0, 0]).is_err());
+    }
+
+    #[test]
+    fn only_official_doubao_recognition_settings_allow_key_reuse() {
+        for (address, expected) in [
+            (RECOGNITION_ENDPOINT, true),
+            ("https://openspeech.bytedance.com/api/v3/", true),
+            ("http://openspeech.bytedance.com/api/v3", false),
+            ("https://openspeech.bytedance.com.example.com/api/v3", false),
+            ("https://custom.example.com/api/v3", false),
+        ] {
+            let section = json!({"asr":{"doubao":{"baseUrl":address}}});
+            assert_eq!(
+                can_reuse_recognition_key(section.as_object().unwrap()),
+                expected
+            );
+        }
+        assert!(!can_reuse_recognition_key(&serde_json::Map::new()));
     }
 }
