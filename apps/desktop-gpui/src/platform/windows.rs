@@ -17,6 +17,7 @@ use super::{ForcedAppearance, MaterialKind, PanelBehavior};
 
 mod capture_exclusion;
 mod hidden_frame;
+mod power_events;
 mod session_end;
 mod url_scheme;
 
@@ -75,6 +76,16 @@ pub fn install_session_end_handler(
     on_session_end: fn(),
 ) -> std::io::Result<()> {
     session_end::install(native.hwnd(), on_session_end)
+}
+
+/// `WM_POWERBROADCAST` on the main window: `true` before suspend, `false`
+/// after resume. gpui's Windows platform does not forward it, so a recording
+/// would otherwise die inside sleep.
+pub fn install_power_event_handler(
+    native: &NativeWindow,
+    on_power_event: fn(bool),
+) -> std::io::Result<()> {
+    power_events::install(native.hwnd(), on_power_event)
 }
 
 #[link(name = "dwmapi")]

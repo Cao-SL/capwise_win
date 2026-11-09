@@ -21,8 +21,21 @@ pub fn install(cx: &mut App) {
     let _ = cx;
 }
 
+/// `WM_POWERBROADCAST` lands on a plain fn pointer installed by
+/// `platform::install_power_event_handler`; it forwards here so the recording
+/// can be paused before the machine suspends.
+#[cfg(target_os = "windows")]
+pub fn on_windows_power_event(suspending: bool) {
+    windows::on_power_event(suspending);
+}
+
 #[cfg(target_os = "windows")]
 mod windows {
+    use std::{
+        sync::OnceLock,
+        time::{Duration, Instant},
+    };
+
     use gpui::{App, AppContext as _, Global};
 
     use super::holds_off_idle_sleep;
@@ -36,6 +49,15 @@ mod windows {
     const ES_CONTINUOUS: u32 = 0x8000_0000;
     const ES_SYSTEM_REQUIRED: u32 = 0x0000_0001;
     const ES_DISPLAY_REQUIRED: u32 = 0x0000_0002;
+    const SLEEP_PAUSE_TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[derive(Clone, Copy, Debug)]
+    enum PowerEvent {
+        WillSleep,
+        DidWake,
+    }
+
+    static EVENTS: OnceLock<flume::Sender<PowerEvent>> = OnceLock::new();
 
     /// ES_CONTINUOUS keeps the state until the next call, so a recording of a
     /// still screen does not idle the machine out from under WGC. ES_DISPLAY_
@@ -74,6 +96,17 @@ mod windows {
         }
     }
 
+    pub(super) fn on_power_event(suspending: bool) {
+        let event = if suspending {
+            PowerEvent::WillSleep
+        } else {
+            PowerEvent::DidWake
+        };
+        if let Some(events) = EVENTS.get() {
+            let _ = events.send(event);
+        }
+    }
+
     pub(super) fn install(cx: &mut App) {
         let session = RecordingSession::global(cx);
         cx.set_global(IdleSleepHold(false));
@@ -82,6 +115,56 @@ mod windows {
             cx.global_mut::<IdleSleepHold>().hold(wanted);
         })
         .detach();
+
+        let (events, received) = flume::unbounded();
+        if EVENTS.set(events).is_err() {
+            return;
+        }
+        cx.spawn(async move |cx| {
+            while let Ok(event) = received.recv_async().await {
+                cx.update(|cx| handle(event, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn handle(event: PowerEvent, cx: &mut App) {
+        let session = RecordingSession::global(cx);
+        match event {
+            PowerEvent::WillSleep => {
+                tracing::info!("system going to sleep");
+                let started = Instant::now();
+                cx.spawn(async move |cx| {
+                    let mut dispatched = false;
+                    while started.elapsed() < SLEEP_PAUSE_TIMEOUT {
+                        let settling = cx.update(|cx| session.read(cx).sleep_should_wait());
+                        if !settling {
+                            let acted = cx.update(|cx| {
+                                session.update(cx, |session, cx| session.prepare_for_sleep(cx))
+                            });
+                            if !acted {
+                                break;
+                            }
+                            dispatched = true;
+                        }
+                        cx.background_executor()
+                            .timer(Duration::from_millis(25))
+                            .await;
+                    }
+                    tracing::info!(
+                        dispatched,
+                        paused = cx.update(|cx| session.read(cx).is_paused()),
+                        waited_ms = started.elapsed().as_millis() as u64,
+                        "recording ready for sleep"
+                    );
+                })
+                .detach();
+            }
+            PowerEvent::DidWake => {
+                tracing::info!("system woke from sleep");
+                session.update(cx, |session, cx| session.woke_from_sleep(cx));
+            }
+        }
     }
 
     #[cfg(test)]
