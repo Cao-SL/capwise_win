@@ -731,6 +731,11 @@ fn main() {
             {
                 tracing::warn!(%error, "could not install the Windows session end handler");
             }
+            if let Err(error) =
+                platform::install_power_event_handler(&native, crate::power::on_windows_power_event)
+            {
+                tracing::warn!(%error, "could not install the Windows power event handler");
+            }
         })
         .detach();
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
