@@ -65,6 +65,15 @@ impl EditorWindow {
                     ),
                 )
             })
+            .when(has_captions && !enabled, |column| {
+                column.child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(Hsla::from(self.theme.editor.text_2))
+                        .whitespace_normal()
+                        .child(tr::editor::workbench::captions_hidden()),
+                )
+            })
             .child(
                 ui::SegmentedControl::editor(
                     &self.theme,

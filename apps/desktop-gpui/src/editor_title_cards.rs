@@ -11,8 +11,8 @@ use cap_project::{
     TitleCardRole, TitleCardTemplate, XY,
 };
 use gpui::{
-    AnyElement, AsyncWindowContext, Context, Hsla, IntoElement, ParentElement, Styled, Window, div,
-    prelude::FluentBuilder, px,
+    AnyElement, AsyncWindowContext, Context, Hsla, IntoElement, ParentElement, SharedString,
+    Styled, Window, div, prelude::FluentBuilder, px,
 };
 
 use crate::{
@@ -25,6 +25,20 @@ use crate::{
     i18n::tr,
     ui,
 };
+
+const TITLE_CARD_HOLD_PRESETS: [f64; 4] = [1., 2., 3., 5.];
+
+fn same_hold(a: f64, b: f64) -> bool {
+    (a - b).abs() < 0.005
+}
+
+fn hold_label(seconds: f64) -> String {
+    format!(
+        "{} {}",
+        ui::format_number((seconds * 100.).round() / 100.),
+        tr::editor::title_cards::seconds()
+    )
+}
 
 #[derive(Default)]
 pub(crate) struct TitleCardUi {
@@ -667,9 +681,7 @@ impl EditorWindow {
                 );
                 return;
             };
-            self.update_title_card(index, window, cx, move |segment| {
-                segment.end = segment.start + duration;
-            });
+            self.set_title_card_hold(index, duration, window, cx);
             return;
         }
         self.update_title_card(index, window, cx, move |segment| {
@@ -681,6 +693,18 @@ impl EditorWindow {
                 FieldKey::TitleCardKicker(_) => card.kicker = text,
                 _ => {}
             }
+        });
+    }
+
+    pub(crate) fn set_title_card_hold(
+        &mut self,
+        index: usize,
+        seconds: f64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.update_title_card(index, window, cx, move |segment| {
+            segment.end = segment.start + seconds;
         });
     }
 
@@ -882,6 +906,51 @@ impl EditorWindow {
             .into_any_element()
     }
 
+    fn render_title_card_hold(
+        &self,
+        index: usize,
+        current: f64,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = self.theme;
+        let chip = |id: SharedString, seconds: f64, pressed: bool| {
+            ui::EditorButton::plain(&theme, id)
+                .choice(&theme)
+                .grow()
+                .height(px(32.))
+                .text_size(px(12.))
+                .label(hold_label(seconds))
+                .pressed(pressed)
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(6.))
+                    .children(TITLE_CARD_HOLD_PRESETS.iter().map(|&seconds| {
+                        chip(
+                            SharedString::from(format!("title-card-hold-{seconds}")),
+                            seconds,
+                            same_hold(seconds, current),
+                        )
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.set_title_card_hold(index, seconds, window, cx)
+                            },
+                        ))
+                    })),
+            )
+            .child(self.render_number_field(
+                FieldKey::TitleCardDuration(index),
+                tr::editor::title_cards::seconds(),
+                64.,
+            ))
+            .into_any_element()
+    }
+
     pub(crate) fn render_title_card_panel(
         &self,
         index: usize,
@@ -1050,13 +1119,8 @@ impl EditorWindow {
                 ),
             )
             .child(
-                ui::Field::inline(&theme, tr::editor::title_cards::duration()).child(
-                    self.render_number_field(
-                        FieldKey::TitleCardDuration(index),
-                        tr::editor::title_cards::seconds(),
-                        64.,
-                    ),
-                ),
+                ui::Field::stacked(&theme, tr::editor::title_cards::duration())
+                    .child(self.render_title_card_hold(index, segment.end - segment.start, cx)),
             )
             .children(self.sidebar.title_cards.error.as_ref().map(|error| {
                 div()
@@ -1210,6 +1274,15 @@ impl EditorWindow {
 mod tests {
     use super::*;
     use crate::editor_edits::ProjectHistory;
+
+    #[test]
+    fn hold_chips_read_without_trailing_zeros() {
+        assert_eq!(hold_label(2.), "2 sec");
+        assert_eq!(hold_label(1.5), "1.5 sec");
+        assert_eq!(hold_label(1.234_999), "1.23 sec");
+        assert!(same_hold(3., 3.000_000_1));
+        assert!(!same_hold(3., 3.5));
+    }
 
     fn fixture() -> ProjectConfiguration {
         serde_json::from_value(serde_json::json!({

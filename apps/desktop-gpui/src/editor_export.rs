@@ -305,6 +305,7 @@ pub struct ExportUi {
     /// another upload that would fail the same way.
     auth_rejected: bool,
     sign_in_subscriptions: Option<[gpui::Subscription; 2]>,
+    _keyboard_nav: Option<gpui::Subscription>,
     pub organization_id: Option<String>,
     pub share_link: Option<String>,
     pub reuploading: bool,
@@ -339,6 +340,32 @@ impl ExportUi {
 
     fn accepts_result(&self, attempt: &Arc<AtomicBool>) -> bool {
         self.matches_attempt(attempt) && !self.close_requested && !attempt.load(Ordering::Acquire)
+    }
+
+    fn resolve_save_location(
+        &mut self,
+        attempt: &Arc<AtomicBool>,
+        choice: Result<Option<PathBuf>, String>,
+    ) -> Option<PathBuf> {
+        if !self.matches_attempt(attempt) {
+            return None;
+        }
+        if !self.accepts_result(attempt) {
+            self.phase = ExportPhase::Idle;
+            return None;
+        }
+        match choice {
+            Ok(Some(path)) => Some(path),
+            Ok(None) => {
+                self.phase = ExportPhase::Idle;
+                None
+            }
+            Err(error) => {
+                self.phase = ExportPhase::Failed;
+                self.error = Some(tr::editor::export::save_dialog_failed(error));
+                None
+            }
+        }
     }
 
     fn begin_upload(&mut self, attempt: &Arc<AtomicBool>, path: PathBuf) -> bool {
@@ -435,6 +462,7 @@ impl ExportUi {
             export_task: None,
             auth_rejected: false,
             sign_in_subscriptions: None,
+            _keyboard_nav: None,
             organization_id: prefs.organization_id,
             share_link: None,
             reuploading: false,
@@ -727,6 +755,11 @@ impl EditorWindow {
             ui.destination = ExportDestination::File;
         }
         self.normalize_export_fps(&mut ui);
+        ui._keyboard_nav = Some(ui::keyboard_nav::install(window, cx, |this: &Self, _| {
+            this.export
+                .as_ref()
+                .is_none_or(|export| export.phase == ExportPhase::ChoosingFile)
+        }));
         self.export = Some(ui);
         self.subscribe_export_to_sign_in(window, cx);
         self.refresh_export_preview(window, cx);
@@ -1231,52 +1264,58 @@ impl EditorWindow {
                     "mp4"
                 };
                 let default = export_file_name(&pretty_name, ext);
-                let chosen: Result<Option<PathBuf>, String> = match std::env::var_os("CAP_GPUI_AUTO_EXPORT") {
-                    Some(path) => Ok(Some(PathBuf::from(path))),
-                    None => {
-                        #[cfg(target_os = "macos")]
-                        {
-                            platform::try_save_file_panel(&default, &[ext])
+                let chosen: Result<Option<PathBuf>, String> =
+                    match std::env::var_os("CAP_GPUI_AUTO_EXPORT") {
+                        Some(path) => Ok(Some(PathBuf::from(path))),
+                        None => {
+                            #[cfg(target_os = "macos")]
+                            {
+                                platform::try_save_file_panel(&default, &[ext])
+                            }
+                            #[cfg(not(target_os = "macos"))]
+                            {
+                                Ok(platform::save_file_panel_async(&default, &[ext], cx).await)
+                            }
                         }
-                        #[cfg(not(target_os = "macos"))]
-                        {
-                            Ok(platform::save_file_panel_async(&default, &[ext], cx).await)
-                        }
-                    }
-                };
-                if matches!(chosen, Ok(None)) {
-                    let _ = this.update(cx, |this, cx| {
-                        if let Some(ui) = this.export.as_mut()
-                            && Arc::ptr_eq(&ui.cancel, &cancel)
-                        {
-                            ui.phase = ExportPhase::Idle;
-                        }
+                    };
+                let chosen = this
+                    .update(cx, |this, cx| {
+                        let path = this
+                            .export
+                            .as_mut()
+                            .and_then(|ui| ui.resolve_save_location(&cancel, chosen));
                         cx.notify();
-                    });
+                        path
+                    })
+                    .ok()
+                    .flatten();
+                let Some(path) = chosen else {
                     let _ = this.update_in(cx, |this, window, cx| {
                         this.finish_requested_export_close(window, cx)
                     });
                     return;
-                }
-                match chosen {
-                    Ok(path) => path,
-                    Err(error) => {
-                        tracing::warn!(error, "Save dialog unavailable; keeping the export in its project output folder");
-                        None
-                    }
-                }
+                };
+                Some(path)
             } else {
                 None
             };
 
-            let output = save_path.clone().unwrap_or_else(|| project_path.join("output"));
-            let resources = ExportResources::new_with_messages(vec![DiskBudget {
-                path: output,
-                description: tr::editor::export::resource_detail::export_drive(),
-                estimated_bytes: estimate,
-            }], tr::editor::export::resource_detail::system_drive(), format_export_resource_message);
+            let output = save_path
+                .clone()
+                .unwrap_or_else(|| project_path.join("output"));
+            let resources = ExportResources::new_with_messages(
+                vec![DiskBudget {
+                    path: output,
+                    description: tr::editor::export::resource_detail::export_drive(),
+                    estimated_bytes: estimate,
+                }],
+                tr::editor::export::resource_detail::system_drive(),
+                format_export_resource_message,
+            );
             if !confirm_export_resources(&this, cx, &resources, &cancel).await {
-                let _ = this.update_in(cx, |this, window, cx| this.finish_requested_export_close(window, cx));
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.finish_requested_export_close(window, cx)
+                });
                 return;
             }
 
@@ -1284,7 +1323,9 @@ impl EditorWindow {
                 let Some(ui) = this.export.as_mut() else {
                     return false;
                 };
-                if !Arc::ptr_eq(&ui.cancel, &cancel) { return false; }
+                if !Arc::ptr_eq(&ui.cancel, &cancel) {
+                    return false;
+                }
                 if cancel.load(Ordering::Relaxed) || ui.close_requested {
                     ui.phase = ExportPhase::Idle;
                     cx.notify();
@@ -1312,23 +1353,28 @@ impl EditorWindow {
             let export_cancel = cancel.clone();
             let export = gpui_tokio::Tokio::spawn(cx, async move {
                 let stopped = export_cancel.clone();
-                resources.supervise(run_export(
-                    project_path,
-                    project,
-                    format,
-                    cursor_only,
-                    fps,
-                    width,
-                    height,
-                    compression,
-                    custom_bpp,
-                    optimize,
-                    turbo,
-                    force,
-                    save_path.clone(),
-                    progress_tx,
-                    export_cancel,
-                ), || stopped.store(true, Ordering::Release)).await
+                resources
+                    .supervise(
+                        run_export(
+                            project_path,
+                            project,
+                            format,
+                            cursor_only,
+                            fps,
+                            width,
+                            height,
+                            compression,
+                            custom_bpp,
+                            optimize,
+                            turbo,
+                            force,
+                            save_path.clone(),
+                            progress_tx,
+                            export_cancel,
+                        ),
+                        || stopped.store(true, Ordering::Release),
+                    )
+                    .await
             });
 
             loop {
@@ -1341,7 +1387,9 @@ impl EditorWindow {
                         if let Some(ui) = this.export.as_mut()
                             && ui.matches_attempt(&cancel)
                         {
-                            if !ui.accepts_result(&cancel) { return; }
+                            if !ui.accepts_result(&cancel) {
+                                return;
+                            }
                             ui.rendered = rendered;
                             ui.total_frames = total;
                             ui.phase = ExportPhase::Rendering;
@@ -1363,12 +1411,12 @@ impl EditorWindow {
                     if destination == ExportDestination::Clipboard {
                         let _ = this.update(cx, |this, cx| {
                             if let Some(ui) = this.export.as_mut()
-                            && ui.matches_attempt(&cancel)
-                        {
+                                && ui.matches_attempt(&cancel)
+                            {
                                 ui.copy_completed_export(path, |path| {
-                                    let result = platform::copy_file_to_clipboard(path, cx);
+                                    platform::copy_file_to_clipboard(path, cx)?;
                                     crate::app_sounds::play_notification();
-                                    result
+                                    Ok(())
                                 });
                             }
                             cx.notify();
@@ -1376,10 +1424,12 @@ impl EditorWindow {
                     } else {
                         let _ = this.update(cx, |this, cx| {
                             if let Some(ui) = this.export.as_mut()
-                            && ui.matches_attempt(&cancel)
-                        {
+                                && ui.matches_attempt(&cancel)
+                            {
                                 ui.complete_file_export(path, || {
-                                    if notify_file_save { crate::app_sounds::play_notification(); }
+                                    if notify_file_save {
+                                        crate::app_sounds::play_notification();
+                                    }
                                 });
                             }
                             cx.notify();
@@ -1388,7 +1438,8 @@ impl EditorWindow {
                 }
                 Ok(Err(error)) => {
                     tracing::error!(error, "editor export failed");
-                    let cancelled = !is_resource_stop(&error) && (error == "Export cancelled" || cancel.load(Ordering::Relaxed));
+                    let cancelled = !is_resource_stop(&error)
+                        && (error == "Export cancelled" || cancel.load(Ordering::Relaxed));
                     let _ = this.update(cx, |this, cx| {
                         if let Some(ui) = this.export.as_mut()
                             && ui.matches_attempt(&cancel)
@@ -1431,9 +1482,9 @@ impl EditorWindow {
         };
         ui.cancel = Arc::new(AtomicBool::new(false));
         ui.copy_completed_export(path, |path| {
-            let result = platform::copy_file_to_clipboard(path, cx);
+            platform::copy_file_to_clipboard(path, cx)?;
             crate::app_sounds::play_notification();
-            result
+            Ok(())
         });
         cx.notify();
         self.finish_requested_export_close(window, cx);
@@ -1894,36 +1945,17 @@ impl EditorWindow {
             .child(
                 div().flex_1().flex().flex_row().items_center().child(
                     div()
-                        .id("export-back")
                         .when(cfg!(target_os = "windows"), |button| button.occlude())
                         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(6.))
-                        .h(px(28.))
-                        .pl(px(8.))
-                        .pr(px(10.))
-                        .rounded(px(8.))
-                        .cursor_pointer()
-                        .text_size(px(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(Hsla::from(editor.text_2))
-                        .hover(move |style| {
-                            style
-                                .bg(Hsla::from(editor.ctl))
-                                .text_color(Hsla::from(editor.text_1))
-                        })
                         .child(
-                            svg()
-                                .path("icons/move-left.svg")
-                                .size(px(14.))
-                                .text_color(Hsla::from(editor.text_2)),
-                        )
-                        .child(tr::editor::export::back())
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.close_export(window, cx);
-                        })),
+                            ui::EditorButton::plain(&theme, "export-back")
+                                .left_icon("icons/move-left.svg")
+                                .label(tr::editor::export::back())
+                                .disabled(ui.phase.is_busy())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.close_export(window, cx);
+                                })),
+                        ),
                 ),
             )
             .child(
@@ -1970,7 +2002,19 @@ impl EditorWindow {
                     .flex_1()
                     .min_h_0()
                     .child(self.render_export_preview_pane(ui, preview_box))
-                    .child(self.render_export_sidebar(ui, cx))
+                    .map(|this| {
+                        if ui.phase == ExportPhase::Idle {
+                            this.child(self.render_export_sidebar(ui, cx))
+                        } else {
+                            this.child(
+                                div()
+                                    .w(px(SIDEBAR_WIDTH))
+                                    .flex_shrink_0()
+                                    .h_full()
+                                    .bg(Hsla::from(editor.card)),
+                            )
+                        }
+                    })
                     .when(ui.phase.shows_progress(), |this| {
                         this.child(self.render_export_overlay(ui, cx))
                     })
@@ -1978,7 +2022,8 @@ impl EditorWindow {
                         this.child(div().absolute().inset_0().occlude())
                     }),
             )
-            .when(ui.bpp_dragging, |this| {
+            .child(ui::keyboard_nav::pointer_watcher())
+            .when(ui.bpp_dragging && ui.phase == ExportPhase::Idle, |this| {
                 this.child(ui::Slider::drag_layer(
                     "export-bpp-drag",
                     cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
@@ -2224,7 +2269,6 @@ impl EditorWindow {
 
     fn export_cta(&self, ui: &ExportUi, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
-        let editor = theme.editor;
         let signed_in = !ui.auth_rejected && store::auth_snapshot().signed_in();
         let sign_in_pending = SignIn::global(cx).read(cx).is_pending();
         let (label, icon, primary) = match ui.destination {
@@ -2256,53 +2300,22 @@ impl EditorWindow {
                 true,
             ),
         };
-        let busy = ui.phase.is_busy();
-        let (bg, hover_bg, text) = if primary {
-            (
-                Hsla::from(editor.accent),
-                Hsla::from(editor.accent_2),
-                gpui::white(),
-            )
+        let mut button = ui::EditorButton::plain(&theme, "export-cta")
+            .label(label)
+            .height(px(40.))
+            .radius(px(10.))
+            .grow()
+            .disabled(ui.phase.is_busy())
+            .on_click(cx.listener(|this, _, window, cx| this.start_export(window, cx)));
+        if primary {
+            button = button.filled(&theme);
         } else {
-            (
-                Hsla::from(editor.ctl),
-                Hsla::from(editor.ctl_hover),
-                Hsla::from(editor.text_1),
-            )
-        };
-
-        div()
-            .id("export-cta")
-            .tab_index(0)
-            .w_full()
-            .h(px(40.))
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_center()
-            .gap(px(8.))
-            .rounded(px(10.))
-            .bg(bg)
-            .text_size(px(13.))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(text)
-            .when(primary, |this| {
-                this.shadow(vec![gpui::BoxShadow {
-                    color: gpui::hsla(0., 0., 1., 0.18),
-                    offset: gpui::point(px(0.), px(1.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(0.),
-                    inset: true,
-                }])
-            })
-            .when(busy, |this| this.opacity(0.5))
-            .when(!busy, |this| {
-                this.cursor_pointer()
-                    .hover(move |style| style.bg(hover_bg))
-                    .on_click(cx.listener(|this, _, window, cx| this.start_export(window, cx)))
-            })
-            .children(icon.map(|icon| svg().path(icon).size(px(16.)).text_color(text)))
-            .child(label)
+            button = button.tinted(&theme);
+        }
+        if let Some(icon) = icon {
+            button = button.left_icon(icon);
+        }
+        div().w_full().flex().child(button)
     }
 
     fn export_section(&self, name: &'static str, icon: &'static str) -> ui::Field {
@@ -3061,7 +3074,11 @@ impl EditorWindow {
                     .text_center()
                     .text_size(px(12.))
                     .text_color(Hsla::from(theme.editor.text_2))
-                    .child(tr::editor::export::captions::current_note()),
+                    .child(if active {
+                        tr::editor::export::captions::current_note()
+                    } else {
+                        tr::editor::export::captions::current_note_idle()
+                    }),
             )
             .child(
                 ui::Button::plain(
@@ -3164,17 +3181,41 @@ impl EditorWindow {
             .bg(wash)
             .text_color(Hsla::from(editor.text_1))
             .child({
-                let ring = ui::CircularProgress::new(
-                    px(80.),
-                    px(6.),
-                    Hsla::from(editor.ctl_active),
-                    Hsla::from(editor.accent),
-                )
-                .label(Hsla::from(editor.text_1), px(14.));
-                if let Some(fraction) = fraction {
-                    ring.progress(fraction)
-                } else {
-                    ring.indeterminate()
+                match ui.phase {
+                    ExportPhase::Done | ExportPhase::Failed => div()
+                        .size(px(80.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            svg()
+                                .path(if ui.phase == ExportPhase::Done {
+                                    "icons/check.svg"
+                                } else {
+                                    "icons/triangle-alert.svg"
+                                })
+                                .size(px(48.))
+                                .text_color(Hsla::from(if ui.phase == ExportPhase::Done {
+                                    editor.text_1
+                                } else {
+                                    theme.red_9
+                                })),
+                        )
+                        .into_any_element(),
+                    _ => {
+                        let ring = ui::CircularProgress::new(
+                            px(80.),
+                            px(6.),
+                            Hsla::from(editor.ctl_active),
+                            Hsla::from(editor.accent),
+                        )
+                        .label(Hsla::from(editor.text_1), px(14.));
+                        if let Some(fraction) = fraction {
+                            ring.progress(fraction).into_any_element()
+                        } else {
+                            ring.indeterminate().into_any_element()
+                        }
+                    }
                 }
             })
             .child(
@@ -3285,7 +3326,31 @@ impl EditorWindow {
             .when(
                 ui.phase == ExportPhase::Done || ui.phase == ExportPhase::Failed,
                 |this| {
-                    this.when(ui.clipboard_retry_path().is_some(), |this| {
+                    this.when(
+                        ui.phase == ExportPhase::Failed && ui.clipboard_retry_path().is_none(),
+                        |this| {
+                            this.child(
+                                ui::Button::plain(
+                                    &theme,
+                                    "export-review-settings",
+                                    ui::ButtonVariant::Primary,
+                                    ui::ButtonSize::Md,
+                                )
+                                .label(tr::editor::export::review_settings())
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
+                                        if let Some(ui) = this.export.as_mut() {
+                                            ui.phase = ExportPhase::Idle;
+                                            ui.error = None;
+                                        }
+                                        this.refresh_export_preview(window, cx);
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                        },
+                    )
+                    .when(ui.clipboard_retry_path().is_some(), |this| {
                         this.child(
                             ui::Button::plain(
                                 &theme,
@@ -3308,7 +3373,23 @@ impl EditorWindow {
                             || ui.clipboard_retry_path().is_some(),
                         |this| {
                             let path = ui.output_path.clone();
+                            let reveal_path = path.clone();
                             this.child(
+                                ui::Button::plain(
+                                    &theme,
+                                    "export-show-file",
+                                    ui::ButtonVariant::Primary,
+                                    ui::ButtonSize::Md,
+                                )
+                                .icon("icons/folder.svg")
+                                .label(tr::editor::export::done::show_in_folder())
+                                .on_click(move |_, _, cx| {
+                                    if let Some(path) = &reveal_path {
+                                        library::reveal_path(path, cx);
+                                    }
+                                }),
+                            )
+                            .child(
                                 ui::Button::plain(
                                     &theme,
                                     "export-open-file",
@@ -3939,6 +4020,72 @@ mod tests {
         assert!(!ui.begin_upload(&previous, PathBuf::from("old.mp4")));
         assert!(!ui.matches_attempt(&previous));
         assert!(ui.output_path.is_none());
+    }
+
+    #[test]
+    fn failed_or_cancelled_save_dialog_never_falls_back_to_a_project_export() {
+        for failed in [false, true] {
+            let mut ui = clipboard_export();
+            ui.destination = ExportDestination::File;
+            ui.phase = ExportPhase::ChoosingFile;
+            let attempt = ui.cancel.clone();
+            let choice = if failed {
+                Err("Save panel unavailable".into())
+            } else {
+                Ok(None)
+            };
+            assert!(ui.resolve_save_location(&attempt, choice).is_none());
+            assert!(ui.output_path.is_none());
+            assert_eq!(
+                ui.phase,
+                if failed {
+                    ExportPhase::Failed
+                } else {
+                    ExportPhase::Idle
+                }
+            );
+            assert_eq!(ui.error.is_some(), failed);
+        }
+    }
+
+    #[test]
+    fn late_save_dialog_cannot_start_a_closed_cancelled_or_replaced_export() {
+        for closing in [false, true] {
+            let mut ui = clipboard_export();
+            ui.phase = ExportPhase::ChoosingFile;
+            ui.close_requested = closing;
+            ui.cancel.store(!closing, Ordering::Release);
+            let attempt = ui.cancel.clone();
+            assert!(
+                ui.resolve_save_location(&attempt, Ok(Some("chosen.mp4".into())))
+                    .is_none()
+            );
+            assert_eq!(ui.phase, ExportPhase::Idle);
+        }
+        let mut ui = clipboard_export();
+        let previous = ui.cancel.clone();
+        ui.cancel = Arc::new(AtomicBool::new(false));
+        ui.phase = ExportPhase::Rendering;
+        assert!(
+            ui.resolve_save_location(&previous, Err("Old dialog failed".into()))
+                .is_none()
+        );
+        assert_eq!(ui.phase, ExportPhase::Rendering);
+        assert!(ui.error.is_none());
+    }
+
+    #[test]
+    fn save_dialog_keeps_the_explicit_destination() {
+        let mut ui = clipboard_export();
+        ui.phase = ExportPhase::ChoosingFile;
+        let attempt = ui.cancel.clone();
+        let chosen = PathBuf::from("Exports/final.mp4");
+        assert_eq!(
+            ui.resolve_save_location(&attempt, Ok(Some(chosen.clone()))),
+            Some(chosen)
+        );
+        assert_eq!(ui.phase, ExportPhase::ChoosingFile);
+        assert!(ui.error.is_none());
     }
 
     #[test]

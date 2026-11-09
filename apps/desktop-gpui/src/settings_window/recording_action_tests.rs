@@ -154,3 +154,82 @@ fn held_recording_action_follows_the_same_recording_after_reordering(cx: &mut Te
         Some("https://cap.test/second")
     );
 }
+
+struct WorkflowStore {
+    _directory: tempfile::TempDir,
+}
+
+impl WorkflowStore {
+    fn new() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        crate::store::set_test_tauri_store_path(Some(directory.path().join("store")));
+        Self {
+            _directory: directory,
+        }
+    }
+}
+
+impl Drop for WorkflowStore {
+    fn drop(&mut self) {
+        crate::store::set_test_tauri_store_path(None);
+    }
+}
+
+#[gpui::test]
+fn workflow_deletion_requires_confirmation_and_cancel_preserves_preset(cx: &mut TestAppContext) {
+    let _store = WorkflowStore::new();
+    let mut catalog = crate::workflow_presets::WorkflowPresets::default();
+    catalog.duplicate_selected("Tutorial".into());
+    assert!(catalog.save());
+    let before = serde_json::to_value(&catalog).unwrap();
+    let (settings, mut visual) = open_two_recordings(cx);
+    visual.update(|window, cx| {
+        settings.update(cx, |settings, cx| {
+            settings.confirm_delete_workflow(window, cx);
+        });
+    });
+    assert!(visual.has_pending_prompt());
+    assert_eq!(
+        serde_json::to_value(crate::workflow_presets::WorkflowPresets::load()).unwrap(),
+        before
+    );
+    visual.simulate_prompt_answer(tr::common::cancel());
+    visual.run_until_parked();
+    assert_eq!(
+        serde_json::to_value(crate::workflow_presets::WorkflowPresets::load()).unwrap(),
+        before
+    );
+    visual.update(|window, cx| {
+        settings.update(cx, |settings, cx| {
+            settings.confirm_delete_workflow(window, cx);
+        });
+    });
+    visual.simulate_prompt_answer(tr::settings::workflow::delete());
+    visual.run_until_parked();
+    let after = crate::workflow_presets::WorkflowPresets::load();
+    assert_eq!(after.presets.len(), 1);
+    assert_eq!(after.selected_id, crate::workflow_presets::QIAOMU_ID);
+}
+
+#[gpui::test]
+fn workflow_confirmation_never_deletes_a_newly_selected_preset(cx: &mut TestAppContext) {
+    let _store = WorkflowStore::new();
+    let mut catalog = crate::workflow_presets::WorkflowPresets::default();
+    catalog.duplicate_selected("Tutorial".into());
+    assert!(catalog.save());
+    let (settings, mut visual) = open_two_recordings(cx);
+    visual.update(|window, cx| {
+        settings.update(cx, |settings, cx| {
+            settings.confirm_delete_workflow(window, cx);
+        });
+    });
+    catalog.duplicate_selected("Presentation".into());
+    assert!(catalog.save());
+    let before = serde_json::to_value(&catalog).unwrap();
+    visual.simulate_prompt_answer(tr::settings::workflow::delete());
+    visual.run_until_parked();
+    assert_eq!(
+        serde_json::to_value(crate::workflow_presets::WorkflowPresets::load()).unwrap(),
+        before
+    );
+}

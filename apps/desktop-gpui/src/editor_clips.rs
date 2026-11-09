@@ -4102,19 +4102,19 @@ mod tests {
     fn reused_video_focus_lands_on_new_media_before_active_or_disabled_outro() {
         use cap_project::{TextSegment, TimelineFrameMapping, TitleCardRole};
 
-        for (body_duration, intro, outro) in [
-            (10.0, false, None),
-            (10.0, false, Some(true)),
-            (10.0, true, Some(true)),
-            (10.0, true, Some(false)),
-            (13.44, true, Some(true)),
+        for (body_duration, intro_duration, outro) in [
+            (10.0, None, None),
+            (10.0, None, Some(true)),
+            (10.0, Some(1.0), Some(true)),
+            (10.0, Some(2.0), Some(false)),
+            (13.44, Some(1.234), Some(true)),
         ] {
             let mut project = ProjectConfiguration::default();
             edits::ensure_timeline(&mut project, &[body_duration]);
-            if intro {
-                project
-                    .upsert_title_card(TextSegment::new_title_card(TitleCardRole::Intro, "Intro"))
-                    .unwrap();
+            if let Some(duration) = intro_duration {
+                let mut card = TextSegment::new_title_card(TitleCardRole::Intro, "Intro");
+                card.end = duration;
+                project.upsert_title_card(card).unwrap();
             }
             if let Some(enabled) = outro {
                 let mut card = TextSegment::new_title_card(TitleCardRole::Outro, "Outro");
@@ -4132,7 +4132,7 @@ mod tests {
             crate::editor_title_cards::normalize_edit(&mut project, &previous, false).unwrap();
             let timeline = project.timeline.as_ref().unwrap();
             let time = appended_video_start(timeline, appended_index).unwrap();
-            let expected = body_duration + if intro { 2.0 } else { 0.0 };
+            let expected = body_duration + intro_duration.unwrap_or(0.);
             assert!(time >= expected && time < expected + 1.0 / 60.0);
             let Some(TimelineFrameMapping::Single { source, .. }) =
                 timeline.get_frame_mapping(time)

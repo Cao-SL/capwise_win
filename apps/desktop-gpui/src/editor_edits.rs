@@ -1216,13 +1216,69 @@ pub fn overlay_front_layer(timeline: &TimelineConfiguration, start: f64, end: f6
         .unwrap_or(0)
 }
 
+pub fn overlay_insertion_time(timeline: &TimelineConfiguration, kind: TrackKind, time: f64) -> f64 {
+    if !matches!(kind, TrackKind::Image | TrackKind::Shape | TrackKind::Mask)
+        || !timeline.text_segments.iter().any(|segment| {
+            segment.enabled
+                && segment.title_card.is_some()
+                && time >= segment.start
+                && time < segment.end
+        })
+    {
+        return time;
+    }
+    timeline
+        .text_segments
+        .iter()
+        .filter(|segment| {
+            segment.enabled
+                && segment
+                    .title_card
+                    .as_ref()
+                    .is_some_and(|card| card.role == cap_project::TitleCardRole::Intro)
+        })
+        .map(|segment| segment.end)
+        .max_by(f64::total_cmp)
+        .unwrap_or(0.)
+}
+
+pub fn overlay_blocked_spans(timeline: &TimelineConfiguration, kind: TrackKind) -> Vec<LaneSpan> {
+    timeline
+        .text_segments
+        .iter()
+        .filter(|segment| {
+            matches!(kind, TrackKind::Image | TrackKind::Shape | TrackKind::Mask)
+                && segment.enabled
+                && segment.title_card.is_some()
+        })
+        .map(|segment| LaneSpan {
+            start: segment.start,
+            end: segment.end,
+        })
+        .collect()
+}
+
 pub fn place_overlay_at_time(
     timeline: &TimelineConfiguration,
+    kind: TrackKind,
     time: f64,
     length: f64,
     total: f64,
 ) -> Option<(u32, f64, f64)> {
-    let (start, end) = place_segment_at_time(&[] as &[TextSegment], time, length, total)?;
+    let time = overlay_insertion_time(timeline, kind, time);
+    let blocked = overlay_blocked_spans(timeline, kind);
+    let gap_start = blocked
+        .iter()
+        .filter(|span| span.end <= time)
+        .map(|span| span.end)
+        .fold(0., f64::max);
+    let gap_end = blocked
+        .iter()
+        .filter(|span| span.start > time)
+        .map(|span| span.start)
+        .fold(total, f64::min);
+    let length = length.min(gap_end - gap_start);
+    let (start, end) = place_segment_at_time(&blocked, time, length, total)?;
     Some((overlay_front_layer(timeline, start, end), start, end))
 }
 
@@ -6153,6 +6209,49 @@ mod style_image_tests {
                 LaneSpan { start: 4., end: 5. }
             ]
         );
+    }
+
+    #[test]
+    fn non_text_overlays_insert_on_footage_when_playhead_is_on_a_title_card() {
+        let mut project = layered_project();
+        let timeline = project.timeline.as_mut().unwrap();
+        let mut intro = TextSegment::new_title_card(cap_project::TitleCardRole::Intro, "Intro");
+        intro.start = 0.;
+        intro.end = 1.25;
+        let mut outro = TextSegment::new_title_card(cap_project::TitleCardRole::Outro, "Outro");
+        outro.start = 11.25;
+        outro.end = 13.25;
+        timeline.text_segments = vec![intro, outro];
+        for kind in [TrackKind::Image, TrackKind::Shape, TrackKind::Mask] {
+            for time in [0., 0.5, 1.249, 11.25, 12., 13.249] {
+                assert_eq!(overlay_insertion_time(timeline, kind, time), 1.25);
+            }
+            for time in [1.25, 5., 11.249, 13.25] {
+                assert_eq!(overlay_insertion_time(timeline, kind, time), time);
+            }
+        }
+        for kind in [TrackKind::Shape, TrackKind::Mask] {
+            for time in [0., 0.5, 1.25, 12.] {
+                let (_, start, end) =
+                    place_overlay_at_time(timeline, kind, time, 3., 13.25).unwrap();
+                assert_eq!((start, end), (1.25, 4.25));
+            }
+            let (_, start, end) = place_overlay_at_time(timeline, kind, 0., 20., 13.25).unwrap();
+            assert_eq!((start, end), (1.25, 11.25));
+        }
+        let (_, start, _) =
+            place_overlay_at_time(timeline, TrackKind::Text, 0., 1., 13.25).unwrap();
+        assert_eq!(start, 0.);
+        for kind in [TrackKind::Text, TrackKind::Audio, TrackKind::Style] {
+            for time in [0., 0.5, 12.] {
+                assert_eq!(overlay_insertion_time(timeline, kind, time), time);
+            }
+        }
+        timeline.text_segments[0].enabled = false;
+        assert_eq!(overlay_insertion_time(timeline, TrackKind::Image, 0.5), 0.5);
+        assert_eq!(overlay_insertion_time(timeline, TrackKind::Image, 12.), 0.);
+        timeline.text_segments[1].enabled = false;
+        assert_eq!(overlay_insertion_time(timeline, TrackKind::Image, 12.), 12.);
     }
 
     #[test]

@@ -647,8 +647,19 @@ pub(crate) fn image_placement(
     if !time.is_finite() || !total.is_finite() || total <= 0.0 {
         return None;
     }
-    let start = time.max(0.0);
-    let end = start + 3.0;
+    let start = crate::editor_edits::overlay_insertion_time(
+        timeline,
+        crate::editor_timeline::TrackKind::Image,
+        time.max(0.0),
+    );
+    let end = crate::editor_edits::overlay_blocked_spans(
+        timeline,
+        crate::editor_timeline::TrackKind::Image,
+    )
+    .iter()
+    .filter(|span| span.start > start)
+    .map(|span| span.start)
+    .fold(start + 3.0, f64::min);
     if !end.is_finite() || end <= start {
         return None;
     }
@@ -659,6 +670,26 @@ pub(crate) fn image_placement(
         requested_lane
     };
     Some((lane, start, end))
+}
+
+pub(crate) fn image_reveal_time(segment: &cap_project::ImageSegment) -> f64 {
+    let animation_in = if segment.animation_in == cap_project::ImageMotion::None {
+        0.
+    } else {
+        segment.animation_in_duration
+    };
+    let animation_out = if segment.animation_out == cap_project::ImageMotion::None {
+        0.
+    } else {
+        segment.animation_out_duration
+    };
+    crate::editor_shapes::reveal_time(
+        segment.start,
+        segment.start,
+        segment.end,
+        animation_in,
+        animation_out,
+    )
 }
 
 pub(crate) fn recording_index(project: &Path, relative: &str) -> Option<u32> {
@@ -750,6 +781,46 @@ mod tests {
             assert_eq!(record.kind, kind);
             assert_eq!(serde_json::to_value(record).unwrap()["kind"], value);
         }
+    }
+
+    #[test]
+    fn image_and_sticker_insertion_reveals_content_after_the_title_card_and_entrance() {
+        let mut timeline: cap_project::TimelineConfiguration =
+            serde_json::from_value(serde_json::json!({ "segments": [], "zoomSegments": [] }))
+                .unwrap();
+        let mut intro =
+            cap_project::TextSegment::new_title_card(cap_project::TitleCardRole::Intro, "Intro");
+        intro.end = 1.234;
+        timeline.text_segments.push(intro);
+        let (lane, start, end) = image_placement(&timeline, 0, 0., 12.).unwrap();
+        assert_eq!(start, 1.234);
+        assert_eq!(end, 4.234);
+        let mut image = cap_project::ImageSegment {
+            start,
+            end,
+            track: lane,
+            ..Default::default()
+        };
+        let preview = image_reveal_time(&image);
+        let fps = f64::from(crate::editor_window::EDITOR_PREVIEW_FPS);
+        assert!((preview * fps).round() / fps >= start);
+        image.animation_in = cap_project::ImageMotion::Pop;
+        assert!(image_reveal_time(&image) >= start + image.animation_in_duration);
+        image.end = start + 0.1;
+        let preview = image_reveal_time(&image);
+        assert!(preview > start && preview < image.end);
+        let mut outro =
+            cap_project::TextSegment::new_title_card(cap_project::TitleCardRole::Outro, "Outro");
+        outro.start = 1.434;
+        outro.end = 3.434;
+        timeline.text_segments.push(outro);
+        let (_, start, end) = image_placement(&timeline, 0, 2., 3.434).unwrap();
+        assert_eq!(start, 1.234);
+        assert_eq!(end, 1.434);
+        image.start = start;
+        image.end = end;
+        let preview = image_reveal_time(&image);
+        assert!(preview > start && preview < end);
     }
 
     #[test]

@@ -1000,7 +1000,7 @@ impl EditorWindow {
     fn shape_placement(&self, time: f64, length: f64) -> Option<(u32, f64, f64)> {
         let total = self.total_duration();
         let timeline = self.project.timeline.as_ref()?;
-        edits::place_overlay_at_time(timeline, time, length, total)
+        edits::place_overlay_at_time(timeline, TrackKind::Shape, time, length, total)
     }
 
     fn insert_shapes(

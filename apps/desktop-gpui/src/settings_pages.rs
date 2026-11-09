@@ -909,7 +909,12 @@ impl SettingsWindow {
     }
 
     /// `commands.globalMessageDialog(..)`.
-    fn info_dialog(&mut self, message: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn info_dialog(
+        &mut self,
+        message: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let answer = window.prompt(
             gpui::PromptLevel::Info,
             message,

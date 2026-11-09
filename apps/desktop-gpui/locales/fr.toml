@@ -280,6 +280,7 @@ sign_out = "Se déconnecter"
 signed_in = "Connecté"
 
 [settings.recordings]
+delete_failed = "Impossible de terminer la suppression du projet. Ouvrez son dossier, vérifiez les fichiers et réessayez. Détails : {error}"
 corrupted_body = "L'enregistrement a échoué, ce fichier risque de poser problème dans l'éditeur ! Si vous n'arrivez pas à récupérer le fichier, contactez le support !"
 corrupted_title = "L'enregistrement est peut-être corrompu"
 delete = "Supprimer"
@@ -305,6 +306,8 @@ studio = "Aucun enregistrement Studio"
 studio_matching = "Aucun enregistrement Studio correspondant"
 
 [settings.screenshots]
+save_failed = "Impossible d’enregistrer la capture. Choisissez un autre dossier et réessayez. Détails : {error}"
+delete_failed = "Impossible de terminer la suppression de la capture. Ouvrez son dossier, vérifiez les fichiers et réessayez. Détails : {error}"
 copy = "Copier dans le presse-papiers"
 delete = "Supprimer"
 description = "Gérez vos captures d'écran et effectuez des actions."
@@ -2052,6 +2055,7 @@ title = "Voici Capwise"
 typewriter = "en train d'écrire…"
 
 [editor.panel.text_segment]
+default_content = "Saisir du texte"
 basic = "Base"
 alignment = "Alignement"
 more_typography = "Typographie avancée"
@@ -2292,6 +2296,8 @@ unfinished_target = "Terminez ou récupérez cet enregistrement avant d'importer
 unsupported_video = "Fichier vidéo non pris en charge : {path}"
 
 [editor.export]
+review_settings = "Vérifier les réglages et réessayer"
+save_dialog_failed = "Impossible de choisir l’emplacement : {error}. Réessayez ou exportez vers le presse-papiers."
 back = "Retour à l'éditeur"
 existing_link_description = "Une nouvelle mise en ligne remplace la vidéo de ce lien par votre dernière modification. Toutes les personnes disposant du lien verront la version mise à jour."
 existing_link_title = "Mettre à jour votre lien existant"
@@ -2339,6 +2345,7 @@ file = "Fichier"
 link = "Lien de partage"
 
 [editor.export.done]
+show_in_folder = "Afficher dans le dossier"
 copy_link = "Copier le lien"
 link_copied = "Lien copié"
 open_file = "Ouvrir le fichier"
@@ -2489,8 +2496,6 @@ done = "Terminé"
 apply = "Appliquer"
 
 [editor.tabs.captions]
-regenerate = "Régénérer les sous-titres"
-undo_style = "Annuler"
 outline_color = "Couleur du contour"
 shadow_color = "Couleur de l’ombre"
 edit_style = "Modifier le style des sous-titres"
@@ -2748,8 +2753,6 @@ paused = "En pause"
 title = "Timeline"
 
 [editor.timeline.empty]
-add_audio = "Ajouter de l'audio"
-audio = "Ajoutez une musique de fond ou importez votre propre audio"
 record_audio = "Cliquer pour enregistrer"
 add_scene = "Ajouter une scène"
 captions = "Aucun sous-titre"
@@ -2821,7 +2824,6 @@ video = "Vidéo"
 zoom = "Zoom"
 
 [editor.transcript]
-title = "Transcription"
 back_to_captions = "Retour aux sous-titres"
 cleanup = "Nettoyer"
 cleanup_tooltip = "Supprimer les mots de remplissage et raccourcir les pauses"
@@ -2892,7 +2894,6 @@ save_failed = "Impossible d'enregistrer {path}. Gardez l'éditeur ouvert et rée
 undo = "Annuler"
 
 [editor.window.add_track]
-button = "Ajouter"
 hide_3d = "Masquer la piste 3D."
 more = "Plus"
 
@@ -2981,8 +2982,6 @@ window_title_placeholder = "Titre de la fenêtre"
 windows_description = "Barre de titre avec boutons de fenêtre"
 
 [editor.window.header]
-transcript = "Transcription"
-transcript_tooltip = "Modifier via la transcription"
 delete_recording = "Supprimer l'enregistrement"
 export = "Exporter"
 open_bundle = "Ouvrir le dossier de l'enregistrement"
@@ -3221,6 +3220,9 @@ label = "Générer les sous-titres après l'enregistrement"
 description = "Prépare les sous-titres des nouveaux enregistrements avec un modèle local téléchargé. Aucun modèle n'est téléchargé et aucun audio n'est envoyé automatiquement."
 
 [editor.tabs.captions.auto_draft]
+snapshot_unloaded = "Une copie des sous-titres existe, mais aucun sous-titre n’est chargé dans ce projet. Générez-les à nouveau ou exportez avec les sous-titres actuels."
+status_unreadable = "Impossible d’accéder à l’état des sous-titres. Vérifiez les permissions du dossier du projet ou exportez avec les sous-titres actuels."
+status_invalid = "Impossible de lire l’état des sous-titres automatiques. Les sous-titres existants ont été conservés. Gardez-les ou générez-les à nouveau."
 queued = "Préparation d'un brouillon de sous-titres local…"
 needs_model = "Les sous-titres automatiques nécessitent un modèle local. Sélectionnez Qwen, Whisper Small ou Medium ci-dessous, téléchargez-le, puis relancez les sous-titres locaux."
 running = "Génération locale des sous-titres avec {model}. Vous pouvez continuer à modifier le projet."
@@ -3265,6 +3267,8 @@ progress = "{completed} sous-titres traduits sur {total}"
 review = "Réviser les traductions · {translated}/{total}"
 
 [settings.workflow]
+delete_description = "Ce préréglage sera supprimé définitivement. Les enregistrements existants resteront inchangés."
+delete_title = "Supprimer « {name} » ?"
 title = "Préréglages après enregistrement"
 description = "S'applique uniquement aux nouveaux enregistrements. Modifiez un préréglage ou dupliquez-le pour créer le vôtre. Les étapes d'IA nécessitent des modèles prêts à l'emploi. Votre choix de désactiver l'amélioration de la voix ou l'embellissement de la caméra reste prioritaire."
 enabled = "Appliquer un préréglage après l'enregistrement"
@@ -3428,8 +3432,6 @@ unreadable = "Impossible de lire ce modèle : {error}. Vous pouvez le supprimer 
 unreadable_name = "Modèle illisible"
 
 [editor.voiceover]
-audition_original = "Écouter l’enregistrement original"
-retry_save = "Réessayer la sauvegarde dans le projet"
 input_level = "Niveau d’entrée"
 level_low = "Parlez pour vérifier le niveau. S’il reste faible, rapprochez-vous du micro ou augmentez le volume d’entrée."
 level_good = "Bon niveau. Gardez une distance constante."
@@ -3618,6 +3620,7 @@ no_microphone = "Cet enregistrement n'a pas de piste de microphone. La réductio
 microphone_muted = "Le microphone est coupé. Ce clip conserve son volume actuel jusqu'à la réactivation du son du microphone."
 
 [editor.export.captions]
+current_note_idle = "Exporte les sous-titres actuellement enregistrés. Le traitement inachevé ne sera pas inclus dans cette vidéo."
 waiting = "Préparation des sous-titres avant exportation"
 needs_attention = "Les sous-titres nécessitent votre attention"
 recognizing = "Transcription de la parole…"
@@ -3756,7 +3759,6 @@ tokendance = "Tokendance"
 zhipu = "Zhipu GLM"
 
 [settings.cover]
-models_link = "Modèles d’image officiels"
 title = "Images de couverture IA (facultatif)"
 description = "Générez des fonds avec votre fournisseur d’images configuré. Les titres restent modifiables sur ce Mac. Configurez une clé dédiée aux images ; les clés texte et voix ne sont jamais reprises automatiquement. Enregistrer ne génère aucune image."
 not_configured = "Non configuré"
@@ -3828,6 +3830,7 @@ settings = "Ouvrir les réglages"
 choose_microphone = "Choisir le microphone"
 
 [editor.workbench]
+captions_hidden = "Les sous-titres sont masqués dans l’aperçu et à l’exportation."
 content = "Contenu"
 translation = "Traduction"
 previous = "Précédent"
@@ -3862,8 +3865,6 @@ description = "Dossier par défaut des vidéos, sous-titres et couvertures. Modi
 default_location = "Utiliser le dernier emplacement du système"
 
 [editor.assistant]
-suggest_audio = "Ajuster le volume"
-suggest_edit = "Suggérer un montage"
 no_changes = "Aucun contenu correspondant à modifier. Le projet reste inchangé."
 favorites = "Favoris"
 custom_model = "Modèle personnalisé : {model}"
@@ -3914,7 +3915,6 @@ visible = "Afficher"
 hidden = "Masquer"
 
 [settings.agents]
-default_model = "Agent default"
 title = "Local AI agents (ACP)"
 description = "Connect an installed agent using its existing login. Suggestions are reviewed in the editor before applying."
 save_failed = "Could not save the agent."

@@ -7169,13 +7169,13 @@ impl EditorWindow {
         let Some(timeline) = self.project.timeline.as_ref() else {
             return;
         };
+        let time = edits::overlay_insertion_time(timeline, kind, time);
+        let mut occupied = edits::overlay_lane_spans(timeline, lane);
+        occupied.extend(edits::overlay_blocked_spans(timeline, kind));
         let placement = match kind {
-            TrackKind::Text | TrackKind::Mask | TrackKind::Shape => edits::find_placement(
-                &edits::overlay_lane_spans(timeline, lane),
-                time,
-                length,
-                total,
-            ),
+            TrackKind::Text | TrackKind::Mask | TrackKind::Shape => {
+                edits::find_placement(&occupied, time, length, total)
+            }
             TrackKind::Scene => timeline::new_scene_segment(&self.timeline, time),
             _ => None,
         };
@@ -7198,10 +7198,11 @@ impl EditorWindow {
         let inserted = self.edit(
             |timeline| {
                 index = match kind {
-                    TrackKind::Text => edits::insert_text_segment(
-                        timeline,
-                        crate::style_presets::new_text_segment(start, end, lane),
-                    ),
+                    TrackKind::Text => {
+                        let mut segment = crate::style_presets::new_text_segment(start, end, lane);
+                        segment.content = tr::editor::panel::text_segment::default_content().into();
+                        edits::insert_text_segment(timeline, segment)
+                    }
                     TrackKind::Shape => match new_shape {
                         Some(shape) => edits::insert_shape_segment(timeline, shape),
                         None => return false,
@@ -7234,6 +7235,9 @@ impl EditorWindow {
         let target = match reveal {
             Some((animation_in, animation_out)) => {
                 crate::editor_shapes::reveal_time(time, start, end, animation_in, animation_out)
+            }
+            None if kind == TrackKind::Mask => {
+                crate::editor_shapes::reveal_time(time, start, end, 0., 0.)
             }
             None => time.clamp(start, end),
         };
@@ -9007,11 +9011,12 @@ impl EditorWindow {
         let secs_per_pixel = self.secs_per_pixel(viewport_width);
         let total = self.total_duration();
         let length = (1.0_f64).max(secs_per_pixel * 80.).min(total);
-        let time = self.playhead.max(0.0);
+        let time = edits::overlay_insertion_time(timeline, kind, self.playhead.max(0.0));
         if !kind.is_overlay() {
             return;
         }
-        let Some((lane, start, end)) = edits::place_overlay_at_time(timeline, time, length, total)
+        let Some((lane, start, end)) =
+            edits::place_overlay_at_time(timeline, kind, time, length, total)
         else {
             return;
         };
@@ -9029,10 +9034,11 @@ impl EditorWindow {
                         Some(shape) => edits::insert_shape_segment(timeline, shape),
                         None => return false,
                     },
-                    TrackKind::Text => edits::insert_text_segment(
-                        timeline,
-                        crate::style_presets::new_text_segment(start, end, lane),
-                    ),
+                    TrackKind::Text => {
+                        let mut segment = crate::style_presets::new_text_segment(start, end, lane);
+                        segment.content = tr::editor::panel::text_segment::default_content().into();
+                        edits::insert_text_segment(timeline, segment)
+                    }
                     TrackKind::Mask => edits::insert_mask_segment(
                         timeline,
                         crate::style_presets::new_mask_segment(start, end, lane),
@@ -9374,7 +9380,13 @@ impl EditorWindow {
         ) {
             self.sidebar.image_import_error = None;
             self.set_selection(Some(Selection::single(TrackKind::Image, index)), cx);
-            self.seek_to_time(start, cx);
+            let preview_time = self
+                .project
+                .timeline
+                .as_ref()
+                .and_then(|timeline| timeline.image_segments.get(index))
+                .map_or(start, crate::asset_library::image_reveal_time);
+            self.seek_to_time(preview_time, cx);
             self.remember_project_asset(record, cx);
         }
     }
