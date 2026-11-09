@@ -18,6 +18,25 @@ if (!/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(config.umamiWebsiteId)) {
 	);
 }
 const sourceHtml = await readFile(`${root}index.html`, "utf8");
+const headingText = [
+	...sourceHtml.matchAll(/<h[12][^>]*>([\s\S]*?)<\/h[12]>/g),
+	...sourceHtml.matchAll(
+		/<div class="flow-request">[\s\S]*?<p>([\s\S]*?)<\/p>/g,
+	),
+]
+	.map((match) => match[1].replace(/<[^>]+>/g, ""))
+	.join("");
+const subsetChars = new Set(
+	await readFile(`${root}public/fonts/noto-serif-sc-900.txt`, "utf8"),
+);
+const missingGlyphs = [
+	...new Set([...headingText].filter((char) => !/\s/.test(char))),
+].filter((char) => !subsetChars.has(char));
+if (missingGlyphs.length) {
+	throw new Error(
+		`Heading font subset is missing ${missingGlyphs.join("")}; run scripts/subset-fonts.py.`,
+	);
+}
 const assetHash = createHash("sha256").update(sourceHtml);
 for (const path of (
 	await readdir(`${root}public`, { recursive: true })

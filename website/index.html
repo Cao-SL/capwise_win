@@ -3,11 +3,11 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="theme-color" content="#f7f7f8" />
+		<meta name="theme-color" content="#f6f5f1" />
 		<title>灵录 Capwise · 录下来，讲清楚。</title>
 		<meta
 			name="description"
-			content="灵录 Capwise 是免费的开源 Mac 录屏与剪辑工作台。录屏、双语字幕、画面美化、音乐配音、提词器和 AI 辅助剪辑，从一段录制到可以发布的视频。"
+			content="灵录 Capwise 是免费的开源 Mac 录屏与剪辑工作台。录完后可自动识别字幕、增强人声，并用配置好的 AI 校对和翻译。继续按文字剪辑、加贴纸与配乐，再导出成片。"
 		/>
 		<link rel="canonical" href="https://capwise.qiaomu.ai/" />
 		<meta property="og:type" content="website" />
@@ -31,6 +31,7 @@
 		<link rel="icon" href="/assets/app-icon.png" type="image/png" />
 		<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
 		<link rel="manifest" href="/site.webmanifest" />
+		<link rel="preload" href="/fonts/noto-serif-sc-900.woff2" as="font" type="font/woff2" crossorigin />
 		<link rel="stylesheet" href="/styles.css?v=__ASSET_VERSION__" />
 		<script
 			defer
@@ -66,7 +67,7 @@
 					></a
 				>
 				<nav aria-label="主导航">
-					<a href="#features">功能</a><a href="#tour">看界面</a><a href="#download">下载</a
+					<a href="#features">自动成片</a><a href="#tour">看界面</a><a href="#download">下载</a
 					><a href="#faq">常见问题</a
 					><a class="nav-github" href="https://github.com/joeseesun/capwise"
 						>GitHub <span aria-hidden="true">↗</span></a
@@ -85,18 +86,17 @@
 				<p class="eyebrow"><span class="status-dot"></span> 为产品演示、教程与知识分享而做</p>
 				<h1>录下来，<br class="mobile-break" />讲清楚。</h1>
 				<p class="hero-description">
-					录屏、字幕、配音、封面，<br class="mobile-break" /><mark>从录屏到成片</mark>，在一个 Mac
-					工作台里完成。
+					你只管录。<br class="mobile-break" /><mark>字幕、人声和节奏录后自动处理</mark>，检查成片后即可导出。
 				</p>
 				<div class="workflow-pills" aria-label="制作流程">
-					<a href="#record"
-						><svg aria-hidden="true"><use href="#i-record"></use></svg>录下来</a
+					<a href="#features"
+						><svg aria-hidden="true"><use href="#i-record"></use></svg>录完自动处理</a
 					><a href="#captions"
 						><svg aria-hidden="true"><use href="#i-captions"></use></svg>改字幕</a
+					><a href="#editing"
+						><svg aria-hidden="true"><use href="#i-scissors"></use></svg>按文字剪</a
 					><a href="#visuals"
 						><svg aria-hidden="true"><use href="#i-sparkles"></use></svg>做漂亮</a
-					><a href="#assistant"
-						><svg aria-hidden="true"><use href="#i-wand"></use></svg>让 AI 帮忙</a
 					>
 				</div>
 				<div class="hero-actions">
@@ -126,34 +126,69 @@
 					><span
 						><svg aria-hidden="true"><use href="#i-monitor"></use></svg>原生 Mac 工作台</span
 					><span
-						><svg aria-hidden="true"><use href="#i-check"></use></svg>Developer ID 签名与 Apple 公证</span
+						><svg aria-hidden="true"><use href="#i-check"></use></svg>已签名并经 Apple 公证</span
 					><span
 						><svg aria-hidden="true"><use href="#i-key"></use></svg>AI 服务自己选</span
 					>
 				</div>
 			</section>
-			<section class="section-wrap pain-section" id="features">
-				<div class="section-heading">
-					<p class="eyebrow">录完之后，不必再折腾一圈</p>
-					<h2>把时间留给内容，<br />把重复操作留给工具。</h2>
-					<p>做一段教程，往往要在录屏、字幕、音频和封面工具之间来回切换。灵录把这些步骤接在一起。</p>
+			<section class="section-wrap auto-section" id="features">
+				<div class="auto-copy">
+					<p class="eyebrow">录后工作流</p>
+					<h2>停止录制那一刻，<br />成片已经做了一大半。</h2>
+					<p>
+						默认的「乔木预设」会在每次录完后自动跑一遍：识别字幕、AI
+						校对、配上英文译文、增强人声、给摄像头美颜，再把节奏调到 1.25 倍。处理完成后，可在编辑器里检查和调整。
+					</p>
+					<ul class="check-list">
+						<li>录制时点击处自动缩放，观众跟得上操作</li>
+						<li>每一步都能关掉，或复制成自己的预设</li>
+						<li>改动都在工程里，随时调整、撤销</li>
+					</ul>
+					<p class="fine-print">
+						只影响新录制。AI 校对和翻译需要先配置模型；没配置时，其余步骤照常完成。
+					</p>
 				</div>
-				<div class="pain-grid">
-					<article>
-						<span class="step-number">01</span>
-						<h3>操作录下来了，细节看不清？</h3>
-						<p>自动缩放、光标效果、背景与标注，把观众的注意力带到重点。</p>
-					</article>
-					<article>
-						<span class="step-number">02</span>
-						<h3>字幕一句句改，太费时间？</h3>
-						<p>在文字列表里校对和查找替换，再翻译、审阅、设置双语样式。</p>
-					</article>
-					<article>
-						<span class="step-number">03</span>
-						<h3>做好内容，还差一段配音和封面？</h3>
-						<p>直接添加音乐、录制配音、制作片头封面，继续在同一个项目里编辑。</p>
-					</article>
+				<div class="preset-card" aria-label="录后工作流预设示意">
+					<div class="preset-head">
+						<span class="rec-chip"><span class="rec-dot"></span>停止录制</span>
+						<span class="preset-name">乔木预设</span>
+					</div>
+					<ol class="preset-steps">
+						<li>
+							<svg aria-hidden="true"><use href="#i-captions"></use></svg>
+							<div><strong>识别字幕</strong><span>按句断开，时间对齐</span></div>
+							<em>自动</em>
+						</li>
+						<li>
+							<svg aria-hidden="true"><use href="#i-wand"></use></svg>
+							<div><strong>AI 校对字幕</strong><span>纠正识别错误，隐藏口头禅</span></div>
+							<em>开</em>
+						</li>
+						<li>
+							<svg aria-hidden="true"><use href="#i-globe"></use></svg>
+							<div><strong>生成中英双语字幕</strong><span>原文、译文分别设样式</span></div>
+							<em>开</em>
+						</li>
+						<li>
+							<svg aria-hidden="true"><use href="#i-mic"></use></svg>
+							<div><strong>人声增强</strong><span>讲解更清楚</span></div>
+							<em>开</em>
+						</li>
+						<li>
+							<svg aria-hidden="true"><use href="#i-camera"></use></svg>
+							<div><strong>摄像头美颜</strong><span>只处理摄像头，不动录屏画面</span></div>
+							<em>最大</em>
+						</li>
+						<li>
+							<svg aria-hidden="true"><use href="#i-gauge"></use></svg>
+							<div><strong>成片速度</strong><span>保持原声音高</span></div>
+							<em>1.25×</em>
+						</li>
+					</ol>
+					<div class="preset-foot">
+						<svg aria-hidden="true"><use href="#i-check"></use></svg>打开编辑器，检查一遍，导出
+					</div>
 				</div>
 			</section>
 			<section class="tour-section section-wrap" id="tour">
@@ -222,8 +257,8 @@
 					<p class="eyebrow">字幕工作台</p>
 					<h2>把口头表达，<br />变成好读的字幕。</h2>
 					<p>
-						支持本地与云端识别。识别之后，继续校对文字、查找替换，或请 AI
-						帮你润色。原文和译文可以分别设置字体、颜色、描边与阴影。
+						录制结束后可自动识别字幕。像改文档一样校对、查找替换，或请 AI
+						帮你润色。原文和译文可以分别设置字体、颜色、描边与阴影，默认样式就能直接发布。
 					</p>
 					<ul class="check-list">
 						<li>内容、翻译、样式分开操作</li>
@@ -238,10 +273,64 @@
 				<figure class="story-media">
 					<img
 						src="/assets/caption-styles.webp"
-						width="2000"
-						height="1257"
+						width="830"
+						height="1149"
 						loading="lazy"
 						alt="真实字幕工作台局部，内容、翻译与样式各有入口"
+					/>
+				</figure>
+			</section>
+			<section class="story reverse section-wrap" id="editing">
+				<div class="story-copy">
+					<p class="eyebrow">按文字剪辑</p>
+					<h2>删掉一句话，<br />视频也跟着剪掉。</h2>
+					<p>
+						进入「按文字剪辑视频」，在字幕里删掉说错的句子，对应的画面和声音一起剪掉。拖长的停顿和口头禅，一键找出来，看清能省几秒再决定。
+					</p>
+					<ul class="check-list">
+						<li>按时长筛出停顿，统一缩短</li>
+						<li>时间线上拖动片段调换顺序</li>
+						<li>拆分、转场、变速，保持原声音高</li>
+					</ul>
+				</div>
+				<div class="cut-demo" aria-label="按文字剪辑示意">
+					<div class="cut-toolbar">
+						<span class="cut-mode"><svg aria-hidden="true"><use href="#i-scissors"></use></svg>按文字剪辑视频</span>
+						<span class="cut-summary">5 处停顿，节省 7 秒</span>
+					</div>
+					<ol class="cut-lines">
+						<li><time>0:01</time><p>今天演示一下怎么把录屏做成教程。</p></li>
+						<li class="is-cut"><time>0:04</time><p>呃，那个，我们先，先打开设置。</p></li>
+						<li><time>0:07</time><p>先打开设置，选择录制区域。</p></li>
+						<li class="is-pause"><time>0:10</time><p><span>停顿 2.4 秒</span></p></li>
+						<li><time>0:13</time><p>停止录制后，字幕已经生成好了。</p></li>
+						<li class="is-cut"><time>0:16</time><p>嗯……就是这样。</p></li>
+						<li><time>0:18</time><p>检查一遍，就可以导出了。</p></li>
+					</ol>
+					<p class="cut-note">删除线的句子会连同画面与声音一起剪掉，应用前可审阅，之后可撤销。</p>
+				</div>
+			</section>
+			<section class="story section-wrap" id="visuals">
+				<div class="story-copy">
+					<p class="eyebrow">画面与表达</p>
+					<h2>让人看清操作，<br />也看得舒服。</h2>
+					<p>
+						用背景、留白、圆角和边框整理画面；用缩放、文字、箭头与贴纸强调重点。横屏、竖屏 9:16 都能出，屏幕和摄像头可以画中画，也可以并排。
+					</p>
+					<ul class="check-list">
+						<li>贴纸和图片有入场、持续、退场动画</li>
+						<li>标题、字幕条、标签与高亮文字样式</li>
+						<li>脱敏遮住密码、邮箱等隐私信息</li>
+						<li>片头片尾存成模板，下个视频直接用</li>
+					</ul>
+				</div>
+				<figure class="story-media">
+					<img
+						src="/assets/visuals.webp"
+						width="1920"
+						height="1080"
+						loading="lazy"
+						alt="演示工程原生导出的画面，章节标题与字幕在工程中保留为可编辑图层"
 					/>
 				</figure>
 			</section>
@@ -293,30 +382,6 @@
 					<p class="flow-note">封面生成会直接调用图片服务并应用，可继续编辑或撤销。</p>
 				</div>
 			</section>
-			<section class="story section-wrap" id="visuals">
-				<div class="story-copy">
-					<p class="eyebrow">画面与表达</p>
-					<h2>让人看清操作，<br />也看得舒服。</h2>
-					<p>
-						用背景、留白、圆角和边框整理画面；用缩放、文字、形状与贴纸强调重点。摄像头可以调整画幅与取景，封面标题也能继续移动和编辑。
-					</p>
-					<ul class="check-list">
-						<li>自动与手动缩放，跟上讲解节奏</li>
-						<li>标题、字幕条、标签与高亮文字样式</li>
-						<li>可调整画幅的摄像头画中画</li>
-						<li>片头封面与片尾，停留时长自己定</li>
-					</ul>
-				</div>
-				<figure class="story-media">
-					<img
-						src="/assets/visuals.webp"
-						width="2000"
-						height="1257"
-						loading="lazy"
-						alt="演示工程原生导出的画面，章节标题与字幕在工程中保留为可编辑图层"
-					/>
-				</figure>
-			</section>
 			<section class="feature-catalog section-wrap" id="record">
 				<div class="section-heading centered">
 					<p class="eyebrow">从第一句话，到最后一帧</p>
@@ -326,27 +391,42 @@
 					<article>
 						<svg aria-hidden="true"><use href="#i-monitor"></use></svg>
 						<h3>屏幕、摄像头与声音</h3>
-						<p>录制屏幕、窗口或区域，按需加入摄像头、麦克风与系统声音。</p>
-					</article>
-					<article>
-						<svg aria-hidden="true"><use href="#i-scissors"></use></svg>
-						<h3>多轨时间线</h3>
-						<p>裁剪、拆分、转场与标记，让文字、画面、音频在同一条时间线上配合。</p>
-					</article>
-					<article>
-						<svg aria-hidden="true"><use href="#i-mic"></use></svg>
-						<h3>音乐与录制配音</h3>
-						<p>从音频面板直接进入录音或添加音乐，调整音量及淡入淡出。</p>
-					</article>
-					<article>
-						<svg aria-hidden="true"><use href="#i-folder"></use></svg>
-						<h3>共享素材库</h3>
-						<p>图片、配乐与素材集中管理；常用内容留在库里，下次继续用。</p>
+						<p>录制整个屏幕、窗口或区域，按需加入摄像头、麦克风与系统音频。</p>
 					</article>
 					<article>
 						<svg aria-hidden="true"><use href="#i-text"></use></svg>
 						<h3>提词器</h3>
-						<p>把要讲的话放在眼前，在阅读与编辑之间切换，减少忘词和反复重录。</p>
+						<p>写稿和读稿分开，滚动、调速、跳行，录制时不用来回找稿子。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-scissors"></use></svg>
+						<h3>多轨时间线</h3>
+						<p>文字、画面、音频在一条时间线上配合；拖动片段就能调换顺序。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-mic"></use></svg>
+						<h3>音乐与配音</h3>
+						<p>直接添加配乐或录制配音；开口说话时，音乐自动压低 12 dB。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-sparkles"></use></svg>
+						<h3>贴纸与动画</h3>
+						<p>可搜索的 Emoji 和图标贴纸，箭头会顺着方向滑入，提醒会轻轻晃动。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-eye-off"></use></svg>
+						<h3>脱敏</h3>
+						<p>模糊或遮挡屏幕上的隐私信息，样式可以一次应用到全部。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-film"></use></svg>
+						<h3>片头片尾</h3>
+						<p>封面标题保持可编辑，停留时长可选；做好的片头片尾存成模板。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-folder"></use></svg>
+						<h3>共享素材库</h3>
+						<p>图片、音乐、视频以缩略图管理，跨项目复用，也能按类型在线搜索。</p>
 					</article>
 					<article>
 						<svg aria-hidden="true"><use href="#i-key"></use></svg>
@@ -361,22 +441,25 @@
 					<h2>基础工作在本机。<br />AI 用不用、用谁，你决定。</h2>
 				</div>
 				<div class="local-details">
-					<p>
-						<strong>不用注册 Cap 云账号。</strong
-						>基础录制、编辑与本地导出可以直接开始，项目和媒体保存在你的电脑里。
-					</p>
-					<p>
-						<strong>密钥留在登录钥匙串。</strong
-						>云端识别会发送音频；翻译、校对和助手发送相关文字与编辑上下文；生图发送图片描述。
-					</p>
-					<p>
-						<strong>免费开源，AI 费用独立。</strong
-						>应用没有云服务订阅门槛。使用第三方模型、在线素材时，其费用、额度与内容许可遵循对应服务。
-					</p>
+					<article>
+						<svg aria-hidden="true"><use href="#i-folder"></use></svg>
+						<h3>不用注册云账号</h3>
+						<p>基础录制、编辑与本地导出直接开始，项目和媒体保存在你的电脑里。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-key"></use></svg>
+						<h3>密钥留在钥匙串</h3>
+						<p>云端识别发送音频；翻译、校对和助手发送相关文字与编辑上下文；生图发送图片描述。</p>
+					</article>
+					<article>
+						<svg aria-hidden="true"><use href="#i-heart"></use></svg>
+						<h3>免费开源，AI 费用独立</h3>
+						<p>没有订阅门槛。第三方模型与在线素材的费用、额度和许可遵循对应服务。</p>
+					</article>
 				</div>
 			</section>
 			<section class="download-section section-wrap" id="download">
-				<div class="section-heading centered">
+				<div class="section-heading centered cta-panel">
 					<img class="download-icon" src="/assets/app-icon.png" width="72" height="72" alt="灵录应用图标" />
 					<h2>下一段讲解，<br />从灵录开始。</h2>
 					<p>产品演示、软件教程、课程录制、知识分享。<br />先录一小段，看看它能替你省掉多少来回切换。</p>
@@ -460,6 +543,13 @@
 						<p>
 							当前提供 macOS 13.3 及以上的 Apple Silicon 安装包。Intel Mac、Windows、Linux
 							尚无本项目验证过的发布包，暂不建议按同样步骤安装。
+						</p>
+					</details>
+					<details>
+						<summary>录完会自动做哪些事？能关掉吗？</summary>
+						<p>
+							默认的「乔木预设」会识别字幕、AI 校对、生成中英双语字幕、增强人声、给摄像头美颜，并把成片速度设为
+							1.25 倍（保持原声音高）。在「设置 → 关于」开启「显示高级设置」，再到「通用 → 录后工作流预设」逐项关闭、修改，或复制成自己的预设；只影响之后的新录制。
 						</p>
 					</details>
 					<details>
@@ -595,6 +685,26 @@
 					<path d="m12 12 9 9m-3-3 3-3m-6 0 3-3" />
 				</symbol>
 				<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+				<symbol id="i-globe" viewBox="0 0 24 24">
+					<circle cx="12" cy="12" r="10" />
+					<path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
+				</symbol>
+				<symbol id="i-camera" viewBox="0 0 24 24">
+					<path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11" />
+					<rect x="2" y="6" width="14" height="12" rx="2" />
+				</symbol>
+				<symbol id="i-gauge" viewBox="0 0 24 24">
+					<path d="m12 14 4-4M3.3 19a10 10 0 1 1 17.4 0" />
+				</symbol>
+				<symbol id="i-eye-off" viewBox="0 0 24 24">
+					<path
+						d="M10.7 5.1A10.7 10.7 0 0 1 22 12a11 11 0 0 1-1.6 2.4M14.1 14.2a3 3 0 0 1-4.2-4.2M17.5 17.5A10.8 10.8 0 0 1 2 12a10.8 10.8 0 0 1 4.4-5.6M2 2l20 20"
+					/>
+				</symbol>
+				<symbol id="i-film" viewBox="0 0 24 24">
+					<rect x="3" y="3" width="18" height="18" rx="2" />
+					<path d="M7 3v18M17 3v18M3 7.5h4m-4 9h4m10-9h4m-4 9h4M3 12h18" />
+				</symbol>
 				<symbol id="i-scissors" viewBox="0 0 24 24">
 					<circle cx="6" cy="6" r="3" />
 					<circle cx="6" cy="18" r="3" />

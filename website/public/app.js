@@ -120,6 +120,60 @@ document.querySelector("#copy-agent").addEventListener("click", async () => {
 	}
 });
 
+const presetCard = document.querySelector(".preset-card");
+if (
+	presetCard &&
+	"IntersectionObserver" in window &&
+	!matchMedia("(prefers-reduced-motion: reduce)").matches
+) {
+	const steps = [...presetCard.querySelectorAll(".preset-steps li")];
+	presetCard.classList.add("is-armed");
+	const observer = new IntersectionObserver(
+		(entries) => {
+			if (!entries.some((entry) => entry.isIntersecting)) return;
+			observer.disconnect();
+			steps.forEach((step, index) => {
+				setTimeout(() => step.classList.add("is-done"), 250 + index * 260);
+			});
+			setTimeout(
+				() => presetCard.classList.add("is-complete"),
+				250 + steps.length * 260,
+			);
+		},
+		{ threshold: 0.45 },
+	);
+	observer.observe(presetCard);
+}
+
+const header = document.querySelector(".site-header");
+const updateHeader = () =>
+	header.classList.toggle("is-scrolled", window.scrollY > 8);
+updateHeader();
+window.addEventListener("scroll", updateHeader, { passive: true });
+
+if (
+	"IntersectionObserver" in window &&
+	!matchMedia("(prefers-reduced-motion: reduce)").matches
+) {
+	const revealObserver = new IntersectionObserver(
+		(entries) => {
+			for (const entry of entries) {
+				if (!entry.isIntersecting) continue;
+				entry.target.classList.add("is-visible");
+				revealObserver.unobserve(entry.target);
+			}
+		},
+		{ rootMargin: "0px 0px -8% 0px" },
+	);
+	for (const element of document.querySelectorAll(
+		"main section:not(.hero) .section-heading, .story-copy, .auto-copy, .story-media, .cut-demo, .assistant-flow, .preset-card, .tour-panel, .capability-grid article, .local-details article, .install-steps, .agent-card",
+	)) {
+		if (element.getBoundingClientRect().top < window.innerHeight) continue;
+		element.classList.add("reveal");
+		revealObserver.observe(element);
+	}
+}
+
 if ("serviceWorker" in navigator && location.protocol === "https:") {
 	navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
