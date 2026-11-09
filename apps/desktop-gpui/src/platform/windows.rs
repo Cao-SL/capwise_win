@@ -153,6 +153,50 @@ pub fn apply_window_theme(
         .detach();
 }
 
+/// Windows stores the user's accent as `0xAABBGGRR` (ABGR) in the DWM key.
+/// gpui's `rgb()` wants `0x00RRGGBB`, so swap the red and blue bytes.
+fn abgr_to_rgb(abgr: u32) -> u32 {
+    let r = abgr & 0xff;
+    let g = (abgr >> 8) & 0xff;
+    let b = (abgr >> 16) & 0xff;
+    (r << 16) | (g << 8) | b
+}
+
+/// `HKCU\Software\Microsoft\Windows\DWM\AccentColor`, the accent the user
+/// picked in Settings > Personalization > Colors. Returns `None` when the key
+/// is absent or unreadable, so the caller keeps the macOS-default blue.
+pub fn system_accent_color() -> Option<u32> {
+    use windows_sys::Win32::{
+        Foundation::ERROR_SUCCESS,
+        System::Registry::{HKEY_CURRENT_USER, RegGetValueW},
+    };
+
+    const RRF_RT_REG_DWORD: u32 = 0x0000_0010;
+
+    let key: Vec<u16> = "Software\\Microsoft\\Windows\\DWM\0"
+        .encode_utf16()
+        .collect();
+    let value: Vec<u16> = "AccentColor\0".encode_utf16().collect();
+    let mut accent = 0u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            std::ptr::addr_of_mut!(accent).cast(),
+            &mut size,
+        )
+    };
+    if status != ERROR_SUCCESS || size != std::mem::size_of::<u32>() as u32 {
+        return None;
+    }
+    let rgb = abgr_to_rgb(accent);
+    (rgb != 0).then_some(rgb)
+}
+
 pub fn window_is_dark(_window: &Window) -> Option<bool> {
     None
 }
@@ -827,11 +871,22 @@ pub fn unregister_escape_hotkey() {}
 #[cfg(test)]
 mod tests {
     use super::{
-        Rect, alpha_byte, logical_to_physical, overlap_is_visible, physical_to_logical, to_rect,
+        Rect, abgr_to_rgb, alpha_byte, logical_to_physical, overlap_is_visible,
+        physical_to_logical, to_rect,
     };
 
     fn display(physical: Rect, logical: Rect) -> super::DisplayGeometry {
         super::DisplayGeometry { physical, logical }
+    }
+
+    #[test]
+    fn the_windows_accent_is_abgr_but_gpui_wants_rgb() {
+        // Windows default blue #0078D4 is stored as 0xFFD47800.
+        assert_eq!(abgr_to_rgb(0xff_d4_78_00), 0x00_78_d4);
+        // The app's fallback blue #007AFF is stored as 0xFFFF7A00.
+        assert_eq!(abgr_to_rgb(0xff_ff_7a_00), 0x00_7a_ff);
+        assert_eq!(abgr_to_rgb(0xff_78_56_34), 0x00_34_56_78);
+        assert_eq!(abgr_to_rgb(0x00_00_00_00), 0x00_00_00_00);
     }
 
     #[test]

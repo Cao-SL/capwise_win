@@ -92,7 +92,7 @@ impl RenderOnce for Switch {
         let (from, to) = if checked { (off, on) } else { (on, off) };
         let knob_x = from + (to - from) * progress;
         let track_fill = if checked {
-            gpui::rgb(Theme::SETTINGS_ACCENT).into()
+            gpui::rgb(Theme::settings_accent()).into()
         } else if dark {
             gpui::hsla(240. / 360., 0.03, 0.49, 0.36)
         } else {

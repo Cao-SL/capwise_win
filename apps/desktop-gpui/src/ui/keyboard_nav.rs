@@ -146,7 +146,7 @@ fn move_focus(direction: Direction, window: &mut Window, cx: &mut App) {
 pub fn ring<E: InteractiveElement>(element: E) -> E {
     element.focus_visible(|style| {
         style.shadow(vec![BoxShadow {
-            color: rgb(Theme::SETTINGS_ACCENT).into(),
+            color: rgb(Theme::settings_accent()).into(),
             offset: point(px(0.), px(0.)),
             blur_radius: px(0.),
             spread_radius: px(2.),

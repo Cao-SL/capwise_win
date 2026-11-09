@@ -202,7 +202,7 @@ impl Button {
         } else {
             (gpui::hsla(0., 0., 0., 0.06), gpui::hsla(0., 0., 0., 0.1))
         };
-        let accent: Hsla = gpui::rgb(Theme::SETTINGS_ACCENT).into();
+        let accent: Hsla = gpui::rgb(Theme::settings_accent()).into();
         let edge = if theme.is_dark() {
             gpui::hsla(0., 0., 1., 0.08)
         } else {
