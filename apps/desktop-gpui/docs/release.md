@@ -4,7 +4,7 @@
 
 - 更新清单：`https://github.com/joeseesun/capwise/releases/latest/download/latest.json`（总是指向最新一个**已发布**的 Release，草稿和预发布不算）。
 - 更新包：`Capwise_<版本>_<架构>.app.tar.gz`，用 minisign 签名，签名放在 `latest.json` 里。App 只接受 `packaging/updater.pub` 这把公钥签过的包。
-- App 启动 10 秒后检查一次，之后每 6 小时检查一次。正在录制、导出、导入或转写时不会弹窗，等任务结束再提示；"更新下载"设为"从不"时只响应手动检查。可在「关于」页或菜单栏检查更新。只有一个稳定通道，没有 nightly。
+- App 启动 10 秒后检查一次，之后每 6 小时检查一次。正在录制、导出、导入或转写时不会弹窗，等任务结束再提示；"更新下载"设为"从不"时只响应手动检查。可在「关于」页检查更新。只有一个稳定通道，没有 nightly。
 
 `latest.json` 的格式：
 
@@ -134,7 +134,7 @@ DMG 用 `dmgbuild 1.6.5`，脚本第一次运行时会自动装到 `apps/desktop
    curl -sL https://github.com/joeseesun/capwise/releases/latest/download/latest.json
    ```
 
-   版本号正确、`url` 能下载。再用一台装着旧版的机器在菜单里"检查更新"，走完下载、重启。
+   版本号正确、`url` 能下载。再用一台装着旧版的机器验证自动检查、下载和重启。从 0.3.5 起，也可以在「关于」页手动检查。
 
 ### 仓库分享图
 
