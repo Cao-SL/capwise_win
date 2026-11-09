@@ -572,6 +572,20 @@ impl RecordingSession {
         started_at.elapsed().saturating_sub(paused)
     }
 
+    #[cfg(target_os = "macos")]
+    pub(crate) fn live_camera_layout(&self) -> Option<&StartConfig> {
+        self.last_config.as_ref().filter(|config| {
+            self.phase != Phase::Idle
+                && config.mode == recording::RecordingMode::Studio
+                && config.studio_layout != crate::recording_defaults::StudioLayout::PictureInPicture
+                && config.camera.is_some()
+                && !matches!(
+                    config.target,
+                    cap_recording::screen_capture::ScreenCaptureTarget::CameraOnly
+                )
+        })
+    }
+
     pub fn is_paused(&self) -> bool {
         matches!(self.phase, Phase::Recording { paused: true })
     }

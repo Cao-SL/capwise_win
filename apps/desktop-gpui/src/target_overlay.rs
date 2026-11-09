@@ -520,7 +520,7 @@ impl TargetSelect {
     pub fn init(cx: &mut App) -> Entity<Self> {
         let select = cx.new(|_| Self {
             mode: None,
-            recording_mode: Mode::Instant,
+            recording_mode: Mode::from_store(),
             cursor_display: None,
             hovered_window: None,
             pinned_window: None,
@@ -755,12 +755,13 @@ impl TargetSelect {
 
 /// The aspect ratios the area toolbar cycles through, `None` first for a free
 /// selection. The 0.6.0 picker offered the same set (`COMMON_RATIOS`).
-const AREA_RATIOS: [Option<(u32, u32)>; 9] = [
+const AREA_RATIOS: [Option<(u32, u32)>; 10] = [
     None,
     Some((16, 9)),
     Some((4, 3)),
     Some((1, 1)),
     Some((9, 16)),
+    Some(cap_project::WIDE_SPLIT_CAPTURE_RATIO),
     Some((16, 10)),
     Some((21, 9)),
     Some((3, 2)),
@@ -846,7 +847,7 @@ const QUICK_AREA_RATIOS: [Option<(u32, u32)>; 5] = [
     None,
     Some((16, 9)),
     Some((4, 3)),
-    Some((1, 1)),
+    Some(cap_project::WIDE_SPLIT_CAPTURE_RATIO),
     Some((9, 16)),
 ];
 
@@ -3599,6 +3600,9 @@ impl OverlayWindow {
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| this.set_area_ratio(ratio, cx)))
                 .child(match ratio {
+                    Some(ratio) if ratio == cap_project::WIDE_SPLIT_CAPTURE_RATIO => {
+                        tr::overlay::area::split_ratio().to_string()
+                    }
                     Some((width, height)) => format!("{width}:{height}"),
                     None => tr::overlay::area::free_ratio().to_string(),
                 })
@@ -4899,7 +4903,7 @@ mod tests {
     #[test]
     fn quick_and_more_ratios_cover_every_ratio_once() {
         let more = more_area_ratios();
-        assert_eq!(more, vec![(16, 10), (21, 9), (3, 2), (2, 1)]);
+        assert_eq!(more, vec![(1, 1), (16, 10), (21, 9), (3, 2), (2, 1)]);
         let mut all: Vec<Option<(u32, u32)>> = QUICK_AREA_RATIOS.to_vec();
         all.extend(more.into_iter().map(Some));
         all.sort();

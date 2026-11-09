@@ -36,6 +36,7 @@ pub enum RecordingMode {
 #[derive(Clone)]
 pub struct StartConfig {
     pub mode: RecordingMode,
+    pub(crate) studio_layout: crate::recording_defaults::StudioLayout,
     pub target: ScreenCaptureTarget,
     /// Microphone by name -- the identity `MicrophoneFeed` keys on.
     pub microphone: Option<String>,
@@ -466,14 +467,33 @@ async fn finalize_studio(
                 camera_snapshot.map_or_else(current_camera_skin_smoothing, |snapshot| {
                     snapshot.skin_smoothing
                 }),
+                completed
+                    .meta
+                    .camera_path()
+                    .and_then(|_| camera_snapshot.map(|snapshot| snapshot.shape)),
                 placement,
             );
-            if !preset_applied {
-                let library = serde_json::from_value(serde_json::Value::Object(
-                    crate::store::store_section("animated_gradients"),
-                ))
-                .unwrap_or_default();
-                apply_animated_gradient_to_project_config(&project_path, &capture_target, &library);
+            if !preset_applied && !matches!(capture_target, ScreenCaptureTarget::CameraOnly) {
+                let preference = crate::recording_defaults::RecordingBackground::preferred();
+                let legacy_gradient_applied = preference.is_none() && {
+                    let library = serde_json::from_value(serde_json::Value::Object(
+                        crate::store::store_section("animated_gradients"),
+                    ))
+                    .unwrap_or_default();
+                    apply_animated_gradient_to_project_config(
+                        &project_path,
+                        &capture_target,
+                        &library,
+                    )
+                };
+                if !legacy_gradient_applied
+                    && let Err(error) = apply_recording_background_to_project_config(
+                        &project_path,
+                        preference.as_ref(),
+                    )
+                {
+                    tracing::warn!(%error, "Could not apply the recording background");
+                }
             }
             if crate::store::studio_sound_by_default()
                 && let Err(error) = enable_studio_sound(&project_path)
@@ -600,6 +620,7 @@ pub(crate) type CaptureStopFuture =
 pub(crate) struct StudioCameraSnapshot {
     pub blur: crate::store::BlurMode,
     pub skin_smoothing: bool,
+    pub shape: crate::store::CameraShape,
     pub placement: Option<cap_recording::camera_placement::RecordingCameraPlacement>,
 }
 
@@ -1680,6 +1701,7 @@ fn write_bundle_thumbnail(project_dir: &std::path::Path, source_video: &std::pat
 pub(crate) fn preparing_presentation(
     project: &cap_project::ProjectConfiguration,
     camera_snapshot: Option<StudioCameraSnapshot>,
+    background_project: Option<&std::path::Path>,
 ) -> Result<cap_project::ProjectConfiguration, String> {
     let library = serde_json::from_value(serde_json::Value::Object(crate::store::store_section(
         "animated_gradients",
@@ -1695,13 +1717,17 @@ pub(crate) fn preparing_presentation(
         camera_snapshot.map_or_else(current_camera_blur, |snapshot| snapshot.blur),
         &library,
         &crate::presets::PresetsStore::load(),
+        background_project,
     )?;
     if crate::store::studio_sound_by_default() {
         config.audio.improve = true;
         config.audio.isolation = crate::store::studio_sound_isolation();
     }
-    if let Some(placement) = camera_snapshot.and_then(|snapshot| snapshot.placement) {
-        placement.apply(&mut config.camera);
+    if let Some(snapshot) = camera_snapshot {
+        apply_camera_preview_shape(&mut config.camera, snapshot.shape);
+        if let Some(placement) = snapshot.placement {
+            placement.apply(&mut config.camera);
+        }
     }
     Ok(config)
 }
@@ -1711,15 +1737,31 @@ fn preparing_presentation_for(
     blur: crate::store::BlurMode,
     library: &cap_project::AnimatedGradientLibrary,
     presets: &crate::presets::PresetsStore,
+    background_project: Option<&std::path::Path>,
 ) -> Result<cap_project::ProjectConfiguration, String> {
     if blur != crate::store::BlurMode::Off {
         return Err("Camera blur requires ordinary editor loading".into());
     }
     let preset = presets.apply_default(project);
-    if preset.is_none() && library.selected && library.last_used.is_some() {
+    let preference = background_project
+        .and_then(|_| crate::recording_defaults::RecordingBackground::preferred());
+    if preset.is_none()
+        && preference.as_ref().map_or(
+            library.selected && library.last_used.is_some(),
+            crate::recording_defaults::RecordingBackground::is_animated,
+        )
+    {
         return Err("Animated-gradient preferences require ordinary editor loading".into());
     }
+    let use_background = preset.is_none();
     let mut project = preset.unwrap_or_else(|| project.clone());
+    if use_background && let Some(path) = background_project {
+        crate::recording_defaults::apply_recording_background(
+            &mut project,
+            path,
+            preference.as_ref(),
+        );
+    }
     // Finalization replaces any saved blur with the live toggle, which is off here.
     project.camera.background_blur = cap_project::BackgroundBlurConfig::default();
     project.camera.skin_smoothing = 0.0;
@@ -1761,6 +1803,9 @@ fn apply_default_preset_to_project_config(
 /// here persists every cycle to `gpui-state.json`, so reading it back is the
 /// same "whatever the toggle says now" semantics.
 fn current_camera_blur() -> crate::store::BlurMode {
+    if crate::store::load().camera_avatar != cap_recording::avatar::AvatarKind::Camera {
+        return crate::store::BlurMode::Off;
+    }
     crate::store::load()
         .camera_window
         .map(|state| state.background_blur)
@@ -1768,6 +1813,9 @@ fn current_camera_blur() -> crate::store::BlurMode {
 }
 
 fn current_camera_skin_smoothing() -> bool {
+    if crate::store::load().camera_avatar != cap_recording::avatar::AvatarKind::Camera {
+        return false;
+    }
     crate::store::load()
         .camera_window
         .is_some_and(|state| state.skin_smoothing)
@@ -1843,6 +1891,17 @@ fn enable_notch_overlay(project_path: &std::path::Path) -> std::io::Result<()> {
         let _ = std::fs::remove_file(temp);
     }
     result
+}
+
+fn apply_recording_background_to_project_config(
+    path: &std::path::Path,
+    preference: Option<&crate::recording_defaults::RecordingBackground>,
+) -> std::io::Result<()> {
+    let mut project = cap_project::ProjectConfiguration::load(path)?;
+    if crate::recording_defaults::apply_recording_background(&mut project, path, preference) {
+        project.write(path)?;
+    }
+    Ok(())
 }
 
 fn apply_animated_gradient_to_project_config(
@@ -1965,13 +2024,31 @@ fn apply_camera_blur_to_project_config(
     project_dir: &std::path::Path,
     blur: crate::store::BlurMode,
 ) -> bool {
-    apply_camera_preview_to_project_config(project_dir, blur, false, None)
+    apply_camera_preview_to_project_config(project_dir, blur, false, None, None)
+}
+
+pub(crate) fn apply_camera_preview_shape(
+    camera: &mut cap_project::Camera,
+    shape: crate::store::CameraShape,
+) {
+    use crate::store::CameraShape;
+    camera.shape = match shape {
+        CameraShape::Round | CameraShape::Square => cap_project::CameraShape::Square,
+        CameraShape::Full => cap_project::CameraShape::Source,
+    };
+    camera.aspect_ratio = None;
+    camera.rounding_type = cap_project::CornerStyle::Rounded;
+    camera.rounding = match shape {
+        CameraShape::Round => 100.0,
+        CameraShape::Square | CameraShape::Full => 25.0,
+    };
 }
 
 fn apply_camera_preview_to_project_config(
     project_dir: &std::path::Path,
     blur: crate::store::BlurMode,
     skin_smoothing: bool,
+    shape: Option<crate::store::CameraShape>,
     placement: Option<cap_recording::camera_placement::RecordingCameraPlacement>,
 ) -> bool {
     use serde_json::{Map, Value};
@@ -2020,6 +2097,19 @@ fn apply_camera_preview_to_project_config(
         );
     } else {
         camera.remove("skinSmoothing");
+    }
+
+    if let Some(shape) = shape {
+        let mut styled = cap_project::Camera::default();
+        apply_camera_preview_shape(&mut styled, shape);
+        camera.insert("shape".into(), serde_json::json!(styled.shape));
+        camera.insert("rounding".into(), Value::from(styled.rounding));
+        camera.insert(
+            "roundingType".into(),
+            serde_json::json!(styled.rounding_type),
+        );
+        camera.remove("aspectRatio");
+        camera.remove("rounding_type");
     }
 
     if let Some(placement) = placement {
@@ -2331,6 +2421,14 @@ async fn start_internal(
     // Cloud auth gate removed — instant mode works offline.
 
     let project_dir = create_project_dir(&config.target, config.mode)?;
+    if config.mode == RecordingMode::Studio
+        && config.camera.is_some()
+        && !matches!(config.target, ScreenCaptureTarget::CameraOnly)
+        && let Err(error) = config.studio_layout.reserve_bundle(&project_dir)
+    {
+        tracing::warn!(%error, "Could not save the Studio layout");
+        return Err(error).context("creating the Studio recording project");
+    }
     let project_name = project_dir
         .file_stem()
         .and_then(|name| name.to_str())
@@ -4056,6 +4154,7 @@ mod tests {
                 &dir,
                 blur,
                 false,
+                None,
                 Some(placement)
             ));
             let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -4065,6 +4164,54 @@ mod tests {
             expected["camera"]["position"]["x"] = "center".into();
             expected["camera"]["position"]["y"] = "top".into();
             assert_eq!(written, expected);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn bridging_camera_shape_matches_preparing_and_reopens_with_the_same_framing() {
+        use crate::store::CameraShape;
+
+        let dir = temp_project("camera-shape");
+        let path = dir.join("project-config.json");
+        let original = serde_json::json!({
+            "camera": {
+                "shape": "source",
+                "aspectRatio": {"x": 16, "y": 9},
+                "rounding": 0.0,
+                "rounding_type": "squircle",
+                "size": 41.0,
+                "futureCameraSetting": "retained"
+            }
+        });
+        for (shape, expected_aspect, expected_rounding) in [
+            (CameraShape::Round, 1.0, 100.0),
+            (CameraShape::Square, 1.0, 25.0),
+            (CameraShape::Full, 16.0 / 9.0, 25.0),
+        ] {
+            std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+            assert!(apply_camera_preview_to_project_config(
+                &dir,
+                BlurMode::Off,
+                false,
+                Some(shape),
+                None,
+            ));
+            let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            let camera = cap_project::ProjectConfiguration::load(&dir)
+                .unwrap()
+                .camera;
+            let mut preparing: cap_project::Camera =
+                serde_json::from_value(original["camera"].clone()).unwrap();
+            apply_camera_preview_shape(&mut preparing, shape);
+            assert_eq!(
+                camera.framing_aspect_ratio([1920.0, 1080.0]),
+                expected_aspect
+            );
+            assert_eq!(camera.rounding, expected_rounding);
+            assert_eq!(camera.rounding_type, cap_project::CornerStyle::Rounded);
+            assert_eq!(serde_json::json!(camera), serde_json::json!(preparing));
+            assert_eq!(written["camera"]["futureCameraSetting"], "retained");
         }
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -4105,6 +4252,7 @@ mod tests {
             &dir,
             BlurMode::Off,
             true,
+            None,
             None
         ));
         let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -4116,6 +4264,7 @@ mod tests {
             &dir,
             BlurMode::Off,
             false,
+            None,
             None
         ));
         let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -5270,6 +5419,7 @@ mod preparing_presentation_tests {
             crate::store::BlurMode::Off,
             &cap_project::AnimatedGradientLibrary::default(),
             &crate::presets::PresetsStore::default(),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -5289,6 +5439,7 @@ mod preparing_presentation_tests {
                     blur,
                     &cap_project::AnimatedGradientLibrary::default(),
                     &crate::presets::PresetsStore::default(),
+                    None,
                 )
                 .is_err()
             );
@@ -5304,6 +5455,7 @@ mod preparing_presentation_tests {
                 crate::store::BlurMode::Off,
                 &library,
                 &crate::presets::PresetsStore::default(),
+                None,
             )
             .is_err()
         );
@@ -5326,6 +5478,7 @@ mod preparing_presentation_tests {
             crate::store::BlurMode::Off,
             &cap_project::AnimatedGradientLibrary::default(),
             &presets,
+            None,
         )
         .unwrap();
         assert!(!shown.camera.background_blur.is_active());
@@ -5354,9 +5507,14 @@ mod preparing_presentation_tests {
             last_used: Some(cap_project::AnimatedGradientConfig::default()),
             ..Default::default()
         };
-        let shown =
-            preparing_presentation_for(&project, crate::store::BlurMode::Off, &library, &presets)
-                .unwrap();
+        let shown = preparing_presentation_for(
+            &project,
+            crate::store::BlurMode::Off,
+            &library,
+            &presets,
+            None,
+        )
+        .unwrap();
         assert_eq!(shown.background.padding, 24.0);
         assert_eq!(
             serde_json::to_value(&shown.timeline).unwrap(),

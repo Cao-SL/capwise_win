@@ -1536,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "cap-desktop-gpui"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "anyhow",
  "ashpd 0.11.1",
@@ -1951,6 +1951,7 @@ dependencies = [
  "specta",
  "sysinfo 0.35.2",
  "thiserror 1.0.69",
+ "tiny-skia",
  "tokio",
  "tokio-util",
  "tracing",

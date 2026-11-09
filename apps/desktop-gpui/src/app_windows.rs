@@ -459,6 +459,8 @@ struct CameraSnapshot {
     handle: WindowHandle<CameraWindow>,
     bounds: AreaRect,
     picker_size: Option<(f32, f32)>,
+    #[cfg(target_os = "macos")]
+    split_preview: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -4131,6 +4133,7 @@ pub fn begin_recording(mut config: StartConfig, cx: &mut App) {
     }
     if session.read(cx).editor_recording_target().is_some() {
         config.mode = RecordingMode::Studio;
+        config.studio_layout = Default::default();
     }
     #[cfg(target_os = "linux")]
     {
@@ -4393,6 +4396,10 @@ pub fn open_camera_window(cx: &mut App) {
             update_camera_presentation(!inline, cx);
             #[cfg(not(target_os = "macos"))]
             sync_camera_presentation(cx);
+            #[cfg(target_os = "macos")]
+            handle
+                .update(cx, |view, window, cx| view.sync_studio_preview(window, cx))
+                .ok();
             sync_opened_camera_with_picker(cx);
             refresh_target_overlays(cx);
         }
@@ -4594,6 +4601,8 @@ fn camera_frame(cx: &mut App) -> Option<CameraFrame> {
                     handle,
                     bounds,
                     picker_size: view.picker_size(),
+                    #[cfg(target_os = "macos")]
+                    split_preview: view.has_split_preview(),
                 },
             })
         })
@@ -4606,10 +4615,28 @@ pub(crate) fn studio_camera_snapshot(
     target: &ScreenCaptureTarget,
     cx: &mut App,
 ) -> Option<crate::recording::StudioCameraSnapshot> {
-    let handle = cx.global::<AppWindows>().camera?;
-    handle
-        .update(cx, |view, window, _| view.studio_snapshot(window, target))
-        .ok()
+    cx.global::<AppWindows>()
+        .camera
+        .and_then(|handle| {
+            handle
+                .update(cx, |view, window, _| view.studio_snapshot(window, target))
+                .ok()
+        })
+        .or_else(|| {
+            let saved = crate::store::load();
+            let state = saved.camera_window?;
+            let real_camera = saved.camera_avatar == cap_recording::avatar::AvatarKind::Camera;
+            Some(crate::recording::StudioCameraSnapshot {
+                blur: if real_camera {
+                    state.background_blur
+                } else {
+                    crate::store::BlurMode::Off
+                },
+                skin_smoothing: real_camera && state.skin_smoothing,
+                shape: state.shape,
+                placement: None,
+            })
+        })
 }
 
 /// Keep the camera bubble above the picker overlays. Not filtered on
@@ -4645,6 +4672,10 @@ fn camera_to_raise(cx: &mut App) -> Option<CameraFrame> {
 
 fn camera_snapshot(cx: &mut App) -> Option<CameraSnapshot> {
     let mut snapshot = camera_frame(cx)?.snapshot;
+    #[cfg(target_os = "macos")]
+    if snapshot.split_preview {
+        return None;
+    }
     if let Some(pending) = cx.global::<AppWindows>().camera_park.pending
         && pending.camera == snapshot.handle
     {
@@ -4751,6 +4782,21 @@ impl CameraFrame {
         }
         Ok(())
     }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn take_camera_picker_origin(cx: &mut App) -> Option<Bounds<Pixels>> {
+    let park = &mut cx.global_mut::<AppWindows>().camera_park;
+    park.invalidate_pending();
+    park.last_window = None;
+    park.last_area = None;
+    park.original.take().map(|original| {
+        let bounds = original.bounds;
+        Bounds::new(
+            point(px(bounds.x), px(bounds.y)),
+            size(px(bounds.width), px(bounds.height)),
+        )
+    })
 }
 
 fn queue_camera_placement(placement: CameraPlacement, cx: &mut App) {
@@ -7865,6 +7911,7 @@ mod tests {
             generation: 7,
             config: Some(StartConfig {
                 mode,
+                studio_layout: Default::default(),
                 target: ScreenCaptureTarget::Display {
                     id: "1".parse().unwrap(),
                 },

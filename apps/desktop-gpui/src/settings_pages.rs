@@ -515,6 +515,7 @@ impl SettingsWindow {
                 let input = self.pages.hint_input.clone();
                 input.update(cx, |input, cx| input.set_text("", cx));
                 self.ai_page_shown(window, cx);
+                self.detect_and_connect_agents(window, cx);
             }
             Page::Feedback => {
                 self.pages.feedback = FeedbackStatus::Idle;

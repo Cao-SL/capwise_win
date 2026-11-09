@@ -20,6 +20,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
+source "$HERE/scripts/macos-bundle-assets.sh"
 REPO="joeseesun/capwise"
 APP_NAME="Capwise"
 BUNDLE_ID="com.capwise.app"
@@ -154,8 +155,8 @@ VERSION="$VERSION" perl -0pi -e \
 
 if ! ((SKIP_BUILD)); then
   step "Release build"
-  (cd "$HERE" && cargo build --release --bin cap-gpui)
-  (cd "$ROOT" && cargo build --release -p cap)
+  (cd "$HERE" && cargo build --release --locked --bin cap-gpui)
+  (cd "$ROOT" && cargo build --release --locked -p cap)
 fi
 step "Assemble $APP_NAME.app"
 mkdir -p "$WORK" "$DIST"
@@ -185,7 +186,6 @@ else
   cp "$ROOT/LICENSE" "$STAGE/Contents/Resources/licenses/Capwise-LICENSE.txt"
   cp "$ROOT/licenses/LICENSE-MIT" "$STAGE/Contents/Resources/licenses/Cap-MIT.txt"
   mkdir -p "$STAGE/Contents/Resources/assets" "$STAGE/Contents/Resources/fonts"
-  cp -R "$HERE/assets/music" "$STAGE/Contents/Resources/assets/music"
   cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
   cp "$HERE/target/release/cap-gpui" "$STAGE/Contents/MacOS/$APP_NAME"
   cp "$ROOT/target/release/cap" "$STAGE/Contents/MacOS/cap-cli"
@@ -196,7 +196,7 @@ else
     "$STAGE/Contents/Frameworks/Spacedrive.framework/Headers"
 fi
 mkdir -p "$STAGE/Contents/Resources/assets"
-ditto "$HERE/assets/backgrounds" "$STAGE/Contents/Resources/assets/backgrounds"
+copy_capwise_assets "$HERE/assets" "$STAGE/Contents/Resources/assets"
 "$HERE/scripts/verify-capwise-mac.sh" "$STAGE" --resources-only
 
 xattr -cr "$STAGE"
@@ -226,13 +226,13 @@ echo "Every executable has the hardened runtime."
 
 notarize() {
   local file="$1"
-  xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 2h |
-    tee "$WORK/notary.log"
-  grep -q "status: Accepted" "$WORK/notary.log" || {
-    id="$(sed -n 's/^ *id: //p' "$WORK/notary.log" | head -1)"
+  local log="$WORK/$(basename "$file").notary.log" id
+  if ! xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 2h |
+    tee "$log" || ! grep -q "status: Accepted" "$log"; then
+    id="$(sed -n 's/^ *id: //p' "$log" | head -1)"
     [[ -n "$id" ]] && xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" || true
     die "notarization of $(basename "$file") was not accepted"
-  }
+  fi
 }
 
 staple() {
@@ -265,7 +265,7 @@ step "DMG"
 DMG_TOOLS="$HERE/target/release-tools"
 if [[ ! -x "$DMG_TOOLS/bin/dmgbuild" ]]; then
   python3 -m venv "$DMG_TOOLS"
-  "$DMG_TOOLS/bin/pip" install --quiet "dmgbuild==1.6.5"
+  "$DMG_TOOLS/bin/python3" -m pip install --quiet "dmgbuild==1.6.5"
 fi
 "$HERE/scripts/release-dmg-background.swift" "$WORK/dmg-background.png" "$WORK/dmg-background@2x.png"
 tiffutil -cathidpicheck "$WORK/dmg-background.png" "$WORK/dmg-background@2x.png" \
@@ -291,7 +291,7 @@ default_view = "icon-view"
 icon_locations = {os.path.basename(app): (170, 178), "Applications": (490, 178)}
 PY
 CAPWISE_DMG_APP="$STAGE" CAPWISE_DMG_BACKGROUND="$WORK/dmg-background.tiff" \
-  "$DMG_TOOLS/bin/dmgbuild" -s "$WORK/dmg-settings.py" "$APP_NAME $VERSION" "$DMG" >/dev/null
+  "$DMG_TOOLS/bin/python3" -m dmgbuild -s "$WORK/dmg-settings.py" "$APP_NAME $VERSION" "$DMG" >/dev/null
 codesign --force "$timestamp_flag" --sign "$IDENTITY" "$DMG"
 
 if ((DRY_RUN)); then
@@ -303,6 +303,45 @@ else
   xcrun stapler validate "$DMG"
   spctl --assess --type open --context context:primary-signature -vv "$DMG"
 fi
+
+step "Verify the shipped bundles"
+verify_shipped_app() {
+  local app="$1" executable
+  "$HERE/scripts/verify-capwise-mac.sh" "$app" --resources-only
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == "$VERSION" ]] ||
+    die "wrong version in $app"
+  for executable in "$APP_NAME" cap-cli; do
+    lipo -verify_arch "$MACHINE" "$app/Contents/MacOS/$executable" ||
+      die "wrong architecture: $app/Contents/MacOS/$executable"
+  done
+  codesign --verify --deep --strict "$app"
+  if ! ((DRY_RUN)); then
+    xcrun stapler validate "$app"
+  fi
+}
+(
+  verification="$(mktemp -d "$WORK/verify.XXXXXX")"
+  mounted=0
+  cleanup_verification() {
+    if ((mounted)); then
+      hdiutil detach "$verification/dmg" -quiet || return 1
+    fi
+    rm -rf -- "$verification"
+  }
+  trap cleanup_verification EXIT
+  mkdir -p "$verification/archive" "$verification/dmg"
+  tar -xzf "$ARCHIVE" -C "$verification/archive"
+  verify_shipped_app "$verification/archive/$APP_NAME.app"
+  hdiutil attach -quiet -readonly -nobrowse -mountpoint "$verification/dmg" "$DMG"
+  mounted=1
+  [[ "$(readlink "$verification/dmg/Applications")" == "/Applications" ]] ||
+    die "DMG is missing its Applications shortcut"
+  ditto "$verification/dmg/$APP_NAME.app" "$verification/$APP_NAME.app"
+  verify_shipped_app "$verification/$APP_NAME.app"
+  hdiutil detach "$verification/dmg" -quiet
+  mounted=0
+)
+echo "DMG and update archive contain complete, signed app bundles."
 
 step "latest.json"
 notes=""

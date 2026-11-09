@@ -2421,6 +2421,7 @@ impl MainWindow {
         };
         let config = recording::StartConfig {
             mode,
+            studio_layout: crate::recording_defaults::StudioLayout::preferred(),
             target,
             device_settings,
             input_readiness,

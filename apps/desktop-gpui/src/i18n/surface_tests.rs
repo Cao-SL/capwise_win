@@ -44,6 +44,28 @@ const FORMATTED: &[&str] = &[
 #[test]
 fn main_surfaces_match_the_literals_they_replaced() {
     let pairs: &[(&str, &str)] = &[
+        (tr::main::studio_layout::editor_layout(), "Layout"),
+        (tr::main::studio_layout::framing(), "Camera framing"),
+        (tr::main::studio_layout::framing_fill(), "Fill"),
+        (tr::main::studio_layout::framing_relaxed(), "Relaxed"),
+        (tr::main::studio_layout::framing_fit(), "Full frame"),
+        (
+            tr::main::studio_layout::at_playhead(),
+            "Applies at the playhead",
+        ),
+        (tr::main::studio_layout::side_by_side(), "Side by side"),
+        (tr::main::studio_layout::round(), "Circle"),
+        (tr::main::studio_layout::square(), "Square"),
+        (tr::main::studio_layout::source(), "Original ratio"),
+        (tr::main::studio_layout::heading(), "Video layout"),
+        (tr::main::studio_layout::pip(), "Picture-in-picture"),
+        (tr::main::studio_layout::screen_left(), "Screen left"),
+        (tr::main::studio_layout::camera_left(), "Camera left"),
+        (tr::camera::avatar::title(), "Avatar"),
+        (tr::camera::avatar::camera(), "Camera"),
+        (tr::camera::avatar::cat(), "Cat"),
+        (tr::camera::avatar::bear(), "Bear"),
+        (tr::camera::avatar::fox(), "Fox"),
         (tr::main::device::fallback_camera(), "Camera"),
         (tr::main::mode::name::instant(), "Instant"),
         (tr::main::mode::name::studio(), "Studio"),

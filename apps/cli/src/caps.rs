@@ -2200,7 +2200,18 @@ mod tests {
         );
         client.get_json("/caps/cap_test/context").await.unwrap();
         let request = server.await.unwrap();
-        assert!(request.contains("x-cap-access-grant: encrypted_access_grant"));
+        let (headers, body) = request.split_once("\r\n\r\n").unwrap();
+        let mut lines = headers.lines();
+        assert!(!lines.next().unwrap().contains("encrypted_access_grant"));
+        assert!(
+            lines
+                .filter_map(|line| line.split_once(':'))
+                .any(|(name, value)| {
+                    name.eq_ignore_ascii_case("x-cap-access-grant")
+                        && value.trim() == "encrypted_access_grant"
+                })
+        );
+        assert!(!body.contains("encrypted_access_grant"));
         assert!(!request.contains("password"));
     }
 }

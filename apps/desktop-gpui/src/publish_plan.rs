@@ -585,11 +585,11 @@ pub(crate) async fn generate(lines: Vec<Line>) -> PublishPlan {
     if lines.is_empty() {
         return base;
     }
-    let Some(provider) = crate::llm::default_provider() else {
+    let Some(provider) = crate::llm::default_content_model() else {
         return base;
     };
     let duration = lines.last().map_or(0., |line| line.end);
-    match crate::llm::chat(provider.id, PROMPT, &transcript_message(&lines)).await {
+    match provider.chat(PROMPT, &transcript_message(&lines)).await {
         Ok(reply) => parse_reply(&reply, &base, duration).unwrap_or(base),
         Err(error) => {
             tracing::warn!(%error, "publish plan: model call failed; using the transcript rules");

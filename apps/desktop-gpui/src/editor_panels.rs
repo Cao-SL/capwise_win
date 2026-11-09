@@ -6598,6 +6598,9 @@ impl EditorWindow {
         };
         let mode = segment.mode;
         let split_mode = matches!(mode, SceneMode::SplitScreen | SceneMode::Floating);
+        let fit_screen = segment.split_layout.is_some_and(|layout| layout.fit_screen);
+        let can_crop_camera = segment.split_layout.unwrap_or_default().camera_framing
+            != cap_project::SplitCameraFraming::Fit;
         let has_camera = self.summary().is_some_and(|summary| summary.has_camera);
         let description = SCENE_MODES
             .iter()
@@ -6693,6 +6696,57 @@ impl EditorWindow {
             );
 
         panel
+            .when(split_mode, |panel| {
+                panel
+                    .child(
+                        ui::Field::inline(&theme, tr::editor::panel::scene::camera_first()).value(
+                            ui::Toggle::plain(
+                                &theme,
+                                "scene-camera-first",
+                                segment
+                                    .split_layout
+                                    .is_some_and(|layout| layout.camera_first),
+                            )
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.edit_scene_segment(
+                                    "scene-camera-first",
+                                    index,
+                                    window,
+                                    cx,
+                                    move |segment| {
+                                        let layout = segment
+                                            .split_layout
+                                            .get_or_insert_with(Default::default);
+                                        layout.camera_first = !layout.camera_first;
+                                        true
+                                    },
+                                );
+                            }))
+                            .into_any_element(),
+                        ),
+                    )
+                    .child(
+                        ui::Field::inline(&theme, tr::editor::panel::scene::fit_screen()).value(
+                            ui::Toggle::plain(&theme, "scene-fit-screen", fit_screen)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.edit_scene_segment(
+                                        "scene-fit-screen",
+                                        index,
+                                        window,
+                                        cx,
+                                        |segment| {
+                                            let layout = segment
+                                                .split_layout
+                                                .get_or_insert_with(Default::default);
+                                            layout.fit_screen = !layout.fit_screen;
+                                            true
+                                        },
+                                    );
+                                }))
+                                .into_any_element(),
+                        ),
+                    )
+            })
             .child(self.more_settings("scene", cx, move |this, cx| {
                 let column = div().flex().flex_col().gap(px(16.)).child(
                     ui::Field::section(&theme, tr::editor::panel::scene::transition()).child(
@@ -6722,26 +6776,38 @@ impl EditorWindow {
                 );
                 if split_mode {
                     column
-                        .child(this.slider_field(
-                            tr::editor::panel::scene::screen_zoom(),
-                            SliderKey::Panel(PanelSlider::SceneScreenZoom, index),
-                            "%",
-                            cx,
-                        ))
-                        .child(
-                            ui::Field::stacked(&theme, tr::editor::panel::scene::screen_position())
-                                .child(this.render_pad(PadKey::SceneScreen(index), cx)),
-                        )
-                        .child(this.slider_field(
-                            tr::editor::panel::scene::camera_zoom(),
-                            SliderKey::Panel(PanelSlider::SceneCameraZoom, index),
-                            "%",
-                            cx,
-                        ))
-                        .child(
-                            ui::Field::stacked(&theme, tr::editor::panel::scene::camera_position())
-                                .child(this.render_pad(PadKey::SceneCamera(index), cx)),
-                        )
+                        .when(!fit_screen, |column| {
+                            column
+                                .child(this.slider_field(
+                                    tr::editor::panel::scene::screen_zoom(),
+                                    SliderKey::Panel(PanelSlider::SceneScreenZoom, index),
+                                    "%",
+                                    cx,
+                                ))
+                                .child(
+                                    ui::Field::stacked(
+                                        &theme,
+                                        tr::editor::panel::scene::screen_position(),
+                                    )
+                                    .child(this.render_pad(PadKey::SceneScreen(index), cx)),
+                                )
+                        })
+                        .when(can_crop_camera, |column| {
+                            column
+                                .child(this.slider_field(
+                                    tr::editor::panel::scene::camera_zoom(),
+                                    SliderKey::Panel(PanelSlider::SceneCameraZoom, index),
+                                    "%",
+                                    cx,
+                                ))
+                                .child(
+                                    ui::Field::stacked(
+                                        &theme,
+                                        tr::editor::panel::scene::camera_position(),
+                                    )
+                                    .child(this.render_pad(PadKey::SceneCamera(index), cx)),
+                                )
+                        })
                         .into_any_element()
                 } else {
                     column.into_any_element()

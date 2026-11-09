@@ -2,13 +2,14 @@
 //! `provider-catalog.ts` and one chat call over the four request styles they
 //! use. Settings live in [`crate::ai_store`].
 
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use serde_json::{Value, json};
 
 use crate::{
     ai_store::{self, Endpoint, Kind},
     i18n::tr,
+    local_agents::{self, AgentConnection, AgentModel},
 };
 
 mod oauth;
@@ -400,6 +401,143 @@ pub fn default_provider() -> Option<&'static LlmProvider> {
     ai_store::llm_default()
         .and_then(|id| ready.iter().copied().find(|p| p.id == id))
         .or_else(|| ready.first().copied())
+}
+
+#[derive(Clone)]
+pub(crate) enum ContentModel {
+    Provider(&'static LlmProvider),
+    Agent {
+        connection: Arc<AgentConnection>,
+        model: Option<AgentModel>,
+    },
+}
+
+pub(crate) fn agent_content_id(agent: &str, model: &str) -> String {
+    format!("acp:{agent}:{model}")
+}
+
+impl ContentModel {
+    pub(crate) fn id(&self) -> String {
+        match self {
+            Self::Provider(provider) => provider.id.into(),
+            Self::Agent { connection, model } => agent_content_id(
+                &connection.id,
+                model.as_ref().map_or("", |model| model.id.as_str()),
+            ),
+        }
+    }
+
+    pub(crate) fn provider_name(&self) -> String {
+        match self {
+            Self::Provider(provider) => (provider.name)().into(),
+            Self::Agent { connection, .. } => connection.name.clone(),
+        }
+    }
+
+    pub(crate) fn model_name(&self) -> String {
+        match self {
+            Self::Provider(provider) => provider.endpoint().model,
+            Self::Agent { model, .. } => model.as_ref().map_or_else(
+                || tr::editor::assistant::default_agent().into(),
+                |model| model.name.clone(),
+            ),
+        }
+    }
+
+    pub(crate) fn group(&self) -> Group {
+        match self {
+            Self::Provider(provider) => provider.group,
+            Self::Agent { .. } => Group::Account,
+        }
+    }
+
+    pub(crate) async fn chat(&self, system: &str, user: &str) -> Result<String, String> {
+        self.chat_in_session(uuid::Uuid::new_v4(), system, user)
+            .await
+    }
+
+    pub(crate) async fn chat_in_session(
+        &self,
+        session: uuid::Uuid,
+        system: &str,
+        user: &str,
+    ) -> Result<String, String> {
+        self.reply(session, system, user, ReplyFormat::Text).await
+    }
+
+    pub(crate) async fn chat_json(
+        &self,
+        session: uuid::Uuid,
+        system: &str,
+        user: &str,
+    ) -> Result<String, String> {
+        self.reply(session, system, user, ReplyFormat::Json).await
+    }
+
+    async fn reply(
+        &self,
+        session: uuid::Uuid,
+        system: &str,
+        user: &str,
+        format: ReplyFormat,
+    ) -> Result<String, String> {
+        match self {
+            Self::Provider(provider) => {
+                chat_with_model(session, provider.id, None, system, user, format).await
+            }
+            Self::Agent { connection, model } => {
+                local_agents::chat(
+                    connection,
+                    model.as_ref().map_or("", |model| model.id.as_str()),
+                    system,
+                    user,
+                )
+                .await
+            }
+        }
+    }
+}
+
+pub(crate) fn agent_content_models() -> impl Iterator<Item = ContentModel> {
+    local_agents::connections()
+        .into_iter()
+        .flat_map(|connection| {
+            let models = connection.models.clone();
+            let connection = Arc::new(connection);
+            std::iter::once(None)
+                .chain(models.into_iter().map(Some))
+                .map(move |model| ContentModel::Agent {
+                    connection: connection.clone(),
+                    model,
+                })
+        })
+}
+
+pub(crate) fn selected_content_model(
+    models: impl IntoIterator<Item = ContentModel>,
+    selected: Option<&str>,
+) -> Option<ContentModel> {
+    let mut fallback = None;
+    for model in models {
+        if selected.is_some_and(|id| model.id() == id) {
+            return Some(model);
+        }
+        if fallback.is_none() && matches!(model, ContentModel::Provider(_)) {
+            fallback = Some(model);
+        }
+    }
+    if selected.is_some_and(|id| id.starts_with("acp:")) {
+        return None;
+    }
+    fallback
+}
+
+pub(crate) fn default_content_model() -> Option<ContentModel> {
+    let selected = ai_store::llm_default();
+    if selected.as_deref().is_some_and(|id| id.starts_with("acp:")) {
+        return selected_content_model(agent_content_models(), selected.as_deref());
+    }
+    default_provider().map(ContentModel::Provider)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

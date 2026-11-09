@@ -352,6 +352,34 @@ pub fn set_llm_default(id: &str) -> bool {
     store::set_store_setting(SECTION, LLM_DEFAULT, Value::String(id.to_string()))
 }
 
+pub(crate) fn set_llm_default_if_empty(id: &str) {
+    store::update_store_section(SECTION, |section| {
+        if section
+            .get(LLM_DEFAULT)
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+        {
+            return false;
+        }
+        section.insert(LLM_DEFAULT.into(), Value::String(id.into()));
+        true
+    });
+}
+
+pub(crate) fn clear_agent_default(prefix: &str) {
+    store::update_store_section(SECTION, |section| {
+        if section
+            .get(LLM_DEFAULT)
+            .and_then(Value::as_str)
+            .is_none_or(|id| !id.starts_with(prefix))
+        {
+            return false;
+        }
+        section.remove(LLM_DEFAULT);
+        true
+    });
+}
+
 /// An address the app may send audio or text to: https, or plain http to
 /// this computer only.
 pub fn address_allowed(base_url: &str) -> bool {

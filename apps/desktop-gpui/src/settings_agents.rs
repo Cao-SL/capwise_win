@@ -1,12 +1,18 @@
+use std::{collections::HashSet, time::Duration};
+
+use futures_util::{StreamExt as _, stream};
+
 use crate::{
     i18n::tr,
+    llm,
     local_agents::{self, AgentConnection},
+    settings_ai::monogram,
     settings_window::SettingsWindow,
     ui,
 };
 use gpui::{
-    AppContext as _, Context, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
-    div, px,
+    AppContext as _, Context, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 pub(crate) struct AgentsSettings {
@@ -15,52 +21,132 @@ pub(crate) struct AgentsSettings {
     command: Entity<ui::TextInputState>,
     args: Entity<ui::TextInputState>,
     custom: bool,
+    show_unavailable: bool,
+    model_picker: Option<String>,
+    model_query: Entity<ui::TextInputState>,
+    _model_query_subscription: gpui::Subscription,
     busy: Option<String>,
     notice: Option<String>,
     task: Option<gpui::Task<()>>,
+    auto_pending: HashSet<String>,
+    auto_task: Option<gpui::Task<()>>,
 }
 
 impl AgentsSettings {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<SettingsWindow>) -> Self {
+        let model_query = cx.new(|cx| {
+            let mut input = ui::TextInputState::single_line(window, cx);
+            input.set_placeholder(tr::settings::agents::search_models());
+            input
+        });
+        let model_query_subscription = cx.subscribe(&model_query, |_, _, event, cx| {
+            if *event == ui::TextInputEvent::Changed {
+                cx.notify();
+            }
+        });
         let args = cx.new(|cx| ui::TextInputState::single_line(window, cx));
         args.update(cx, |input, cx| input.set_text("[]", cx));
         Self {
-            detected: local_agents::PRESETS
-                .iter()
-                .filter_map(local_agents::detect)
-                .collect(),
+            detected: Vec::new(),
             name: cx.new(|cx| ui::TextInputState::single_line(window, cx)),
             command: cx.new(|cx| ui::TextInputState::single_line(window, cx)),
             args,
             custom: false,
+            show_unavailable: false,
+            model_picker: None,
+            model_query,
+            _model_query_subscription: model_query_subscription,
             busy: None,
             notice: None,
             task: None,
+            auto_pending: HashSet::new(),
+            auto_task: None,
         }
     }
 }
 
 impl SettingsWindow {
+    pub(crate) fn detect_and_connect_agents(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = &mut self.pages.agents;
+        if state.auto_task.is_some() {
+            return;
+        }
+        state.detected = local_agents::detect_all();
+        let candidates = local_agents::automatically_connectable(&state.detected);
+        state.auto_pending = candidates.iter().map(|agent| agent.id.clone()).collect();
+        if candidates.is_empty() {
+            cx.notify();
+            return;
+        }
+        state.auto_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let Ok(task) = cx.update(|_, cx| {
+                gpui_tokio::Tokio::spawn(cx, async move {
+                    stream::iter(candidates)
+                        .map(|mut connection| async move {
+                            let models = tokio::time::timeout(Duration::from_secs(15), local_agents::probe(&connection)).await;
+                            let Ok(Ok(models)) = models else { return None };
+                            connection.update_models(models);
+                            let id = llm::agent_content_id(&connection.id, &connection.model);
+                            let has_model = !connection.model.is_empty();
+                            match local_agents::save_detected(connection) {
+                                Ok(true) if has_model => Some(id),
+                                Err(error) => {
+                                    tracing::warn!(%error, "Could not save a detected ACP assistant");
+                                    None
+                                }
+                                _ => None,
+                            }
+                        })
+                        .buffered(3)
+                        .filter_map(std::future::ready)
+                        .collect::<Vec<_>>()
+                        .await
+                })
+            }) else {
+                return;
+            };
+            let models = task.await.unwrap_or_default();
+            this.update_in(cx, |this, _, cx| {
+                this.pages.agents.auto_pending.clear();
+                this.pages.agents.auto_task = None;
+                if let Some(model) = models.first()
+                    && crate::ai_store::llm_default().is_none()
+                    && llm::default_provider().is_none()
+                {
+                    crate::ai_store::set_llm_default_if_empty(model);
+                }
+                cx.notify();
+            }).ok();
+        }));
+        cx.notify();
+    }
+
     fn connect_agent(
         &mut self,
         mut connection: AgentConnection,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pages.agents.busy.is_some() {
+        if self.pages.agents.busy.is_some()
+            || self.pages.agents.auto_pending.contains(&connection.id)
+        {
             return;
         }
+        let prepare = connection.command.is_empty();
         self.pages.agents.busy = Some(connection.id.clone());
         self.pages.agents.notice = None;
         self.pages.agents.task = Some(cx.spawn_in(window, async move |this, cx| {
             let Ok(task) = cx.update(|_, cx| {
                 gpui_tokio::Tokio::spawn(cx, async move {
-                    connection.models = local_agents::probe(&connection).await?;
-                    if !connection.model.is_empty()
-                        && !connection.models.iter().any(|m| m.id == connection.model)
-                    {
-                        connection.model.clear();
+                    if prepare {
+                        connection = local_agents::prepare(&connection.id).await?;
                     }
+                    let models = local_agents::connect(&connection).await?;
+                    connection.update_models(models);
                     local_agents::save(connection)
                 })
             }) else {
@@ -72,11 +158,8 @@ impl SettingsWindow {
             this.update_in(cx, |this, _, cx| {
                 this.pages.agents.busy = None;
                 this.pages.agents.task = None;
-                this.pages.agents.notice = Some(
-                    result
-                        .err()
-                        .unwrap_or_else(|| tr::settings::agents::connected().into()),
-                );
+                this.pages.agents.detected = local_agents::detect_all();
+                this.pages.agents.notice = result.err();
                 cx.notify();
             })
             .ok();
@@ -84,115 +167,286 @@ impl SettingsWindow {
         cx.notify();
     }
 
-    pub(crate) fn render_agent_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = self.theme;
+    fn agent_row(
+        &self,
+        name: &str,
+        id: &str,
+        connection: Option<&AgentConnection>,
+        connected: bool,
+        default: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let state = &self.pages.agents;
-        let saved = local_agents::connections();
-        let mut body = self.card(true).flex().flex_col().gap(px(12.));
-        for preset in local_agents::PRESETS {
-            let connected = saved.iter().find(|c| c.id == preset.id);
-            let detected = connected
-                .or_else(|| state.detected.iter().find(|c| c.id == preset.id))
-                .cloned();
-            let id = preset.id.to_owned();
-            let label = if state.busy.as_deref() == Some(preset.id) {
-                tr::settings::agents::connecting()
-            } else if connected.is_some() {
-                tr::settings::agents::refresh()
+        let theme = self.theme;
+        let current_model =
+            default.and_then(|default| default.strip_prefix(&llm::agent_content_id(id, "")));
+        let note = if let Some(connection) = connection.filter(|_| connected) {
+            let name = current_model.and_then(|current| {
+                if current.is_empty() {
+                    Some(tr::editor::assistant::default_agent())
+                } else {
+                    connection
+                        .models
+                        .iter()
+                        .find(|model| model.id == current)
+                        .map(|model| model.name.as_str())
+                }
+            });
+            name.map_or_else(
+                || tr::settings::agents::connected().into(),
+                |name| format!("{} · {name}", tr::settings::agents::content_default()),
+            )
+        } else if connection.is_none() {
+            tr::settings::agents::not_found().into()
+        } else {
+            String::new()
+        };
+        let auto_pending = state.auto_pending.contains(id);
+        let busy = state.busy.is_some() || auto_pending;
+        let is_connecting = state.busy.as_deref() == Some(id) || auto_pending;
+        let picker_open = state.model_picker.as_deref() == Some(id);
+        let mut actions = div().flex().items_center().gap(px(6.));
+        if connected {
+            let id = id.to_owned();
+            actions = actions.child(
+                ui::Button::settings(
+                    &theme,
+                    SharedString::from(format!("agent-pick-{id}")),
+                    ui::ButtonVariant::Gray,
+                    ui::ButtonSize::Sm,
+                )
+                .label(tr::settings::agents::use_for_content())
+                .right_icon(if picker_open {
+                    "icons/chevron-up.svg"
+                } else {
+                    "icons/chevron-down.svg"
+                })
+                .disabled(busy)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    let state = &mut this.pages.agents;
+                    if state.model_picker.as_deref() == Some(id.as_str()) {
+                        state.model_picker = None;
+                    } else {
+                        state.model_picker = Some(id.clone());
+                        state
+                            .model_query
+                            .update(cx, |input, cx| input.set_text("", cx));
+                        let focus = state.model_query.read(cx).focus_handle();
+                        window.focus(&focus, cx);
+                    }
+                    cx.notify();
+                })),
+            );
+        }
+        if let Some(connection) = connection {
+            let connection = connection.clone();
+            let prepare = connection.command.is_empty();
+            if connected && !is_connecting {
+                actions = actions.child(
+                    ui::EditorButton::plain(
+                        &theme,
+                        SharedString::from(format!("agent-refresh-{id}")),
+                    )
+                    .left_icon("icons/refresh-cw.svg")
+                    .tooltip(&theme, tr::settings::agents::refresh())
+                    .disabled(busy)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.connect_agent(connection.clone(), window, cx)
+                    })),
+                );
             } else {
-                tr::settings::agents::connect()
-            };
-            let mut row = div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .child(div().flex_1().child(preset.name));
-            if let Some(connection) = detected {
-                row = row.child(
-                    ui::Button::plain(
+                let label = match (is_connecting, prepare) {
+                    (true, true) => tr::settings::agents::preparing(),
+                    (true, false) => tr::settings::agents::connecting(),
+                    (false, true) => tr::settings::agents::prepare(),
+                    (false, false) => tr::settings::agents::connect(),
+                };
+                actions = actions.child(
+                    ui::Button::settings(
                         &theme,
                         SharedString::from(format!("agent-connect-{id}")),
                         ui::ButtonVariant::Gray,
                         ui::ButtonSize::Sm,
                     )
                     .label(label)
-                    .disabled(state.busy.is_some())
+                    .icon(if prepare {
+                        "icons/download.svg"
+                    } else {
+                        "icons/link.svg"
+                    })
+                    .disabled(busy)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.connect_agent(connection.clone(), window, cx)
                     })),
                 );
-            } else {
-                row = row.child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(theme.settings_muted())
-                        .child(tr::settings::agents::not_found()),
-                );
             }
-            if connected.is_some() {
-                row = row.child(
-                    ui::Button::plain(
-                        &theme,
-                        SharedString::from(format!("agent-remove-{id}")),
-                        ui::ButtonVariant::Gray,
-                        ui::ButtonSize::Sm,
-                    )
-                    .label(tr::settings::agents::remove())
-                    .disabled(state.busy.is_some())
+        }
+        if connected {
+            let id = id.to_owned();
+            actions = actions.child(
+                ui::EditorButton::plain(&theme, SharedString::from(format!("agent-remove-{id}")))
+                    .left_icon("icons/unplug.svg")
+                    .tooltip(&theme, tr::settings::agents::remove())
+                    .disabled(busy)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.pages.agents.notice = local_agents::remove(&id).err();
+                        if this.pages.agents.model_picker.as_deref() == Some(&id) {
+                            this.pages.agents.model_picker = None;
+                        }
                         cx.notify();
                     })),
-                );
-            }
-            body = body.child(row);
-        }
-        for connection in saved
-            .iter()
-            .filter(|c| !local_agents::PRESETS.iter().any(|p| p.id == c.id))
-        {
-            let refresh = connection.clone();
-            let id = connection.id.clone();
-            body = body.child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .items_center()
-                    .child(div().flex_1().child(connection.name.clone()))
-                    .child(
-                        ui::Button::plain(
-                            &theme,
-                            SharedString::from(format!("agent-refresh-{id}")),
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(tr::settings::agents::refresh())
-                        .disabled(state.busy.is_some())
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
-                                this.connect_agent(refresh.clone(), window, cx)
-                            },
-                        )),
-                    )
-                    .child(
-                        ui::Button::plain(
-                            &theme,
-                            SharedString::from(format!("agent-remove-{id}")),
-                            ui::ButtonVariant::Gray,
-                            ui::ButtonSize::Sm,
-                        )
-                        .label(tr::settings::agents::remove())
-                        .disabled(state.busy.is_some())
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.pages.agents.notice = local_agents::remove(&id).err();
-                            cx.notify();
-                        })),
-                    ),
             );
+        }
+        div()
+            .child(self.ai_row(
+                monogram(name),
+                name.to_owned().into(),
+                Vec::new(),
+                note.into(),
+                actions.into_any_element(),
+            ))
+            .children(
+                connection
+                    .filter(|_| connected && picker_open)
+                    .map(|connection| self.agent_model_picker(connection, current_model, cx)),
+            )
+            .into_any_element()
+    }
+
+    fn agent_model_picker(
+        &self,
+        connection: &AgentConnection,
+        current: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme;
+        let query = self
+            .pages
+            .agents
+            .model_query
+            .read(cx)
+            .text()
+            .trim()
+            .to_lowercase();
+        let models = std::iter::once(("", tr::editor::assistant::default_agent())).chain(
+            connection
+                .models
+                .iter()
+                .map(|model| (model.id.as_str(), model.name.as_str())),
+        );
+        let choices: Vec<_> = models
+            .filter(|(id, name)| {
+                id.to_lowercase().contains(&query) || name.to_lowercase().contains(&query)
+            })
+            .map(|(id, name)| {
+                let is_current = current == Some(id);
+                let content_id = llm::agent_content_id(&connection.id, id);
+                let mut choice =
+                    ui::EditorButton::plain(&theme, SharedString::from(content_id.clone()))
+                        .label(name.to_owned())
+                        .start()
+                        .grow()
+                        .pressed(is_current)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if crate::ai_store::set_llm_default(&content_id) {
+                                this.pages.agents.model_picker = None;
+                                this.pages.agents.notice = None;
+                            } else {
+                                this.pages.agents.notice =
+                                    Some(tr::settings::agents::save_failed().into());
+                            }
+                            cx.notify();
+                        }));
+                if is_current {
+                    choice = choice.left_icon("icons/check.svg");
+                }
+                if !id.is_empty() && id != name {
+                    choice = choice.tooltip(&theme, id.to_owned());
+                }
+                div().flex().child(choice)
+            })
+            .collect();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .px(px(14.))
+            .pb(px(10.))
+            .child(ui::TextInput::search(
+                &theme,
+                "agent-model-search",
+                &self.pages.agents.model_query,
+            ))
+            .child(if choices.is_empty() {
+                div()
+                    .px(px(7.))
+                    .text_size(px(12.))
+                    .text_color(theme.settings_muted())
+                    .child(tr::settings::agents::models_no_matches())
+                    .into_any_element()
+            } else {
+                div()
+                    .id("agent-model-list")
+                    .max_h(px(206.))
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .children(choices)
+                    .into_any_element()
+            })
+            .into_any_element()
+    }
+
+    pub(crate) fn render_agent_settings(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme;
+        let state = &self.pages.agents;
+        let saved = local_agents::connections();
+        let default = crate::ai_store::llm_default();
+        let mut body = div().flex().flex_col().gap(px(10.));
+        if let Some(notice) = &state.notice {
+            body = body.child(self.card(true).text_size(px(12.)).child(notice.clone()));
+        }
+        let mut rows = Vec::new();
+        for connection in &saved {
+            rows.push(self.agent_row(
+                &connection.name,
+                &connection.id,
+                Some(connection),
+                true,
+                default.as_deref(),
+                cx,
+            ));
+        }
+        let mut unavailable = false;
+        for preset in local_agents::PRESETS {
+            if saved.iter().any(|connection| connection.id == preset.id) {
+                continue;
+            }
+            let connection = state
+                .detected
+                .iter()
+                .find(|connection| connection.id == preset.id)
+                .cloned()
+                .or_else(|| preset.can_prepare().then(|| preset.pending_connection()));
+            unavailable |= connection.is_none();
+            if connection.is_some() || state.show_unavailable {
+                rows.push(self.agent_row(
+                    preset.name,
+                    preset.id,
+                    connection.as_ref(),
+                    false,
+                    None,
+                    cx,
+                ));
+            }
+        }
+        if !rows.is_empty() {
+            body = body.child(self.rows(rows));
         }
         body = body.child(
             div()
                 .flex()
+                .flex_wrap()
                 .gap(px(8.))
                 .child(
                     ui::Button::plain(
@@ -202,12 +456,11 @@ impl SettingsWindow {
                         ui::ButtonSize::Sm,
                     )
                     .label(tr::settings::agents::detect())
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.pages.agents.detected = local_agents::PRESETS
-                            .iter()
-                            .filter_map(local_agents::detect)
-                            .collect();
-                        cx.notify();
+                    .icon("icons/refresh-cw.svg")
+                    .disabled(state.auto_task.is_some())
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.pages.agents.notice = None;
+                        this.detect_and_connect_agents(window, cx);
                     })),
                 )
                 .child(
@@ -218,11 +471,29 @@ impl SettingsWindow {
                         ui::ButtonSize::Sm,
                     )
                     .label(tr::settings::agents::custom())
+                    .icon("icons/plus.svg")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.pages.agents.custom = !this.pages.agents.custom;
                         cx.notify();
                     })),
-                ),
+                )
+                .children(unavailable.then(|| {
+                    ui::Button::plain(
+                        &theme,
+                        "agents-show-unavailable",
+                        ui::ButtonVariant::Gray,
+                        ui::ButtonSize::Sm,
+                    )
+                    .label(if state.show_unavailable {
+                        tr::settings::agents::hide_unavailable()
+                    } else {
+                        tr::settings::agents::show_unavailable()
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.pages.agents.show_unavailable = !this.pages.agents.show_unavailable;
+                        cx.notify();
+                    }))
+                })),
         );
         if state.custom {
             for (id, label, input) in [
@@ -255,7 +526,7 @@ impl SettingsWindow {
                     let name = state.name.read(cx).text().trim().to_owned();
                     let command = state.command.read(cx).text().trim().to_owned();
                     let args = serde_json::from_str::<Vec<String>>(state.args.read(cx).text());
-                    if name.is_empty() || name.len() > 80 || args.is_err() {
+                    if name.is_empty() || name.len() > 80 || command.is_empty() || args.is_err() {
                         this.pages.agents.notice =
                             Some(tr::settings::agents::invalid_command().into());
                         cx.notify();
@@ -277,9 +548,6 @@ impl SettingsWindow {
                     }
                 })),
             );
-        }
-        if let Some(notice) = &state.notice {
-            body = body.child(div().text_size(px(12.)).child(notice.clone()));
         }
         self.section(
             tr::settings::agents::title(),

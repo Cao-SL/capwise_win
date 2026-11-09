@@ -63,8 +63,10 @@ use crate::{
     camera_loading,
     feeds::Feeds,
     platform,
+    recording_defaults::StudioLayout,
     store::{self, BlurMode, CameraShape, CameraWindowState},
     theme::Theme,
+    ui,
 };
 
 #[cfg(target_os = "macos")]
@@ -80,6 +82,48 @@ pub const CAMERA_TOOLBAR_HEIGHT: f32 = 56.;
 const WIDE_ASPECT: f32 = 16. / 9.;
 const LOADING_FADE_OUT_SECONDS: f32 = 0.28;
 const CUTOUT_REVEAL_SECONDS: f32 = 0.45;
+
+#[cfg(target_os = "macos")]
+fn live_dock_frame([x, y, width, height]: [f32; 4], camera_left: bool) -> Option<[f32; 4]> {
+    let inset = 20.;
+    let available_width = width - 2. * inset;
+    let available_height = height - 2. * inset;
+    if available_width < 120. || available_height < CAMERA_TOOLBAR_HEIGHT + 90. {
+        return None;
+    }
+    let (_, camera) = cap_project::floating_split_panes(16., 9., true);
+    let aspect = (camera[2] - camera[0]) / (camera[3] - camera[1]);
+    let video_height = (height * 0.66).min(available_height) - CAMERA_TOOLBAR_HEIGHT;
+    let pane_width = (width * 0.18)
+        .clamp(190., 300.)
+        .min(available_width)
+        .min(video_height.max(1.) * aspect);
+    let pane_height = pane_width / aspect + CAMERA_TOOLBAR_HEIGHT;
+    let left = if camera_left {
+        x + inset
+    } else {
+        x + width - inset - pane_width
+    };
+    Some([
+        left,
+        y + (height - pane_height) * 0.5,
+        pane_width,
+        pane_height,
+    ])
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[test]
+fn live_dock_tracks_either_edge_of_the_captured_display() {
+    let display = [-1440., -50., 1440., 900.];
+    let left = live_dock_frame(display, true).unwrap();
+    let right = live_dock_frame(display, false).unwrap();
+    assert_eq!(left[0], -1420.);
+    assert_eq!(right[0] + right[2], -20.);
+    assert_eq!(left[1..], right[1..]);
+    assert!(left[1] > display[1] && left[1] + left[3] < display[1] + display[3]);
+    assert!(live_dock_frame([0., 0., 100., 900.], true).is_none());
+}
 
 pub fn clamp_size(scale: f32) -> f32 {
     scale.clamp(CAMERA_MIN_SIZE, CAMERA_MAX_SIZE)
@@ -196,7 +240,7 @@ fn normalized_size(state: &CameraWindowState) -> f32 {
     (clamp_size(state.size) - CAMERA_MIN_SIZE) / (CAMERA_MAX_SIZE - CAMERA_MIN_SIZE)
 }
 
-const TOOLBAR_MOST_BUTTONS: usize = if cfg!(target_os = "macos") { 6 } else { 5 };
+const TOOLBAR_MOST_BUTTONS: usize = if cfg!(target_os = "macos") { 7 } else { 5 };
 
 /// The fit uses each button's footprint (a 22px icon in 8px padding, 4px
 /// apart, in a 4px-padded strip with a 1px border). The preview-only blur,
@@ -1104,6 +1148,7 @@ struct CameraPreviewView {
     painted_cutout_frame: Option<Arc<gpui::RenderImage>>,
     theme: Theme,
     radius: f32,
+    docked: bool,
     /// Clamped bubble size, for the issue overlay's scaled text metrics.
     size: f32,
     #[cfg(target_os = "macos")]
@@ -1212,6 +1257,7 @@ impl CameraPreviewView {
             painted_cutout_frame: None,
             theme,
             radius,
+            docked: false,
             size,
             #[cfg(target_os = "macos")]
             latest_frame: None,
@@ -1272,8 +1318,9 @@ impl CameraPreviewView {
         previous
     }
 
-    fn set_chrome(&mut self, radius: f32, size: f32, cx: &mut Context<Self>) {
-        if self.radius != radius || self.size != size {
+    fn set_chrome(&mut self, radius: f32, size: f32, docked: bool, cx: &mut Context<Self>) {
+        if self.radius != radius || self.size != size || self.docked != docked {
+            self.docked = docked;
             self.radius = radius;
             self.size = size;
             cx.notify();
@@ -1358,8 +1405,31 @@ impl Render for CameraPreviewView {
             .size_full()
             .overflow_hidden()
             .rounded(px(radius))
-            .when(radius > 0., |this| this.bg(theme.gray_1))
+            .when(radius > 0. && !self.docked, |this| this.bg(theme.gray_1))
             .text_color(theme.gray_12);
+
+        let video = div().size_full();
+        let mut video = if self.docked {
+            let viewport = window.viewport_size();
+            let width = f32::from(viewport.width);
+            let height = (f32::from(viewport.height) - CAMERA_TOOLBAR_HEIGHT).max(1.);
+            let aspect = self
+                .frame_dims
+                .or(self.retained_dims)
+                .map_or(WIDE_ASPECT, |(w, h)| w as f32 / h.max(1) as f32);
+            let [x, y, right, bottom] = cap_project::SplitCameraFraming::Relaxed
+                .pane_bounds([0., 0., width, height], aspect);
+            video
+                .absolute()
+                .left(px(x))
+                .top(px(y))
+                .w(px(right - x))
+                .h(px(bottom - y))
+                .rounded(px(radius))
+                .overflow_hidden()
+        } else {
+            video.relative()
+        };
 
         #[cfg(target_os = "macos")]
         if let Some(buffer) = self
@@ -1373,7 +1443,7 @@ impl Render for CameraPreviewView {
             // computes the same fitted box the old `img()` element used, and
             // `paint_surface_fitted` UV-crops it to the element bounds so the
             // corner radii round the visible rect (circle shape included).
-            container = container.child(
+            video = video.child(
                 gpui::canvas(
                     |_, _, _| {},
                     move |bounds, _, window, _| {
@@ -1406,7 +1476,7 @@ impl Render for CameraPreviewView {
             // the loading disc fades out; a raw surface cannot take opacity,
             // but the bubble's opaque glass covers it during its own fade.
             let reveal = loading.map_or(1., |(_, opacity, _)| 1. - opacity);
-            container = container.child(
+            video = video.child(
                 gpui::img(image)
                     .size_full()
                     .object_fit(gpui::ObjectFit::Cover)
@@ -1417,7 +1487,7 @@ impl Render for CameraPreviewView {
         #[cfg(not(target_os = "macos"))]
         if let Some(image) = self.latest_frame.clone() {
             self.paints.fetch_add(1, Ordering::Relaxed);
-            container = container.child(
+            video = video.child(
                 gpui::img(image)
                     .size_full()
                     .rounded(px(radius))
@@ -1432,16 +1502,18 @@ impl Render for CameraPreviewView {
                     .rounded(px(radius))
                     .object_fit(gpui::ObjectFit::Cover),
             );
-            container = if self.reveal_started.is_some() {
-                container.child(overlay.with_animation(
+            video = if self.reveal_started.is_some() {
+                video.child(overlay.with_animation(
                     "camera-preview-reveal",
                     Animation::new(Duration::from_millis(180)),
                     |element, progress| element.opacity(1. - progress),
                 ))
             } else {
-                container.child(overlay)
+                video.child(overlay)
             };
         }
+
+        container = container.child(video);
 
         if let Some((started, opacity, animate)) = loading {
             container = container.child(camera_loading::camera_loading(
@@ -1641,6 +1713,14 @@ struct BlurBridge {
     _pump: gpui::Task<()>,
 }
 
+const CAMERA_LAYOUT_CHOICES: [(StudioLayout, Option<CameraShape>); 5] = [
+    (StudioLayout::PictureInPicture, Some(CameraShape::Round)),
+    (StudioLayout::PictureInPicture, Some(CameraShape::Square)),
+    (StudioLayout::PictureInPicture, Some(CameraShape::Full)),
+    (StudioLayout::ScreenLeft, None),
+    (StudioLayout::CameraLeft, None),
+];
+
 pub struct CameraWindow {
     theme: Theme,
     state: CameraWindowState,
@@ -1648,6 +1728,14 @@ pub struct CameraWindow {
     picker_size: Option<(f32, f32)>,
     size_generation: Arc<AtomicU64>,
     chrome_visible: bool,
+    studio_layout: StudioLayout,
+    undocked_bounds: Option<gpui::Bounds<gpui::Pixels>>,
+    #[cfg(target_os = "macos")]
+    dock_frame: Option<[f32; 4]>,
+    layout_menu: Option<ui::MenuState>,
+    avatar_menu: Option<ui::MenuState>,
+    avatar: cap_recording::avatar::AvatarKind,
+    layout_focus: gpui::FocusHandle,
     resizing: Option<ResizeDrag>,
     hovered_handle: Option<ResizeCorner>,
     #[cfg(target_os = "macos")]
@@ -1693,7 +1781,7 @@ impl CameraWindow {
             }
             #[cfg(target_os = "macos")]
             let bounds = {
-                let bounds = window.bounds();
+                let bounds = self.undocked_bounds.unwrap_or_else(|| window.bounds());
                 [
                     f64::from(f32::from(bounds.origin.x)),
                     f64::from(f32::from(bounds.origin.y)) + f64::from(CAMERA_TOOLBAR_HEIGHT),
@@ -1722,8 +1810,14 @@ impl CameraWindow {
             cap_recording::camera_placement::recording_camera_placement(target, bounds)
         })();
         crate::recording::StudioCameraSnapshot {
-            blur: self.state.background_blur,
-            skin_smoothing: self.state.skin_smoothing,
+            blur: if self.avatar == cap_recording::avatar::AvatarKind::Camera {
+                self.state.background_blur
+            } else {
+                BlurMode::Off
+            },
+            skin_smoothing: self.avatar == cap_recording::avatar::AvatarKind::Camera
+                && self.state.skin_smoothing,
+            shape: self.state.shape,
             placement,
         }
     }
@@ -1859,6 +1953,25 @@ impl CameraWindow {
         });
         let camera = cx.entity();
         let toolbar = cx.new(|cx| CameraToolbarView::new(&camera, cx));
+        let targets = crate::target_overlay::TargetSelect::global(cx);
+        let mut recording_mode = targets.read(cx).recording_mode;
+        cx.observe_in(
+            &targets,
+            window,
+            move |this: &mut Self, targets, window, cx| {
+                let next = targets.read(cx).recording_mode;
+                if next != recording_mode {
+                    recording_mode = next;
+                    this.layout_menu = None;
+                    cx.notify();
+                }
+                #[cfg(target_os = "macos")]
+                this.sync_studio_preview(window, cx);
+                #[cfg(not(target_os = "macos"))]
+                let _ = window;
+            },
+        )
+        .detach();
 
         // `currentWindow.onMoved` + the 400ms position sync
         // (`camera.tsx:167-216`): every move lands in the shared store,
@@ -1868,6 +1981,25 @@ impl CameraWindow {
         })
         .detach();
 
+        cx.observe_in(
+            &crate::session::RecordingSession::global(cx),
+            window,
+            |this, session, window, cx| {
+                let active = session.read(cx).phase != crate::session::Phase::Idle;
+                if active {
+                    this.avatar_menu = None;
+                }
+                if active && this.layout_menu.take().is_some() {
+                    cx.notify();
+                }
+                #[cfg(target_os = "macos")]
+                this.sync_studio_preview(window, cx);
+                #[cfg(not(target_os = "macos"))]
+                let _ = window;
+            },
+        )
+        .detach();
+
         Self {
             theme,
             state,
@@ -1875,6 +2007,14 @@ impl CameraWindow {
             picker_size: None,
             size_generation: Arc::new(AtomicU64::new(0)),
             chrome_visible: false,
+            studio_layout: StudioLayout::preferred(),
+            undocked_bounds: None,
+            #[cfg(target_os = "macos")]
+            dock_frame: None,
+            layout_menu: None,
+            avatar_menu: None,
+            avatar: store::load().camera_avatar,
+            layout_focus: cx.focus_handle(),
             resizing: None,
             hovered_handle: None,
             #[cfg(target_os = "macos")]
@@ -1914,6 +2054,8 @@ impl CameraWindow {
         if !inline {
             self.apply_window_size(window, cx);
         }
+        #[cfg(target_os = "macos")]
+        self.sync_studio_preview(window, cx);
         cx.notify();
     }
 
@@ -2061,7 +2203,10 @@ impl CameraWindow {
 
     #[cfg(target_os = "macos")]
     fn active_blur_mode(&self) -> Option<cap_camera_effects::BlurMode> {
-        if self.effect_failures.blur || camera_blur::is_low_spec_preview() {
+        if self.avatar != cap_recording::avatar::AvatarKind::Camera
+            || self.effect_failures.blur
+            || camera_blur::is_low_spec_preview()
+        {
             return None;
         }
         match self.state.background_blur {
@@ -2074,7 +2219,8 @@ impl CameraWindow {
 
     #[cfg(target_os = "macos")]
     fn active_skin_smoothing(&self) -> bool {
-        self.state.skin_smoothing
+        self.avatar == cap_recording::avatar::AvatarKind::Camera
+            && self.state.skin_smoothing
             && !self.effect_failures.skin_smoothing
             && !camera_blur::is_low_spec_preview()
     }
@@ -2312,10 +2458,16 @@ impl CameraWindow {
     /// Pushes the chrome inputs the preview renders with (its own notify is
     /// the only thing that busts its cache).
     fn sync_preview_chrome(&mut self, cx: &mut Context<Self>) {
-        let radius = picker_preview_radius(&self.state, self.picker_size);
+        let docked = self.undocked_bounds.is_some();
+        let radius = if docked {
+            14.
+        } else {
+            picker_preview_radius(&self.state, self.picker_size)
+        };
         let size = clamp_size(self.state.size);
-        self.preview
-            .update(cx, |preview, cx| preview.set_chrome(radius, size, cx));
+        self.preview.update(cx, |preview, cx| {
+            preview.set_chrome(radius, size, docked, cx)
+        });
     }
 
     fn mutate_state(
@@ -2360,15 +2512,12 @@ impl CameraWindow {
     /// *bottom*-left, so the anchor and the clamp both go through one native
     /// `setFrame:` instead.
     fn apply_window_size(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.inline {
+        if self.inline || self.undocked_bounds.is_some() {
             return;
         }
         let (width, height) = self
             .picker_size
             .unwrap_or_else(|| window_size(&self.state, self.frame_aspect()));
-        let generation = self.size_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        let generations = self.size_generation.clone();
-
         let bounds = window.bounds();
         let (x, y) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
         let (mut new_x, mut new_y) = (x, y);
@@ -2395,6 +2544,18 @@ impl CameraWindow {
             }
         }
 
+        self.move_window([new_x, new_y, width, height], window, cx);
+    }
+
+    fn move_window(
+        &self,
+        [new_x, new_y, width, height]: [f32; 4],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let generation = self.size_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        let generations = self.size_generation.clone();
+
         #[cfg(target_os = "windows")]
         if let Some(native) = platform::native_window(window) {
             cx.spawn(async move |_, _| {
@@ -2416,6 +2577,8 @@ impl CameraWindow {
 
         #[cfg(not(target_os = "windows"))]
         if let Some(native) = platform::native_window(window) {
+            let origin = window.bounds().origin;
+            let (x, y) = (f32::from(origin.x), f32::from(origin.y));
             let (frame_x, frame_y, _, frame_height) = platform::window_frame(&native);
             // AppKit y grows upward: keep the gpui-space top edge, then apply
             // the clamp deltas (gpui +y = AppKit -y).
@@ -2442,6 +2605,98 @@ impl CameraWindow {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    pub(crate) fn has_split_preview(&self) -> bool {
+        self.dock_frame.is_some()
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn sync_studio_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let session = crate::session::RecordingSession::global(cx);
+        let state = session.read(cx);
+        let preview = if self.inline {
+            None
+        } else if state.phase != crate::session::Phase::Idle {
+            state.live_camera_layout().map(|config| {
+                (
+                    config.studio_layout,
+                    config.target.display().map(|display| display.id()),
+                )
+            })
+        } else if self.studio_layout_controls(cx)
+            && self.studio_layout != StudioLayout::PictureInPicture
+        {
+            let targets = crate::target_overlay::TargetSelect::global(cx);
+            let target = targets.read(cx);
+            let display = target
+                .active_window()
+                .filter(|_| target.mode == Some(crate::main_window::TargetType::Window))
+                .map(|window| window.display_id.clone())
+                .or_else(|| target.mode.and(target.cursor_display.clone()));
+            Some((self.studio_layout, display))
+        } else {
+            None
+        };
+
+        let next = preview.and_then(|(layout, display)| {
+            let area = display
+                .as_ref()
+                .and_then(scap_targets::Display::from_id)
+                .and_then(|display| display.raw_handle().logical_bounds())
+                .map(|bounds| {
+                    [
+                        bounds.position().x() as f32,
+                        bounds.position().y() as f32,
+                        bounds.size().width() as f32,
+                        bounds.size().height() as f32,
+                    ]
+                })
+                .or_else(|| {
+                    window.display(cx).map(|display| {
+                        let bounds = display.bounds();
+                        [
+                            bounds.origin.x.into(),
+                            bounds.origin.y.into(),
+                            bounds.size.width.into(),
+                            bounds.size.height.into(),
+                        ]
+                    })
+                })?;
+            live_dock_frame(area, layout == StudioLayout::CameraLeft)
+        });
+
+        if self.dock_frame == next {
+            return;
+        }
+        self.dock_frame = next;
+        if let Some(frame) = next {
+            if self.undocked_bounds.is_none() {
+                self.position_save_generation.fetch_add(1, Ordering::AcqRel);
+                self.undocked_bounds = Some(
+                    crate::app_windows::take_camera_picker_origin(cx)
+                        .unwrap_or_else(|| window.bounds()),
+                );
+                self.picker_size = None;
+                self.resizing = None;
+                self.hovered_handle = None;
+            }
+            self.move_window(frame, window, cx);
+        } else if let Some(original) = self.undocked_bounds.take() {
+            self.move_window(
+                [
+                    original.origin.x.into(),
+                    original.origin.y.into(),
+                    original.size.width.into(),
+                    original.size.height.into(),
+                ],
+                window,
+                cx,
+            );
+        }
+        self.sync_preview_chrome(cx);
+        cx.notify();
+    }
+
     fn persist(&self, cx: &mut Context<Self>) {
         let state = self.state;
         cx.background_executor()
@@ -2455,6 +2710,9 @@ impl CameraWindow {
     /// the window's logical top-left, skipped when it has not moved a whole
     /// pixel.
     fn queue_position_save(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.undocked_bounds.is_some() {
+            return;
+        }
         let origin = window.bounds().origin;
         let (x, y) = (f32::from(origin.x), f32::from(origin.y));
         let capture_scale = f64::from(crate::target_overlay::capture_scale_factor(window));
@@ -2502,6 +2760,28 @@ impl CameraWindow {
         let theme = self.theme;
         div()
             .id(id)
+            .when(id == "avatar", |button| {
+                button
+                    .tab_index(0)
+                    .tab_stop(true)
+                    .role(gpui::Role::Button)
+                    .aria_label(tr::camera::avatar::title())
+                    .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+                    .tooltip(move |_, cx| {
+                        ui::Tooltip::new(&theme, tr::camera::avatar::title()).view(cx)
+                    })
+            })
+            .when(id == "layout", |button| {
+                button
+                    .tab_index(0)
+                    .tab_stop(true)
+                    .role(gpui::Role::Button)
+                    .aria_label(tr::main::studio_layout::heading())
+                    .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+                    .tooltip(move |_, cx| {
+                        ui::Tooltip::new(&theme, tr::main::studio_layout::heading()).view(cx)
+                    })
+            })
             .p(px(8. * scale))
             .rounded(px(8. * scale))
             .when(pressed, |this| {
@@ -2556,6 +2836,155 @@ impl CameraWindow {
             )
     }
 
+    fn avatar_items(&self) -> Vec<ui::MenuItem> {
+        use cap_recording::avatar::AvatarKind;
+        [
+            tr::camera::avatar::camera(),
+            tr::camera::avatar::cat(),
+            tr::camera::avatar::bear(),
+            tr::camera::avatar::fox(),
+        ]
+        .into_iter()
+        .zip(AvatarKind::ALL)
+        .map(|(label, kind)| ui::MenuItem::new(label, self.avatar == kind))
+        .collect()
+    }
+
+    fn choose_avatar(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.avatar_menu = None;
+        if crate::session::RecordingSession::global(cx).read(cx).phase
+            != crate::session::Phase::Idle
+        {
+            cx.notify();
+            return;
+        }
+        if let Some(kind) = cap_recording::avatar::AvatarKind::ALL.get(index).copied() {
+            self.avatar = kind;
+            clear_parked_camera_preview(cx);
+            #[cfg(target_os = "macos")]
+            {
+                Feeds::global(cx).update(cx, |feeds, cx| feeds.set_avatar(kind, cx));
+                self.convert_rebuilds += 1;
+                self.blur = None;
+                self.preview.update(cx, |preview, cx| {
+                    preview.latest_frame = None;
+                    if let Some(image) = preview.retained.take() {
+                        let _ = window.drop_image(image);
+                    }
+                    if let Some(image) = preview.painted_cutout_frame.take() {
+                        let _ = window.drop_image(image);
+                    }
+                    if let Some(image) = preview.cutout_frame.take() {
+                        let _ = window.drop_image(image);
+                    }
+                    preview.frame_dims = None;
+                    cx.notify();
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    fn render_avatar_menu(&self, cx: &mut Context<Self>) -> Option<ui::Menu> {
+        let state = self.avatar_menu.as_ref()?;
+        Some(
+            ui::Menu::plain(
+                &self.theme,
+                "camera-avatar-menu",
+                self.avatar_items(),
+                state,
+            )
+            .on_select(
+                cx.listener(|this, index: &usize, window, cx| {
+                    this.choose_avatar(*index, window, cx)
+                }),
+            )
+            .on_dismiss(cx.listener(|this, _, _, cx| {
+                this.avatar_menu = None;
+                cx.notify();
+            })),
+        )
+    }
+
+    fn studio_layout_controls(&self, cx: &gpui::App) -> bool {
+        !self.inline
+            && crate::target_overlay::TargetSelect::global(cx)
+                .read(cx)
+                .recording_mode
+                == crate::main_window::Mode::Studio
+            && crate::session::RecordingSession::global(cx)
+                .read(cx)
+                .editor_recording_target()
+                .is_none()
+    }
+
+    fn studio_layout_items(&self) -> Vec<ui::MenuItem> {
+        let pip = tr::main::studio_layout::pip();
+        let side = tr::main::studio_layout::side_by_side();
+        [
+            (pip, tr::main::studio_layout::round()),
+            (pip, tr::main::studio_layout::square()),
+            (pip, tr::main::studio_layout::source()),
+            (side, tr::main::studio_layout::screen_left()),
+            (side, tr::main::studio_layout::camera_left()),
+        ]
+        .into_iter()
+        .zip(CAMERA_LAYOUT_CHOICES)
+        .map(|((group, label), (layout, shape))| {
+            ui::MenuItem::new(
+                format!("{group} · {label}"),
+                self.studio_layout == layout && shape.is_none_or(|shape| self.state.shape == shape),
+            )
+        })
+        .collect()
+    }
+
+    fn choose_studio_layout(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.layout_menu = None;
+        if crate::session::RecordingSession::global(cx).read(cx).phase
+            == crate::session::Phase::Idle
+            && let Some((layout, shape)) = CAMERA_LAYOUT_CHOICES.get(index).copied()
+            && self.studio_layout_controls(cx)
+        {
+            if self.studio_layout != layout && !layout.remember() {
+                tracing::warn!("Could not save the Studio layout");
+                cx.notify();
+                return;
+            }
+            self.studio_layout = layout;
+            if let Some(shape) = shape
+                && self.state.shape != shape
+            {
+                self.mutate_state(window, cx, |state| state.shape = shape);
+            }
+            #[cfg(target_os = "macos")]
+            self.sync_studio_preview(window, cx);
+        }
+        cx.notify();
+    }
+
+    fn render_layout_menu(&self, cx: &mut Context<Self>) -> Option<ui::Menu> {
+        let state = self
+            .layout_menu
+            .as_ref()
+            .filter(|_| self.studio_layout_controls(cx))?;
+        Some(
+            ui::Menu::plain(
+                &self.theme,
+                "camera-layout-menu",
+                self.studio_layout_items(),
+                state,
+            )
+            .on_select(cx.listener(|this, index: &usize, window, cx| {
+                this.choose_studio_layout(*index, window, cx)
+            }))
+            .on_dismiss(cx.listener(|this, _, _, cx| {
+                this.layout_menu = None;
+                cx.notify();
+            })),
+        )
+    }
+
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let (scale, buttons) = self.toolbar_fit();
@@ -2565,6 +2994,10 @@ impl CameraWindow {
         let skin_smoothing_failed = self.effect_failures.skin_smoothing;
         #[cfg(not(target_os = "macos"))]
         let (mirror_failed, blur_failed) = (false, false);
+        let studio_layout = self.studio_layout_controls(cx);
+        let setup = studio_layout
+            && crate::session::RecordingSession::global(cx).read(cx).phase
+                == crate::session::Phase::Idle;
         let shape_icon = match self.state.shape {
             CameraShape::Round => "icons/circle.svg",
             CameraShape::Square => "icons/square.svg",
@@ -2590,9 +3023,14 @@ impl CameraWindow {
                     .border_1()
                     .border_color(gpui::hsla(0., 0., 1., 0.2))
                     .text_color(theme.gray_10)
-                    .when(!self.chrome_visible && self.resizing.is_none(), |this| {
-                        this.invisible()
-                    })
+                    .when(
+                        !setup
+                            && !self.chrome_visible
+                            && self.resizing.is_none()
+                            && self.layout_menu.is_none()
+                            && self.avatar_menu.is_none(),
+                        |this| this.invisible(),
+                    )
                     .child(self.toolbar_button(
                         "close",
                         "icons/circle-x.svg",
@@ -2602,96 +3040,172 @@ impl CameraWindow {
                         cx,
                         |this, _, cx| this.close(cx),
                     ))
-                    .child(self.toolbar_button(
-                        "size",
-                        "icons/enlarge.svg",
-                        self.state.size >= CAMERA_PRESET_LARGE,
-                        scale,
-                        None,
-                        cx,
-                        |this, window, cx| {
-                            this.mutate_state(window, cx, |state| {
-                                state.size = if state.size < CAMERA_PRESET_LARGE {
-                                    CAMERA_PRESET_LARGE
-                                } else {
-                                    CAMERA_PRESET_SMALL
-                                };
-                            })
+                    .when(
+                        self.undocked_bounds.is_none()
+                            && (!cfg!(target_os = "macos") || buttons >= 4),
+                        |toolbar| {
+                            toolbar.child(self.toolbar_button(
+                                "size",
+                                "icons/enlarge.svg",
+                                self.state.size >= CAMERA_PRESET_LARGE,
+                                scale,
+                                None,
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.size = if state.size < CAMERA_PRESET_LARGE {
+                                            CAMERA_PRESET_LARGE
+                                        } else {
+                                            CAMERA_PRESET_SMALL
+                                        };
+                                    })
+                                },
+                            ))
                         },
-                    ))
-                    .child(self.toolbar_button(
-                        "shape",
-                        shape_icon,
-                        self.state.shape != CameraShape::Round,
-                        scale,
-                        None,
-                        cx,
-                        |this, window, cx| {
-                            this.mutate_state(window, cx, |state| {
-                                state.shape = match state.shape {
-                                    CameraShape::Round => CameraShape::Square,
-                                    CameraShape::Square => CameraShape::Full,
-                                    CameraShape::Full => CameraShape::Round,
-                                };
-                            })
+                    )
+                    .when(setup, |toolbar| {
+                        toolbar.child(self.toolbar_button(
+                            "layout",
+                            "icons/columns-2.svg",
+                            self.layout_menu.is_some()
+                                || self.studio_layout != StudioLayout::PictureInPicture,
+                            scale,
+                            None,
+                            cx,
+                            |this, window, cx| {
+                                if this.layout_menu.take().is_none()
+                                    && crate::session::RecordingSession::global(cx).read(cx).phase
+                                        == crate::session::Phase::Idle
+                                {
+                                    let origin =
+                                        gpui::point(px(12.), px(CAMERA_TOOLBAR_HEIGHT - 2.));
+                                    this.avatar_menu = None;
+                                    this.layout_menu = Some(ui::MenuState::new(
+                                        origin,
+                                        &this.studio_layout_items(),
+                                    ));
+                                    window.focus(&this.layout_focus, cx);
+                                }
+                                cx.notify();
+                            },
+                        ))
+                    })
+                    .when(
+                        !studio_layout && self.undocked_bounds.is_none(),
+                        |toolbar| {
+                            toolbar.child(self.toolbar_button(
+                                "shape",
+                                shape_icon,
+                                self.state.shape != CameraShape::Round,
+                                scale,
+                                None,
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.shape = match state.shape {
+                                            CameraShape::Round => CameraShape::Square,
+                                            CameraShape::Square => CameraShape::Full,
+                                            CameraShape::Full => CameraShape::Round,
+                                        };
+                                    })
+                                },
+                            ))
                         },
-                    ))
+                    )
                     // Preview-only, like both Tauri paths (the WGSL UV flip /
                     // the legacy `scaleX(-1)`); the recorded camera track is
                     // never mirrored by either app.
-                    .when(buttons >= 4, |this| {
-                        this.child(self.toolbar_button(
-                            "mirror",
-                            "icons/arrows.svg",
-                            self.state.mirrored && !mirror_failed,
+                    .when(cfg!(target_os = "macos"), |toolbar| {
+                        toolbar.child(self.toolbar_button(
+                            "avatar",
+                            "icons/smile.svg",
+                            self.avatar != cap_recording::avatar::AvatarKind::Camera,
                             scale,
-                            mirror_failed.then_some("!"),
+                            None,
                             cx,
                             |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.mirrored = !state.mirrored;
-                                })
+                                if crate::session::RecordingSession::global(cx).read(cx).phase
+                                    != crate::session::Phase::Idle
+                                {
+                                    return;
+                                }
+                                this.layout_menu = None;
+                                if this.avatar_menu.take().is_none() {
+                                    this.avatar_menu = Some(ui::MenuState::new(
+                                        gpui::point(px(12.), px(CAMERA_TOOLBAR_HEIGHT - 2.)),
+                                        &this.avatar_items(),
+                                    ));
+                                    window.focus(&this.layout_focus, cx);
+                                }
+                                cx.notify();
                             },
                         ))
                     })
-                    .when(buttons >= 5, |this| {
-                        this.child(self.toolbar_button(
-                            "blur",
-                            "icons/person-standing.svg",
-                            self.state.background_blur != BlurMode::Off && !blur_failed,
-                            scale,
-                            if blur_failed {
-                                Some("!")
-                            } else {
-                                self.state.background_blur.label()
-                            },
-                            cx,
-                            |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.background_blur = state.background_blur.cycle();
-                                })
-                            },
-                        ))
-                    })
-                    .when(cfg!(target_os = "macos") && buttons >= 6, |this| {
-                        #[cfg(target_os = "macos")]
-                        let failed = skin_smoothing_failed;
-                        #[cfg(not(target_os = "macos"))]
-                        let failed = false;
-                        this.child(self.toolbar_button(
-                            "skin-smoothing",
-                            "icons/sparkles.svg",
-                            self.state.skin_smoothing && !failed,
-                            scale,
-                            failed.then_some("!"),
-                            cx,
-                            |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.skin_smoothing = !state.skin_smoothing;
-                                })
-                            },
-                        ))
-                    }),
+                    .when(
+                        buttons >= if cfg!(target_os = "macos") { 5 } else { 4 },
+                        |this| {
+                            this.child(self.toolbar_button(
+                                "mirror",
+                                "icons/arrows.svg",
+                                self.state.mirrored && !mirror_failed,
+                                scale,
+                                mirror_failed.then_some("!"),
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.mirrored = !state.mirrored;
+                                    })
+                                },
+                            ))
+                        },
+                    )
+                    .when(
+                        buttons >= (if cfg!(target_os = "macos") { 6 } else { 5 })
+                            && self.avatar == cap_recording::avatar::AvatarKind::Camera,
+                        |this| {
+                            this.child(self.toolbar_button(
+                                "blur",
+                                "icons/person-standing.svg",
+                                self.state.background_blur != BlurMode::Off && !blur_failed,
+                                scale,
+                                if blur_failed {
+                                    Some("!")
+                                } else {
+                                    self.state.background_blur.label()
+                                },
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.background_blur = state.background_blur.cycle();
+                                    })
+                                },
+                            ))
+                        },
+                    )
+                    .when(
+                        cfg!(target_os = "macos")
+                            && buttons >= 7
+                            && self.avatar == cap_recording::avatar::AvatarKind::Camera,
+                        |this| {
+                            #[cfg(target_os = "macos")]
+                            let failed = skin_smoothing_failed;
+                            #[cfg(not(target_os = "macos"))]
+                            let failed = false;
+                            this.child(self.toolbar_button(
+                                "skin-smoothing",
+                                "icons/sparkles.svg",
+                                self.state.skin_smoothing && !failed,
+                                scale,
+                                failed.then_some("!"),
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.skin_smoothing = !state.skin_smoothing;
+                                    })
+                                },
+                            ))
+                        },
+                    ),
             )
     }
 
@@ -2922,6 +3436,36 @@ impl Render for CameraWindow {
 
         div()
             .id("camera-root")
+            .relative()
+            .track_focus(&self.layout_focus)
+            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                if let Some(menu) = this.avatar_menu.as_mut() {
+                    match menu.on_key(event.keystroke.key.as_str()) {
+                        ui::MenuKey::Commit(index) => this.choose_avatar(index, window, cx),
+                        ui::MenuKey::Dismiss => {
+                            this.avatar_menu = None;
+                            cx.notify();
+                        }
+                        ui::MenuKey::Moved => cx.notify(),
+                        ui::MenuKey::Ignored => return,
+                    }
+                    cx.stop_propagation();
+                    return;
+                }
+                let Some(menu) = this.layout_menu.as_mut() else {
+                    return;
+                };
+                match menu.on_key(event.keystroke.key.as_str()) {
+                    ui::MenuKey::Commit(index) => this.choose_studio_layout(index, window, cx),
+                    ui::MenuKey::Dismiss => {
+                        this.layout_menu = None;
+                        cx.notify();
+                    }
+                    ui::MenuKey::Moved => cx.notify(),
+                    ui::MenuKey::Ignored => return,
+                }
+                cx.stop_propagation();
+            }))
             .size_full()
             .flex()
             .flex_col()
@@ -2946,7 +3490,11 @@ impl Render for CameraWindow {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, window, _| {
-                    if this.resizing.is_none() && !this.inline {
+                    if this.resizing.is_none()
+                        && !this.inline
+                        && this.layout_menu.is_none()
+                        && this.undocked_bounds.is_none()
+                    {
                         window.start_window_move();
                     }
                 }),
@@ -2997,7 +3545,11 @@ impl Render for CameraWindow {
                     .clone()
                     .cached(StyleRefinement::default().w_full().flex_1()),
             )
-            .child(self.render_resize_handles(cx))
+            .when(self.undocked_bounds.is_none(), |root| {
+                root.child(self.render_resize_handles(cx))
+            })
+            .children(self.render_layout_menu(cx))
+            .children(self.render_avatar_menu(cx))
     }
 }
 

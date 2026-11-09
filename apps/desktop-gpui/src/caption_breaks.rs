@@ -133,23 +133,29 @@ pub fn wants_resplit(segments: &[CaptionSegment]) -> bool {
 /// Asks the model where to break, one window at a time. A window whose reply
 /// does not match its text keeps no opinion, so the rules decide there.
 /// Returns the hints and how many windows the model answered usably.
-pub async fn model_preferences(
-    provider_id: &'static str,
+pub(crate) async fn model_preferences(
+    provider: &crate::llm::ContentModel,
     words: &[CaptionWord],
 ) -> (Vec<Option<bool>>, usize, usize) {
     let mut preferred = vec![None; words.len().saturating_sub(1)];
     let windows = model_windows(words, MODEL_WINDOW_WIDTH);
     let mut answered = 0;
     let session = uuid::Uuid::new_v4();
-    for batch in windows.chunks(MODEL_CONCURRENCY) {
-        let replies =
-            futures_util::future::join_all(batch.iter().map(|window| {
-                let input = model_input(&words[window.clone()]);
-                async move {
-                    crate::llm::chat_in_session(session, provider_id, SYSTEM_PROMPT, &input).await
-                }
-            }))
-            .await;
+    let concurrency = if matches!(provider, crate::llm::ContentModel::Agent { .. }) {
+        1
+    } else {
+        MODEL_CONCURRENCY
+    };
+    for batch in windows.chunks(concurrency) {
+        let replies = futures_util::future::join_all(batch.iter().map(|window| {
+            let input = model_input(&words[window.clone()]);
+            async move {
+                provider
+                    .chat_in_session(session, SYSTEM_PROMPT, &input)
+                    .await
+            }
+        }))
+        .await;
         for (window, reply) in batch.iter().zip(replies) {
             let slice = &words[window.clone()];
             let Some(found) = reply.ok().and_then(|reply| model_breaks(slice, &reply)) else {
@@ -250,7 +256,7 @@ impl crate::editor_window::EditorWindow {
         if !reads_as_chinese(&words) {
             return;
         }
-        let provider = crate::llm::default_provider().map(|provider| provider.id);
+        let provider = crate::llm::default_content_model();
         if automatic && provider.is_none() {
             return;
         }
@@ -261,11 +267,12 @@ impl crate::editor_window::EditorWindow {
         self.sidebar.caption_resplit.running = true;
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
+            let used_model = provider.is_some();
             let (preferred, answered, asked) = match provider {
                 Some(provider) => {
                     let words = words.clone();
                     gpui_tokio::Tokio::spawn(cx, async move {
-                        model_preferences(provider, &words).await
+                        model_preferences(&provider, &words).await
                     })
                     .await
                     .unwrap_or_else(|_| (Vec::new(), 0, 0))
@@ -296,13 +303,13 @@ impl crate::editor_window::EditorWindow {
                     }
                     true
                 });
-                if provider.is_some() && answered < asked {
+                if used_model && answered < asked {
                     this.show_notice(
                         crate::i18n::tr::editor::tabs::captions::resplit_partial(),
                         window,
                         cx,
                     );
-                } else if !automatic && provider.is_none() {
+                } else if !automatic && !used_model {
                     this.show_notice(
                         crate::i18n::tr::editor::tabs::captions::resplit_local(),
                         window,
@@ -327,8 +334,10 @@ mod real_tests {
         let words = super::source_words(&project.captions.unwrap().segments);
         let preferred = if std::env::var("CAP_RESPLIT_MODEL").is_ok() {
             let runtime = tokio::runtime::Runtime::new().unwrap();
-            let (preferred, answered, asked) =
-                runtime.block_on(super::model_preferences("deepseek", &words));
+            let (preferred, answered, asked) = runtime.block_on(super::model_preferences(
+                &crate::llm::ContentModel::Provider(crate::llm::provider("deepseek").unwrap()),
+                &words,
+            ));
             println!("MODEL answered {answered}/{asked}");
             preferred
         } else {

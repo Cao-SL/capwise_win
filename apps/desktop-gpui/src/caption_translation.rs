@@ -369,22 +369,23 @@ async fn run_translation_batches<F, Fut>(
     }
 }
 
-fn translation_concurrency(provider: &llm::LlmProvider) -> usize {
-    match provider.group {
+fn translation_concurrency(provider: &llm::ContentModel) -> usize {
+    match provider.group() {
         llm::Group::Local | llm::Group::Account => 1,
         llm::Group::Relay | llm::Group::Provider => CLOUD_TRANSLATION_CONCURRENCY,
     }
 }
 
 async fn request_translation_batches(
-    provider: &'static llm::LlmProvider,
+    provider: llm::ContentModel,
     jobs: Vec<TranslationBatch>,
     events: tokio::sync::mpsc::Sender<BatchEvent>,
 ) {
     let session = uuid::Uuid::new_v4();
-    run_translation_batches(jobs, translation_concurrency(provider), events, |batch| {
-        translate_batch(batch, |input| async move {
-            llm::chat_json(session, provider.id, None, SYSTEM_PROMPT, &input).await
+    run_translation_batches(jobs, translation_concurrency(&provider), events, |batch| {
+        let provider = &provider;
+        translate_batch(batch, move |input| async move {
+            provider.chat_json(session, SYSTEM_PROMPT, &input).await
         })
     })
     .await;
@@ -488,7 +489,7 @@ impl EditorWindow {
         if requested.is_empty() {
             return;
         }
-        let Some(provider) = llm::default_provider() else {
+        let Some(provider) = llm::default_content_model() else {
             state.auto_failed = true;
             return;
         };
@@ -562,7 +563,7 @@ impl EditorWindow {
         let settings = crate::editor_tabs::caption_settings(&self.project);
         let segments = self.translation_segments();
         let sources = sources(&segments, &settings);
-        let provider = llm::default_provider();
+        let provider = llm::default_content_model();
         let editing = state.edit.is_some();
         let target_language = state.target_language(cx);
         let saved_for_target = sources
@@ -619,12 +620,12 @@ impl EditorWindow {
                 input,
             ));
         }
-        if let Some(provider) = provider {
+        if let Some(provider) = &provider {
             column = column.child(
                 div()
                     .text_size(px(12.))
                     .text_color(Hsla::from(theme.gray_10))
-                    .child(tr::editor::translation::service((provider.name)())),
+                    .child(tr::editor::translation::service(&provider.provider_name())),
             );
         }
         column = column.child(
@@ -692,7 +693,7 @@ impl EditorWindow {
             .label(if state.running {
                 tr::editor::translation::running().to_string()
             } else {
-                provider.map_or_else(
+                provider.as_ref().map_or_else(
                     || tr::editor::translation::setup().to_string(),
                     |_| {
                         if !sources.is_empty() && saved_for_target == sources.len() {
@@ -718,7 +719,7 @@ impl EditorWindow {
                             || saved_for_target == sources.len())),
             )
             .on_click(cx.listener(|this, _, window, cx| {
-                if llm::default_provider().is_none() {
+                if llm::default_content_model().is_none() {
                     cx.defer(|cx| {
                         crate::app_windows::open_ai_settings(crate::settings_ai::AiTab::Content, cx)
                     });
@@ -1384,7 +1385,7 @@ impl EditorWindow {
             self.invalidate_sidebar(cx);
             return;
         }
-        let Some(provider) = llm::default_provider() else {
+        let Some(provider) = llm::default_content_model() else {
             self.sidebar.caption_translation.error =
                 Some(tr::editor::translation::setup().to_string());
             if automatic

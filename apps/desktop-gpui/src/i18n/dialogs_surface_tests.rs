@@ -69,6 +69,7 @@ const FORMATTED: &[&str] = &[
 #[test]
 fn dialog_surfaces_match_the_literals_they_replaced() {
     let pairs: &[(&str, &str)] = &[
+        (tr::overlay::area::split_ratio(), "5:4 · Split"),
         (
             tr::diagnostics::already_running(),
             "A diagnostic is already running.",

@@ -1,16 +1,17 @@
 # 灵录 Capwise 官网
 
-静态官网，源文件在本目录，使用 Cloudflare Workers Static Assets 部署到 `capwise.qiaomu.ai`。
+静态官网，源文件在本目录。生产域名 `capwise.qiaomu.ai` 直连洛杉矶 VPS，由 Nginx 提供静态文件和 HTTPS。
 
 ## 构建与部署
 
 ```bash
 cd website
 npm run build
-wrangler deploy
 ```
 
-需要已登录的 Wrangler 以及配置中对应的 Cloudflare 账号。`site.config.json` 只记录公开的 Umami 站点 ID，不包含密钥。构建检查本地资源存在性、结构化数据和统计 ID，并生成缓存版本及 JSON-LD 的 CSP hash。`dist/` 为生成目录，不手工修改。
+VPS 使用 `qiaomu-la` SSH 别名，发布目录为 `/var/www/capwise/releases/`，Nginx 通过 `/var/www/capwise/current` 提供当前版本。站点配置见 `deploy/nginx-capwise.conf`，部署入口为 `scripts/deploy-vps.sh`。
+
+`site.config.json` 只记录公开的 Umami 站点 ID。构建检查本地资源存在性、结构化数据和统计 ID，并生成缓存版本及 JSON-LD 的 CSP hash。`dist/` 为生成目录。
 
 ## 图片与演示工程
 

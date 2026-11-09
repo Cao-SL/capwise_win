@@ -1659,12 +1659,11 @@ impl TeleprompterWindow {
         if self.ai_running || topic.is_empty() || topic.chars().count() > 5_000 {
             return;
         }
-        let Some(provider) = crate::llm::default_provider() else {
+        let Some(provider) = crate::llm::default_content_model() else {
             self.ai_error = Some(tr::dialog::teleprompter::assist::model_missing().into());
             cx.notify();
             return;
         };
-        let provider_id = provider.id;
         let (cancel, receiver) = tokio::sync::oneshot::channel();
         self.ai_cancel = Some(cancel);
         self.ai_generation = self.ai_generation.wrapping_add(1);
@@ -1680,7 +1679,7 @@ impl TeleprompterWindow {
                 tokio::select! {
                     biased;
                     _ = receiver => None,
-                    result = crate::llm::chat(provider_id, SCRIPT_PROMPT, &prompt) => Some(result),
+                    result = provider.chat(SCRIPT_PROMPT, &prompt) => Some(result),
                 }
             });
             let result = match task.await {
@@ -1799,7 +1798,7 @@ impl TeleprompterWindow {
         let theme = self.theme;
         let topic = self.ai_topic.read(cx).text().trim();
         let can_generate = !self.ai_running && !topic.is_empty() && topic.chars().count() <= 5_000;
-        let ready = crate::llm::default_provider().is_some();
+        let ready = crate::llm::default_content_model().is_some();
         let content = div()
             .w_full()
             .flex()

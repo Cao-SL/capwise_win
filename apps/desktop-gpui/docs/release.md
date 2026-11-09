@@ -105,7 +105,7 @@ DMG 用 `dmgbuild 1.6.5`，脚本第一次运行时会自动装到 `apps/desktop
 
    产物在 `apps/desktop-gpui/dist/<版本>/`。`--skip-build` 可跳过编译、复用上次的 release 二进制。
 
-4. **检查 DMG**：打开 DMG 看窗口布局，把 App 拖到"应用程序"后启动一次；`spctl -a -vv /Applications/Capwise.app` 应显示 `Notarized Developer ID`。
+4. **检查分发包**：脚本在签名前比对壁纸、音乐、字幕字体和必要运行时；签名、公证后从 DMG 和更新归档各取出一份 App，核对资源、版本、架构、签名和公证票据。打开 DMG 看窗口布局，把 App 拖到"应用程序"后启动一次；`spctl -a -vv /Applications/Capwise.app` 应显示 `Notarized Developer ID`。
 
 5. **通过 PR 合并发布源码**：在 `codex/` 功能分支提交版本号、公钥、源码和说明，推送该分支后向 `joeseesun/capwise` 的 `main` 创建 PR。验证通过后合并，再在合并提交上创建版本 tag。不要直接推送 `main`。打包源码必须与合并后的源码一致。
 

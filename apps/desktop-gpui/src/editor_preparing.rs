@@ -669,7 +669,15 @@ fn adapt(
     let mut project = crate::recording::preparing_presentation(
         live.configuration().ok_or_else(ended)?,
         control.finalization.camera_snapshot(),
+        (!recording_meta.display_is_camera()).then_some(recording_meta.project_path.as_path()),
     )?;
+    let studio_layout =
+        crate::recording_defaults::StudioLayout::for_project(&recording_meta.project_path)
+            .map_err(|error| error.to_string())?;
+    studio_layout.apply(
+        &mut project,
+        crate::recording_defaults::has_studio_camera(studio),
+    );
     if project.clips.is_empty() {
         project.clips =
             cap_editor::initial_clip_configuration(&recording_meta.project_path, studio);
