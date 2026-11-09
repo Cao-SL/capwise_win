@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a Capwise release for this Mac's architecture:
+# Build or sign a Capwise release for one Mac architecture:
 #   version → release build → Developer ID signing (secure timestamp, hardened
 #   runtime) → notarize + staple the app → designed DMG → notarize + staple the
 #   DMG → signed update archive → latest.json.
@@ -15,6 +15,7 @@
 #   CAPWISE_UPDATER_KEY_PASSWORD  its password; otherwise read from the keychain item
 #                                 "capwise-updater-key", otherwise minisign asks
 #   CAPWISE_RELEASE_NOTES         Markdown file whose text goes into latest.json
+#   CAPWISE_PREBUILT_APP           Package a previously assembled Capwise.app
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -56,10 +57,22 @@ step() { printf '\n==> %s\n' "$*"; }
 [[ -n "$VERSION" ]] || die "usage: scripts/release.sh <version> [--dry-run] [--skip-build]"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "version must be semver, got $VERSION"
 
-case "$(uname -m)" in
+PREBUILT_APP="${CAPWISE_PREBUILT_APP:-}"
+MACHINE="$(uname -m)"
+if [[ -n "$PREBUILT_APP" ]]; then
+  [[ -d "$PREBUILT_APP" ]] || die "prebuilt app not found: $PREBUILT_APP"
+  PREBUILT_APP="$(cd "$PREBUILT_APP" && pwd -P)"
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PREBUILT_APP/Contents/Info.plist")" == "$VERSION" ]] ||
+    die "prebuilt app version differs from $VERSION"
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PREBUILT_APP/Contents/Info.plist")" == "$BUNDLE_ID" ]] ||
+    die "prebuilt app bundle identifier differs from $BUNDLE_ID"
+  MACHINE="$(lipo -archs "$PREBUILT_APP/Contents/MacOS/$APP_NAME")"
+  SKIP_BUILD=1
+fi
+case "$MACHINE" in
   arm64) ARCH="aarch64" ;;
   x86_64) ARCH="x86_64" ;;
-  *) die "unsupported architecture $(uname -m)" ;;
+  *) die "unsupported architecture: $MACHINE" ;;
 esac
 PLATFORM="darwin-$ARCH"
 TAG="v$VERSION"
@@ -144,32 +157,44 @@ if ! ((SKIP_BUILD)); then
   (cd "$HERE" && cargo build --release --bin cap-gpui)
   (cd "$ROOT" && cargo build --release -p cap)
 fi
-"$HERE/scripts/fetch-caption-fonts.sh" >/dev/null
-"$HERE/scripts/fetch-llama-server.sh" >/dev/null
-
 step "Assemble $APP_NAME.app"
+mkdir -p "$WORK" "$DIST"
+[[ -z "$PREBUILT_APP" || "$PREBUILT_APP" != "$(cd "$WORK" && pwd -P)/$APP_NAME.app" ]] ||
+  die "prebuilt app cannot be the release staging app"
 rm -rf "$STAGE"
 rm -f "$DMG" "$ARCHIVE" "$ARCHIVE.minisig"
-mkdir -p "$DIST" "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources/onnxruntime/lib" "$STAGE/Contents/Frameworks"
-cp "$INFO_PLIST" "$STAGE/Contents/Info.plist"
-xcrun actool "$HERE/packaging/macos/AppIcon.icon" --compile "$STAGE/Contents/Resources" \
-  --platform macosx --minimum-deployment-target 13.0 --app-icon AppIcon --target-device mac \
-  --output-partial-info-plist "$WORK/icon-partial.plist" >/dev/null
-mkdir -p "$STAGE/Contents/Helpers/llama-server" "$STAGE/Contents/Resources/licenses"
-cp -a "$HERE/target/llama-server/llama-server" "$HERE"/target/llama-server/*.dylib "$STAGE/Contents/Helpers/llama-server/"
-cp "$HERE/target/llama-server/LICENSE" "$STAGE/Contents/Resources/licenses/llama.cpp-LICENSE.txt"
-cp "$ROOT/LICENSE" "$STAGE/Contents/Resources/licenses/Capwise-LICENSE.txt"
-cp "$ROOT/licenses/LICENSE-MIT" "$STAGE/Contents/Resources/licenses/Cap-MIT.txt"
-mkdir -p "$STAGE/Contents/Resources/assets" "$STAGE/Contents/Resources/fonts"
-cp -R "$HERE/assets/music" "$STAGE/Contents/Resources/assets/music"
-cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
-cp "$HERE/target/release/cap-gpui" "$STAGE/Contents/MacOS/$APP_NAME"
-cp "$ROOT/target/release/cap" "$STAGE/Contents/MacOS/cap-cli"
-cp "$(ls -d "$ROOT"/target/onnxruntime-osx-*/lib/libonnxruntime.dylib | head -1)" \
-  "$STAGE/Contents/Resources/onnxruntime/lib/libonnxruntime.dylib"
-ditto "$ROOT/target/native-deps/Spacedrive.framework" "$STAGE/Contents/Frameworks/Spacedrive.framework"
-rm -rf "$STAGE/Contents/Frameworks/Spacedrive.framework/Versions/A/Headers" \
-  "$STAGE/Contents/Frameworks/Spacedrive.framework/Headers"
+if [[ -n "$PREBUILT_APP" ]]; then
+  ditto "$PREBUILT_APP" "$STAGE"
+  while IFS= read -r -d '' candidate; do
+    if file -b "$candidate" | grep -q "Mach-O"; then
+      lipo -verify_arch "$MACHINE" "$candidate" || die "wrong architecture: $candidate"
+    fi
+  done < <(find "$STAGE" -type f -print0)
+else
+  "$HERE/scripts/fetch-caption-fonts.sh" >/dev/null
+  "$HERE/scripts/fetch-llama-server.sh" >/dev/null
+
+  mkdir -p "$DIST" "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources/onnxruntime/lib" "$STAGE/Contents/Frameworks"
+  cp "$INFO_PLIST" "$STAGE/Contents/Info.plist"
+  xcrun actool "$HERE/packaging/macos/AppIcon.icon" --compile "$STAGE/Contents/Resources" \
+    --platform macosx --minimum-deployment-target 13.0 --app-icon AppIcon --target-device mac \
+    --output-partial-info-plist "$WORK/icon-partial.plist" >/dev/null
+  mkdir -p "$STAGE/Contents/Helpers/llama-server" "$STAGE/Contents/Resources/licenses"
+  cp -a "$HERE/target/llama-server/llama-server" "$HERE"/target/llama-server/*.dylib "$STAGE/Contents/Helpers/llama-server/"
+  cp "$HERE/target/llama-server/LICENSE" "$STAGE/Contents/Resources/licenses/llama.cpp-LICENSE.txt"
+  cp "$ROOT/LICENSE" "$STAGE/Contents/Resources/licenses/Capwise-LICENSE.txt"
+  cp "$ROOT/licenses/LICENSE-MIT" "$STAGE/Contents/Resources/licenses/Cap-MIT.txt"
+  mkdir -p "$STAGE/Contents/Resources/assets" "$STAGE/Contents/Resources/fonts"
+  cp -R "$HERE/assets/music" "$STAGE/Contents/Resources/assets/music"
+  cp "$HERE"/target/caption-fonts/*.{otf,ttf,txt} "$STAGE/Contents/Resources/fonts/"
+  cp "$HERE/target/release/cap-gpui" "$STAGE/Contents/MacOS/$APP_NAME"
+  cp "$ROOT/target/release/cap" "$STAGE/Contents/MacOS/cap-cli"
+  cp "$(ls -d "$ROOT"/target/onnxruntime-osx-*/lib/libonnxruntime.dylib | head -1)" \
+    "$STAGE/Contents/Resources/onnxruntime/lib/libonnxruntime.dylib"
+  ditto "$ROOT/target/native-deps/Spacedrive.framework" "$STAGE/Contents/Frameworks/Spacedrive.framework"
+  rm -rf "$STAGE/Contents/Frameworks/Spacedrive.framework/Versions/A/Headers" \
+    "$STAGE/Contents/Frameworks/Spacedrive.framework/Headers"
+fi
 xattr -cr "$STAGE"
 
 step "Sign"
@@ -303,8 +328,10 @@ with open(path, "w") as out:
     out.write("\n")
 PY
 
-cp "$DMG" "$DIST/$APP_NAME.dmg"
-(cd "$DIST" && shasum -a 256 "$(basename "$DMG")" "$APP_NAME.dmg" "$ARCHIVE_NAME" >SHA256SUMS.txt)
+if [[ "$ARCH" == "aarch64" ]]; then
+  cp "$DMG" "$DIST/$APP_NAME.dmg"
+fi
+(cd "$DIST" && shasum -a 256 ./*.dmg ./*.app.tar.gz >SHA256SUMS.txt)
 
 step "Done"
 ls -lh "$DIST"
@@ -316,6 +343,6 @@ else
 
 Nothing has been uploaded. To publish (after committing the version bump and tagging $TAG):
   gh release create $TAG --repo $REPO --title "灵录 Capwise $VERSION" --notes-file <notes.md> \\
-    "$DMG" "$DIST/$APP_NAME.dmg" "$ARCHIVE" "$DIST/latest.json" "$DIST/SHA256SUMS.txt"
+    "$DIST"/*.dmg "$ARCHIVE" "$ARCHIVE.minisig" "$DIST/latest.json" "$DIST/SHA256SUMS.txt"
 EOF
 fi

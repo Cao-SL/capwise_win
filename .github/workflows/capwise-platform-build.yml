@@ -2,7 +2,13 @@ name: Capwise platform candidates
 
 on:
   workflow_dispatch:
+    inputs:
+      linux_candidate_run:
+        description: Workflow run with an existing Linux package candidate
+        required: false
+        type: string
   pull_request:
+    types: [opened, reopened]
     paths:
       - .github/workflows/capwise-platform-build.yml
       - apps/desktop-gpui/scripts/fetch-llama-server.sh
@@ -10,9 +16,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
+    if: inputs.linux_candidate_run == ''
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -91,18 +99,9 @@ jobs:
           debs=(apps/desktop-gpui/target/"$RUST_TARGET_TRIPLE"/release/bundle/deb/*.deb)
           test "${#debs[@]}" -eq 1
           node scripts/finalize-linux-gpui-packages.mjs --unsigned "${debs[0]}"
-          sudo apt-get install -y "$PWD/${debs[0]}"
-          ! ldd /usr/bin/Cap | grep -q 'not found'
-          profile="$(mktemp -d)"
-          set +e
-          CAP_GPUI_APP_DATA_DIR="$profile" CAP_GPUI_LOG_DIR="$profile/logs" \
-            timeout 20s xvfb-run -a /usr/bin/Cap > "$profile/launch.log" 2>&1
-          result="$?"
-          set -e
-          cat "$profile/launch.log"
-          test "$result" -eq 124
           mkdir -p candidate
-          cp "${debs[0]}" candidate/
+          apps/desktop-gpui/scripts/package-capwise-deb.sh "${debs[0]}" candidate/Capwise-linux-x86_64.deb
+          apps/desktop-gpui/scripts/verify-capwise-deb.sh candidate/Capwise-linux-x86_64.deb
 
       - name: Package Windows candidate
         if: runner.os == 'Windows'
@@ -135,5 +134,37 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: capwise-${{ matrix.platform }}
+          path: candidate/
+          if-no-files-found: error
+
+  linux-repackage:
+    if: inputs.linux_candidate_run != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: capwise-linux-x64
+          path: incoming/
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.linux_candidate_run }}
+
+      - name: Package and verify Capwise for Ubuntu
+        run: |
+          debs=(incoming/*.deb)
+          test "${#debs[@]}" -eq 1
+          mkdir -p candidate
+          if [[ "$(dpkg-deb -f "${debs[0]}" Package)" == capwise ]]; then
+            cp "${debs[0]}" candidate/Capwise-linux-x86_64.deb
+          else
+            apps/desktop-gpui/scripts/package-capwise-deb.sh "${debs[0]}" candidate/Capwise-linux-x86_64.deb
+          fi
+          apps/desktop-gpui/scripts/verify-capwise-deb.sh candidate/Capwise-linux-x86_64.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capwise-linux-x64
           path: candidate/
           if-no-files-found: error
