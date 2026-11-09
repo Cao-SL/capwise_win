@@ -25,4 +25,4 @@ VPS 使用 `qiaomu-la` SSH 别名，发布目录为 `/var/www/capwise/releases/`
 
 检查桌面与手机排版、全部图库标签的键盘切换、放大图、打赏和关注弹窗、复制安装提示词、FAQ，以及浏览器控制台、PWA 和离线页。统计接入需从真实生产浏览器触发唯一事件，并在 Umami 对应站点中确认接收，不能只检查脚本加载。
 
-下载始终使用官方 GitHub 的 `releases/latest/download/Capwise.dmg`。更新图片、演示文件时保留对应的验证记录。
+Apple Silicon 正式版始终使用官方 GitHub 的 `releases/latest/download/Capwise.dmg`。其他平台按已验证的预览版本启用：在 `site.config.json` 的 `previewDownloads` 中填入预览 Release 的 `tag` 和已通过检查的 `platforms`（`windows-x64`、`linux-x64`、`mac-intel`）。部署前回读每个资产的校验和并确认 Release 已公开。更新图片、演示文件时保留对应的验证记录。

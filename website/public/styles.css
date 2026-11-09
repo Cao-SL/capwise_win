@@ -1640,3 +1640,38 @@ dialog::backdrop {
 		transform: none;
 	}
 }
+
+
+.platform-downloads {
+	max-width: 46rem;
+	margin: 2rem auto;
+	padding: 1.25rem;
+	border: 1px solid var(--line);
+	border-radius: 1rem;
+}
+
+.platform-downloads h3 {
+	margin: 0 0 .75rem;
+	font-size: 1.1rem;
+}
+
+.platform-downloads ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.platform-downloads li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: .75rem;
+	padding: .75rem 0;
+	border-top: 1px solid var(--line);
+}
+
+.platform-downloads p {
+	margin: .25rem 0 0;
+	font-size: .875rem;
+}
