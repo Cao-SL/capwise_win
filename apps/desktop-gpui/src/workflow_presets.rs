@@ -14,9 +14,14 @@ pub(crate) struct WorkflowPreset {
     pub name: String,
     pub speed: f64,
     pub bilingual_english: bool,
+    pub translation_language: String,
     pub ai_caption_review: bool,
     pub enhance_voice: bool,
     pub camera_beauty: f32,
+}
+
+pub(crate) fn default_translation_language() -> String {
+    "en".into()
 }
 
 impl Default for WorkflowPreset {
@@ -26,6 +31,7 @@ impl Default for WorkflowPreset {
             name: "乔木预设".into(),
             speed: 1.25,
             bilingual_english: true,
+            translation_language: default_translation_language(),
             ai_caption_review: true,
             enhance_voice: true,
             camera_beauty: 1.0,
@@ -66,6 +72,12 @@ impl WorkflowPresets {
                         preset.camera_beauty = 0.0;
                     }
                     preset.camera_beauty = preset.camera_beauty.clamp(0.0, 1.0);
+                    if !crate::caption_translation::LANGUAGES
+                        .iter()
+                        .any(|(code, _)| *code == preset.translation_language)
+                    {
+                        preset.translation_language = default_translation_language();
+                    }
                 }
                 catalog
             }
@@ -126,6 +138,8 @@ pub(crate) struct AppliedWorkflow {
     pub preset_name: String,
     pub speed: f64,
     pub bilingual_english: bool,
+    #[serde(default = "default_translation_language")]
+    pub translation_language: String,
     pub ai_caption_review: bool,
     pub enhance_voice: bool,
     pub camera_beauty: f32,
@@ -217,6 +231,7 @@ pub(crate) fn apply_to_new_recording(
         preset_name: preset.name.clone(),
         speed: preset.speed,
         bilingual_english: preset.bilingual_english,
+        translation_language: preset.translation_language.clone(),
         ai_caption_review: preset.ai_caption_review,
         enhance_voice: project.audio.improve,
         camera_beauty: project.camera.skin_smoothing,
@@ -229,6 +244,20 @@ mod tests {
 
     fn project() -> ProjectConfiguration {
         serde_json::from_value(serde_json::json!({"timeline":{"segments":[{"recordingSegment":0,"start":2.0,"end":12.0,"timescale":1.0}],"zoomSegments":[],"audioSegments":[{"start":3.0,"end":8.0,"track":0,"path":"music.wav","trimStart":1.0,"fadeIn":0.5}]}})).unwrap()
+    }
+
+    #[test]
+    fn translation_language_defaults_to_english_and_follows_the_preset() {
+        let old: AppliedWorkflow = serde_json::from_value(serde_json::json!({"presetId":"qiaomu","presetName":"乔木预设","speed":1.25,"bilingualEnglish":true,"aiCaptionReview":true,"enhanceVoice":true,"cameraBeauty":1.0})).unwrap();
+        assert_eq!(old.translation_language, "en");
+        let old_preset: WorkflowPreset =
+            serde_json::from_value(serde_json::json!({"id":"qiaomu","bilingualEnglish":true}))
+                .unwrap();
+        assert_eq!(old_preset.translation_language, "en");
+        let mut catalog = WorkflowPresets::default();
+        catalog.presets[0].translation_language = "ja".into();
+        let applied = apply_to_new_recording(&mut project(), &catalog, true, true, None).unwrap();
+        assert_eq!(applied.translation_language, "ja");
     }
 
     #[test]

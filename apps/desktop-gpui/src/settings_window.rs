@@ -235,6 +235,7 @@ pub(crate) enum MenuKind {
     Countdown,
     WorkflowPreset,
     WorkflowSpeed,
+    WorkflowLanguage,
     MainWindowStart,
     WindowCapture,
     PostDeletion,
@@ -1669,6 +1670,17 @@ impl SettingsWindow {
                     })
                     .collect()
             }
+            MenuKind::WorkflowLanguage => {
+                let catalog = crate::workflow_presets::WorkflowPresets::load();
+                let current = catalog.selected().map_or_else(
+                    crate::workflow_presets::default_translation_language,
+                    |preset| preset.translation_language.clone(),
+                );
+                crate::caption_translation::LANGUAGES
+                    .iter()
+                    .map(|(code, label)| ui::MenuItem::new(*label, *code == current))
+                    .collect()
+            }
             MenuKind::Countdown => {
                 let current = self.settings.recording_countdown.unwrap_or(0);
                 COUNTDOWN_OPTIONS
@@ -1723,6 +1735,16 @@ impl SettingsWindow {
                         && let Some(preset) = catalog.selected_mut()
                     {
                         preset.speed = *speed;
+                    }
+                },
+                cx,
+            ),
+            MenuKind::WorkflowLanguage => self.update_workflow(
+                move |catalog| {
+                    if let Some((code, _)) = crate::caption_translation::LANGUAGES.get(index)
+                        && let Some(preset) = catalog.selected_mut()
+                    {
+                        preset.translation_language = (*code).to_string();
                     }
                 },
                 cx,
@@ -3380,7 +3402,7 @@ impl SettingsWindow {
         use tr::settings::workflow as text;
         let catalog = crate::workflow_presets::WorkflowPresets::load();
         let preset = catalog.selected().cloned().unwrap_or_default();
-        let rows = vec![
+        let mut rows = vec![
             self.setting_row(
                 text::enabled(),
                 None,
@@ -3496,6 +3518,23 @@ impl SettingsWindow {
                 )
                 .into_any_element(),
             ),
+        ];
+        if preset.bilingual_english {
+            rows.push(
+                self.setting_row(
+                    text::language(),
+                    None,
+                    self.select(
+                        "workflow-language",
+                        crate::caption_translation::language_label(&preset.translation_language),
+                        MenuKind::WorkflowLanguage,
+                        cx,
+                    )
+                    .into_any_element(),
+                ),
+            );
+        }
+        rows.extend([
             self.setting_row(
                 text::voice(),
                 None,
@@ -3539,7 +3578,7 @@ impl SettingsWindow {
                 )
                 .into_any_element(),
             ),
-        ];
+        ]);
         self.section(
             text::title(),
             Some(text::description()),

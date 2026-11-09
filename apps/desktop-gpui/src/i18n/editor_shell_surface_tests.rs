@@ -291,10 +291,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Finish the recording setup before waiting for captions.",
         ),
         (
-            tr::editor::export::captions::cancelled(),
-            "Caption processing was cancelled. Check captions or export the current version.",
-        ),
-        (
             tr::editor::export::captions::not_started(),
             "Caption processing did not start. Check its settings or export the current version.",
         ),
