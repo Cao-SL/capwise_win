@@ -933,6 +933,7 @@ mod subtitle_export_tests {
         serde_json::from_value(serde_json::json!({
             "textSizeVersion": 1,
             "textAnimVersion": 1,
+            "overlayLayerVersion": cap_project::OVERLAY_LAYER_VERSION,
             "captions": {
                 "segments": [{"id": "source", "start": 0.0, "end": 2.0, "text": "Keep this caption"}],
                 "sourceTimed": true,
