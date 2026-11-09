@@ -99,6 +99,8 @@ struct Processing {
     fingerprint: String,
     #[serde(default)]
     after_save: Option<ProcessingStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    before_translation_save: Option<String>,
     #[serde(default)]
     clear_refinement: bool,
     #[serde(default)]
@@ -117,8 +119,15 @@ impl Processing {
     fn wait_for_save(&mut self, project: &ProjectConfiguration, next: ProcessingStatus) {
         self.status = ProcessingStatus::AwaitingSave;
         self.after_save = Some(next);
+        self.before_translation_save = None;
         self.fingerprint = caption_fingerprint(project);
         self.error = None;
+    }
+
+    fn wait_for_translation_batch(&mut self, next: &ProjectConfiguration) {
+        let previous = self.fingerprint.clone();
+        self.wait_for_save(next, ProcessingStatus::Translating);
+        self.before_translation_save = Some(previous);
     }
 
     fn fail(&mut self, status: ProcessingStatus, error: String) {
@@ -509,6 +518,7 @@ fn retain_current_caption_processing(
         status: ProcessingStatus::Cancelled,
         fingerprint: caption_fingerprint(project),
         after_save: None,
+        before_translation_save: None,
         clear_refinement: false,
         refinement: None,
         recognition_pending: false,
@@ -565,10 +575,21 @@ fn recover_saved_processing(
     };
     if request.status == ProcessingStatus::AwaitingSave {
         if !request.matches(project) {
-            request.fail(
-                ProcessingStatus::Changed,
-                tr::editor::review::changed().into(),
-            );
+            if let Some(previous) = request.before_translation_save.take()
+                && previous == caption_fingerprint(project)
+            {
+                request.fingerprint = previous;
+                request.after_save = None;
+                request.fail(
+                    ProcessingStatus::FailedTranslation,
+                    tr::editor::review::interrupted().into(),
+                );
+            } else {
+                request.fail(
+                    ProcessingStatus::Changed,
+                    tr::editor::review::changed().into(),
+                );
+            }
             save_processing(path, &request)?;
             return Ok(Some(request));
         }
@@ -591,6 +612,7 @@ fn recover_saved_processing(
             .after_save
             .take()
             .unwrap_or(ProcessingStatus::Queued);
+        request.before_translation_save = None;
         request.error = None;
         save_processing(path, &request)?;
     }
@@ -614,7 +636,10 @@ fn recover_saved_processing(
 }
 
 pub(crate) fn translation_failed(path: &Path, error: Option<&str>) -> Result<(), String> {
-    if let Some(mut request) = processing(path).map_err(|error| error.to_string())? {
+    if let Some(mut request) = processing(path).map_err(|error| error.to_string())?
+        && !(request.status == ProcessingStatus::AwaitingSave
+            && request.before_translation_save.is_some())
+    {
         request.fail(
             ProcessingStatus::FailedTranslation,
             error
@@ -912,6 +937,7 @@ impl EditorWindow {
             status: ProcessingStatus::AwaitingSave,
             fingerprint: caption_fingerprint(project),
             after_save: Some(ProcessingStatus::Queued),
+            before_translation_save: None,
             clear_refinement: false,
             refinement: Some(refinement),
             recognition_pending: true,
@@ -970,6 +996,22 @@ impl EditorWindow {
                 Err(error)
             }
         }
+    }
+
+    pub(crate) fn checkpoint_caption_translation_batch(
+        &self,
+        next: &ProjectConfiguration,
+    ) -> Result<(), String> {
+        if let Some(mut request) =
+            processing(&self.project_path).map_err(|error| error.to_string())?
+        {
+            if request.status != ProcessingStatus::Translating || !request.matches(&self.project) {
+                return Err(tr::editor::review::changed().into());
+            }
+            request.wait_for_translation_batch(next);
+            save_processing(&self.project_path, &request)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn checkpoint_caption_translation(
@@ -1452,6 +1494,7 @@ impl EditorWindow {
             status: ProcessingStatus::Queued,
             fingerprint: caption_fingerprint(&self.project),
             after_save: None,
+            before_translation_save: None,
             clear_refinement: false,
             refinement: None,
             recognition_pending: false,
@@ -1763,6 +1806,7 @@ mod tests {
             status: ProcessingStatus::Queued,
             fingerprint: caption_fingerprint(project),
             after_save: None,
+            before_translation_save: None,
             clear_refinement: false,
             refinement: None,
             recognition_pending: false,
@@ -2378,6 +2422,37 @@ mod tests {
         cancelled.status = ProcessingStatus::Cancelled;
         assert!(!cancelled.retry(&project));
         assert_eq!(cancelled.status, ProcessingStatus::Cancelled);
+    }
+
+    #[test]
+    fn interrupted_translation_recovers_before_or_after_the_batch_write() {
+        let initial = ProjectConfiguration::default();
+        let mut next = initial.clone();
+        next.captions
+            .get_or_insert_with(Default::default)
+            .settings
+            .set_translation("cue", "你好", "Hello".into(), "en".into());
+        for (project, expected) in [
+            (&initial, ProcessingStatus::FailedTranslation),
+            (&next, ProcessingStatus::Translating),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let mut pending = request(&initial);
+            pending.status = ProcessingStatus::Translating;
+            pending.wait_for_translation_batch(&next);
+            save_processing(root.path(), &pending).unwrap();
+            project.write(root.path()).unwrap();
+            let mut recovered = recover_saved_processing(root.path(), project)
+                .unwrap()
+                .unwrap();
+            assert_eq!(recovered.status, expected);
+            assert!(recovered.matches(project));
+            assert!(recovered.before_translation_save.is_none());
+            if expected == ProcessingStatus::FailedTranslation {
+                assert!(recovered.retry(project));
+                assert_eq!(recovered.status, ProcessingStatus::Reviewed);
+            }
+        }
     }
 
     #[test]
