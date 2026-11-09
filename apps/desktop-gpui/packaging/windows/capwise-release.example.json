@@ -1,0 +1,23 @@
+{
+	"productName": "Capwise",
+	"mainBinaryName": "Capwise",
+	"identifier": "com.capwise.app",
+	"plugins": {
+		"deep-link": null,
+		"updater": {
+			"endpoints": [
+				"https://updates.example.com/capwise/latest.json"
+			],
+			"pubkey": "REPLACE_WITH_YOUR_MINISIGN_PUBLIC_KEY"
+		}
+	},
+	"bundle": {
+		"createUpdaterArtifacts": true,
+		"fileAssociations": [],
+		"windows": {
+			"nsis": {
+				"installMode": "currentUser"
+			}
+		}
+	}
+}
