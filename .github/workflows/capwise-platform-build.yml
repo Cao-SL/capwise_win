@@ -103,11 +103,10 @@ jobs:
           cargo build --release --locked -p cap
           cargo +1.95.0 build --manifest-path apps/desktop-gpui/Cargo.toml --release --locked --bin cap-gpui
           DEVELOPER_DIR="$CAPWISE_ICON_DEVELOPER_DIR" \
-            apps/desktop-gpui/scripts/release.sh "$version" --dry-run --skip-build
-          app="apps/desktop-gpui/target/release-work/Capwise.app"
-          apps/desktop-gpui/scripts/verify-capwise-mac.sh "$app"
+            apps/desktop-gpui/scripts/release.sh "$version" --dry-run --app-only --skip-build
+          archive="apps/desktop-gpui/target/release-candidate/$version/Capwise_${version}_x86_64.app.tar.gz"
           mkdir -p candidate
-          cp apps/desktop-gpui/dist/"$version"/*_x86_64.app.tar.gz candidate/
+          cp "$archive" candidate/
 
       - name: Build sidecars
         if: runner.os != 'macOS'
@@ -168,6 +167,16 @@ jobs:
           name: capwise-${{ matrix.platform }}
           path: candidate/
           if-no-files-found: error
+
+      - name: Verify archived Intel Mac candidate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          archives=(candidate/*.app.tar.gz)
+          test "${#archives[@]}" -eq 1
+          extracted="$(mktemp -d "$RUNNER_TEMP/capwise-app.XXXXXX")"
+          tar -xzf "${archives[0]}" -C "$extracted"
+          apps/desktop-gpui/scripts/verify-capwise-mac.sh "$extracted/Capwise.app"
 
   linux-repackage:
     if: inputs.linux_candidate_run != ''
