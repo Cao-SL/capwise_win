@@ -15,7 +15,6 @@ const DWMWA_SYSTEMBACKDROP_TYPE: u32 = 38;
 const DWMWCP_DEFAULT: u32 = 0;
 const DWMWCP_ROUND: u32 = 2;
 
-const DWMSBT_NONE: u32 = 1;
 const DWMSBT_MAINWINDOW: u32 = 2;
 const DWMSBT_TRANSIENTWINDOW: u32 = 3;
 
@@ -71,17 +70,6 @@ pub fn install(hwnd: HWND, transient: bool) {
     );
 }
 
-/// Restore the stock frame before a window is destroyed or reused.
-pub fn reset(hwnd: HWND) {
-    set_attribute(
-        hwnd,
-        DWMWA_WINDOW_CORNER_PREFERENCE,
-        DWMWCP_DEFAULT,
-        "reset",
-    );
-    set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE, "reset");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,7 +81,7 @@ mod tests {
         assert_eq!(backdrop_type(false), DWMSBT_MAINWINDOW);
         assert_eq!(backdrop_type(true), DWMSBT_TRANSIENTWINDOW);
         assert_ne!(backdrop_type(false), backdrop_type(true));
-        assert_ne!(DWMSBT_NONE, DWMSBT_MAINWINDOW);
+        assert_ne!(DWMSBT_MAINWINDOW, DWMSBT_TRANSIENTWINDOW);
     }
 
     #[test]

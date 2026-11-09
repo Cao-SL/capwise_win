@@ -54,15 +54,19 @@ use cap_project::{
     ClipSpeedAudioMode, Cursors, ProjectConfiguration, RecordingMeta, RecordingMetaInner,
     StudioRecordingMeta, TimelineConfiguration, XY,
 };
-use cap_rendering::{FrameLayout, ProjectRecordingsMeta, RenderedFrame};
+#[cfg(any(not(target_os = "windows"), feature = "screenshots", test))]
+use cap_rendering::RenderedFrame;
+use cap_rendering::{FrameLayout, ProjectRecordingsMeta};
 #[cfg(target_os = "macos")]
 use core_foundation::base::TCFType;
 #[cfg(target_os = "macos")]
 use core_video::pixel_buffer::{CVPixelBuffer, CVPixelBufferRef};
+#[cfg(any(not(target_os = "windows"), feature = "screenshots", test))]
+use gpui::RenderImage;
 use gpui::{
     Animation, AnimationExt as _, AppContext as _, Bounds, Context, Entity, FocusHandle,
     FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Pixels, Point, Render, RenderImage, SharedString,
+    MouseUpEvent, ParentElement, Pixels, Point, Render, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled, Subscription, WeakEntity, Window,
     div, point, prelude::FluentBuilder, px, svg,
 };
@@ -680,6 +684,7 @@ fn recorded_cursor_family(studio: &StudioRecordingMeta) -> Option<CursorFamily> 
 /// * **RGBA -> BGRA.** The render target is `Rgba8Unorm`
 ///   (`frame_pipeline.rs:809-827`) and gpui's atlas expects BGRA, the same
 ///   swap `library::decode_thumbnail` does after decoding a thumbnail.
+#[cfg(any(not(target_os = "windows"), feature = "screenshots", test))]
 pub fn frame_image(frame: &RenderedFrame) -> Option<Arc<RenderImage>> {
     let tight = cap_gpui_kernels::frame::unpad_rgba_to_bgra(
         &frame.data,
@@ -696,6 +701,7 @@ pub fn frame_image(frame: &RenderedFrame) -> Option<Arc<RenderImage>> {
 /// What the frame pump hands the window.
 #[derive(Clone)]
 pub(crate) enum EditorPreviewFrame {
+    #[cfg(not(target_os = "windows"))]
     Image(Arc<RenderImage>),
     #[cfg(target_os = "macos")]
     Surface(CVPixelBuffer),
@@ -709,6 +715,7 @@ impl EditorPreviewFrame {
     pub(crate) fn paint(&self, bounds: gpui::Bounds<Pixels>, radius: Pixels, window: &mut Window) {
         let corners = gpui::Corners::all(radius);
         match self {
+            #[cfg(not(target_os = "windows"))]
             Self::Image(image) => {
                 let _ = window.paint_image(bounds, corners, Arc::clone(image), 0, false);
             }
@@ -7966,9 +7973,12 @@ impl EditorWindow {
         let previous = self.preview.update(cx, |preview, cx| {
             preview.set_frame(frame.frame, frame_size, self.stats.clone(), cx)
         });
+        #[cfg(not(target_os = "windows"))]
         if let Some(EditorPreviewFrame::Image(previous)) = previous {
             let _ = window.drop_image(previous);
         }
+        #[cfg(target_os = "windows")]
+        drop(previous);
         if let Some(stats) = &self.stats {
             stats.presented.fetch_add(1, Ordering::Relaxed);
         }

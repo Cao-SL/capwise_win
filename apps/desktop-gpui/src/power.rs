@@ -36,7 +36,7 @@ mod windows {
         time::{Duration, Instant},
     };
 
-    use gpui::{App, AppContext as _, Global};
+    use gpui::{App, Global};
 
     use super::holds_off_idle_sleep;
     use crate::session::RecordingSession;
