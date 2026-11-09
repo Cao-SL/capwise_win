@@ -8,7 +8,7 @@ use crate::{
     i18n::tr,
     installer::{self, ArtifactKind, Release},
     session::RecordingSession,
-    store::{GeneralSettings, UpdateChannel, UpdateDownloadPolicy},
+    store::{GeneralSettings, UpdateDownloadPolicy},
 };
 
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(10);
@@ -167,10 +167,6 @@ pub(crate) fn check_manually(cx: &mut App) {
 
     let _ = scheduler.wake.try_send(());
 }
-
-/// Capwise ships one channel; this stays only while the settings page still
-/// offers the old choice.
-pub(crate) fn update_channel_changed(_channel: UpdateChannel, _cx: &mut App) {}
 
 fn finish_manual_check(cx: &mut App, manual: bool) {
     if manual {

@@ -38,11 +38,11 @@ use crate::{
     store::{
         self, AppTheme, DEFAULT_PROJECT_NAME_TEMPLATE, DEFAULT_SERVER_URL, GENERAL_SETTINGS,
         GeneralSettings, MainWindowStartBehaviour, PostDeletionBehaviour, RECORDING_START_SAFETY,
-        SettingsEnum, StudioQuality, UpdateChannel, UpdateDownloadPolicy, WindowCaptureStyle,
-        WindowExclusion,
+        SettingsEnum, StudioQuality, UpdateDownloadPolicy, WindowCaptureStyle, WindowExclusion,
     },
     theme::Theme,
     ui,
+    updates::UpdateStatus,
 };
 
 /// `.inner_size(782.0, 775.0)` / `.min_inner_size(780.0, 560.0)` on the
@@ -327,18 +327,6 @@ const FREE_INSTANT_MODE_MAX_RESOLUTION: u32 = 1280;
 enum InstantQualityNotice {
     SaveFailed,
 }
-
-/// `UPDATE_CHANNEL_OPTIONS`.
-const UPDATE_CHANNEL_DESCRIPTIONS: &[(UpdateChannel, fn() -> &'static str)] = &[
-    (
-        UpdateChannel::Stable,
-        tr::settings::general::updates::stable_description,
-    ),
-    (
-        UpdateChannel::Nightly,
-        tr::settings::general::updates::nightly_description,
-    ),
-];
 
 /// The three theme previews (`~/assets/theme-previews/*.jpg`), keyed the way
 /// `AppearanceSection`'s `previews` map is.
@@ -2229,20 +2217,17 @@ impl SettingsWindow {
             }))
     }
 
-    fn render_account(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
-        let (update_label, update_ready) = match crate::updates::status(cx) {
-            crate::updates::UpdateStatus::Idle | crate::updates::UpdateStatus::Available { .. } => {
-                (
-                    tr::settings::sidebar::check_for_updates().to_string(),
-                    false,
-                )
-            }
-            crate::updates::UpdateStatus::Checking => (
+    pub(crate) fn update_control_label(status: &UpdateStatus) -> (String, bool) {
+        match status {
+            UpdateStatus::Idle | UpdateStatus::Available { .. } => (
+                tr::settings::sidebar::check_for_updates().to_string(),
+                false,
+            ),
+            UpdateStatus::Checking => (
                 tr::settings::sidebar::checking_for_updates().to_string(),
                 false,
             ),
-            crate::updates::UpdateStatus::Downloading {
+            UpdateStatus::Downloading {
                 version,
                 fraction: Some(fraction),
             } => (
@@ -2252,17 +2237,29 @@ impl SettingsWindow {
                 ),
                 false,
             ),
-            crate::updates::UpdateStatus::Downloading { version, .. } => {
+            UpdateStatus::Downloading { version, .. } => {
                 (tr::settings::sidebar::downloading(version), false)
             }
-            crate::updates::UpdateStatus::Ready { version }
-            | crate::updates::UpdateStatus::Installed { version, .. } => {
+            UpdateStatus::Ready { version } | UpdateStatus::Installed { version, .. } => {
                 (tr::settings::sidebar::restart_to_update(version), true)
             }
-            crate::updates::UpdateStatus::Installing { version } => {
+            UpdateStatus::Installing { version } => {
                 (tr::settings::sidebar::installing(version), false)
             }
-        };
+        }
+    }
+
+    pub(crate) fn activate_update(ready: bool, cx: &mut Context<Self>) {
+        if ready {
+            crate::updates::install_and_relaunch(cx);
+        } else {
+            crate::updates::check_manually(cx);
+        }
+    }
+
+    fn render_account(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let (update_label, update_ready) = Self::update_control_label(&crate::updates::status(cx));
 
         let update_links = div()
             .flex()
@@ -2285,7 +2282,7 @@ impl SettingsWindow {
                     .id("settings-previous-versions")
                     .child(tr::settings::sidebar::previous_versions())
                     .hover(|style| style.text_color(theme.settings_text()))
-                    .on_click(|_, _, cx| cx.open_url("https://cap.so/download/versions")),
+                    .on_click(|_, _, cx| cx.open_url(crate::installer::RELEASES_PAGE_URL)),
             )
             .child(
                 div()
@@ -2298,11 +2295,7 @@ impl SettingsWindow {
                     })
                     .hover(|style| style.text_color(theme.settings_text()))
                     .on_click(cx.listener(move |_, _, _, cx| {
-                        if update_ready {
-                            crate::updates::install_and_relaunch(cx);
-                        } else {
-                            crate::updates::check_manually(cx);
-                        }
+                        Self::activate_update(update_ready, cx);
                     }))
                     .child(update_label),
             );
@@ -4890,147 +4883,46 @@ impl SettingsWindow {
         )
     }
 
-    /// `UpdatesSection` -- `updateChannel`.
-    fn render_updates(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme;
-        let current = self.settings.update_channel;
-        let current_policy = self.settings.update_download_policy;
-        let description = UPDATE_CHANNEL_DESCRIPTIONS
-            .iter()
-            .find(|(channel, _)| *channel == current)
-            .map(|(_, description)| description())
-            .unwrap_or_default();
+    pub(crate) fn render_update_download_policy(&self, cx: &mut Context<Self>) -> gpui::Div {
+        use tr::settings::general::updates::download_policy;
 
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(px(12.))
-            .px(px(16.))
-            .py(px(16.))
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .justify_between()
-                    .items_start()
-                    .gap(px(16.))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .child(tr::settings::general::updates::download_policy::label()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .line_height(px(16.))
-                                    .text_color(theme.settings_muted())
-                                    .child(
-                                        tr::settings::general::updates::download_policy::description(),
-                                    ),
-                            ),
-                    )
-                    .child(self.segmented_raw(
-                        "update-download-policy",
-                        vec![
-                            ui::SegmentOption::new(
-                                tr::settings::general::updates::download_policy::auto(),
-                                current_policy == UpdateDownloadPolicy::Auto,
-                            ),
-                            ui::SegmentOption::new(
-                                tr::settings::general::updates::download_policy::manual(),
-                                current_policy == UpdateDownloadPolicy::Manual,
-                            ),
-                            ui::SegmentOption::new(
-                                tr::settings::general::updates::download_policy::never(),
-                                current_policy == UpdateDownloadPolicy::Never,
-                            ),
-                        ],
-                        cx,
-                        |this, index, cx| {
-                            let value = match index {
-                                0 => UpdateDownloadPolicy::Auto,
-                                1 => UpdateDownloadPolicy::Manual,
-                                _ => UpdateDownloadPolicy::Never,
-                            };
-                            if this.settings.update_download_policy == value {
-                                return;
-                            }
-                            this.settings.update_download_policy = value;
-                            this.write_enum("updateDownloadPolicy", value, cx);
-                            crate::updates::update_download_policy_changed(value, cx);
-                        },
-                    )),
-            )
-            .child(div().h(px(1.)).bg(theme.settings_border()))
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .justify_between()
-                    .items_start()
-                    .gap(px(16.))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .child(tr::settings::general::updates::channel::label()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .line_height(px(16.))
-                                    .text_color(theme.settings_muted())
-                                    .child(tr::settings::general::updates::channel::description()),
-                            ),
-                    )
-                    .child(self.segmented::<UpdateChannel>(
-                        "update-channel",
-                        current,
-                        cx,
-                        |this, value, cx| {
-                            if this.settings.update_channel == value {
-                                return;
-                            }
-                            this.settings.update_channel = value;
-                            this.write_enum("updateChannel", value, cx);
-                            crate::updates::update_channel_changed(
-                                this.settings.update_channel,
-                                cx,
-                            );
-                        },
-                    )),
-            )
-            .child(
-                self.note_box()
-                    .child(div().text_size(px(12.)).child(description))
-                    .when(current == UpdateChannel::Nightly, |this| {
-                        this.child(
-                            div()
-                                .text_size(px(11.))
-                                .line_height(px(15.))
-                                .text_color(theme.settings_muted())
-                                .child(tr::settings::general::updates::nightly_switch_back()),
-                        )
-                    }),
-            );
-
-        self.section(
-            tr::settings::general::updates::title(),
-            Some(tr::settings::general::updates::description()),
-            None,
-            vec![self.card(false).child(body).into_any_element()],
-        )
+        let current = self.settings.update_download_policy;
+        let control = self.segmented_raw(
+            "update-download-policy",
+            vec![
+                ui::SegmentOption::new(
+                    download_policy::auto(),
+                    current == UpdateDownloadPolicy::Auto,
+                ),
+                ui::SegmentOption::new(
+                    download_policy::manual(),
+                    current == UpdateDownloadPolicy::Manual,
+                ),
+                ui::SegmentOption::new(
+                    download_policy::never(),
+                    current == UpdateDownloadPolicy::Never,
+                ),
+            ],
+            cx,
+            |this, index, cx| {
+                let value = match index {
+                    0 => UpdateDownloadPolicy::Auto,
+                    1 => UpdateDownloadPolicy::Manual,
+                    _ => UpdateDownloadPolicy::Never,
+                };
+                if this.settings.update_download_policy == value {
+                    return;
+                }
+                this.settings.update_download_policy = value;
+                this.write_enum("updateDownloadPolicy", value, cx);
+                crate::updates::update_download_policy_changed(value, cx);
+            },
+        );
+        self.rows(vec![self.setting_row(
+            download_policy::label(),
+            Some(download_policy::description()),
+            control.into_any_element(),
+        )])
     }
 
     /// `ServerURLSetting` -- `serverUrl`.

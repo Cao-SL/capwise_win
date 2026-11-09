@@ -11,6 +11,7 @@ use minisign_verify::{PublicKey, Signature, StreamVerifier};
 use semver::Version;
 use serde::Deserialize;
 
+pub(crate) const RELEASES_PAGE_URL: &str = "https://github.com/joeseesun/capwise/releases";
 const UPDATE_MANIFEST_URL: &str =
     "https://github.com/joeseesun/capwise/releases/latest/download/latest.json";
 /// The minisign public key every update must be signed with. The private half
