@@ -1,6 +1,6 @@
 use gpui::{
-    AnyElement, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, svg,
+    AnyElement, Bounds, Context, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, svg,
 };
 
 use crate::{
@@ -201,13 +201,14 @@ impl EditorWindow {
                                         // A second click on the open line
                                         // folds it again.
                                         if active {
-                                            this.set_selection(None, cx);
+                                            this.set_selection_with_scroll(None, true, cx);
                                             this.focus_root(window, cx);
                                             cx.notify();
                                             return;
                                         }
-                                        this.set_selection(
+                                        this.set_selection_with_scroll(
                                             Some(Selection::single(TrackKind::Caption, index)),
+                                            true,
                                             cx,
                                         );
                                         this.seek_to_time(time, cx);
@@ -218,6 +219,51 @@ impl EditorWindow {
                             .children(active.then(|| {
                                 div().px(px(8.)).child(self.render_caption_panel(index, cx))
                             }))
+                            .when(
+                                active && self.sidebar.caption_reveal == Some(index),
+                                |row| {
+                                    let editor = cx.weak_entity();
+                                    row.relative().child(
+                                        gpui::canvas(
+                                            move |bounds, window, _| {
+                                                let editor = editor.clone();
+                                                window.on_next_frame(move |window, cx| {
+                                                    let _ = editor.update(cx, |this, _| {
+                                                        if this.sidebar.caption_reveal
+                                                            != Some(index)
+                                                            || this.sidebar.tab
+                                                                != SidebarTab::Captions
+                                                            || this.sidebar.caption_tab
+                                                                != CaptionTab::Content
+                                                            || this.transcript.open
+                                                        {
+                                                            return;
+                                                        }
+                                                        this.sidebar.caption_reveal = None;
+                                                        let scroll = &this.sidebar.scroll;
+                                                        let delta = caption_reveal_delta(
+                                                            scroll.bounds(),
+                                                            bounds,
+                                                        );
+                                                        let offset = scroll.offset();
+                                                        let y = (offset.y + delta)
+                                                            .clamp(-scroll.max_offset().y, px(0.));
+                                                        if y != offset.y {
+                                                            scroll.set_offset(gpui::point(
+                                                                offset.x, y,
+                                                            ));
+                                                            window.refresh();
+                                                        }
+                                                    });
+                                                });
+                                            },
+                                            |_, _, _, _| {},
+                                        )
+                                        .absolute()
+                                        .size_full(),
+                                    )
+                                },
+                            )
                     }),
             )
             .when(pages > 1, |column| {
@@ -259,7 +305,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn open_text_video_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.transcript.caption_only = false;
+        self.reset_caption_editor();
         if !self.transcript.open {
             self.toggle_transcript(window, cx);
         }
@@ -420,8 +466,34 @@ impl EditorWindow {
 /// Lines per page of the subtitle list.
 pub(crate) const CAPTIONS_PER_PAGE: usize = 30;
 
+fn caption_reveal_delta(viewport: Bounds<Pixels>, row: Bounds<Pixels>) -> Pixels {
+    if row.top() < viewport.top() || row.size.height > viewport.size.height {
+        viewport.top() - row.top()
+    } else if row.bottom() > viewport.bottom() {
+        viewport.bottom() - row.bottom()
+    } else {
+        px(0.)
+    }
+}
+
 /// `m:ss` -- enough to find a line; exact timing lives in the line's editor.
 fn workbench_time(seconds: f64) -> String {
     let seconds = seconds.max(0.).floor() as u64;
     format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+#[cfg(test)]
+mod caption_scroll_tests {
+    use super::*;
+    use gpui::{point, size};
+
+    #[test]
+    fn caption_editor_scrolls_only_as_far_as_needed_to_reveal_the_open_row() {
+        let bounds = |top, height| Bounds::new(point(px(0.), px(top)), size(px(300.), px(height)));
+        let viewport = bounds(100., 300.);
+        assert_eq!(caption_reveal_delta(viewport, bounds(180., 140.)), px(0.));
+        assert_eq!(caption_reveal_delta(viewport, bounds(360., 120.)), px(-80.));
+        assert_eq!(caption_reveal_delta(viewport, bounds(80., 120.)), px(20.));
+        assert_eq!(caption_reveal_delta(viewport, bounds(140., 380.)), px(-40.));
+    }
 }

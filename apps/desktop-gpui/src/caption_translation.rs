@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    time::Duration,
+};
 
 use cap_project::{CaptionDisplayMode, CaptionTrackSegment, SubtitleFormat};
 use gpui::{
@@ -12,6 +15,10 @@ use crate::{editor_window::EditorWindow, i18n::tr, llm, ui};
 #[derive(Default)]
 pub struct TranslationUi {
     running: bool,
+    auto_task: Option<gpui::Task<()>>,
+    auto_requested: Vec<TranslationUpdate>,
+    auto_busy: bool,
+    auto_failed: bool,
     generation: u64,
     cancel: Option<tokio::sync::oneshot::Sender<()>>,
     completed_captions: usize,
@@ -52,6 +59,23 @@ impl TranslationUi {
 
     pub(crate) fn error(&self) -> Option<&str> {
         self.error.as_deref()
+    }
+
+    pub(crate) fn auto_status(&self) -> Option<&'static str> {
+        if self.auto_busy {
+            Some(tr::editor::translation::auto_updating())
+        } else if self.auto_failed {
+            Some(tr::editor::translation::auto_failed())
+        } else {
+            None
+        }
+    }
+
+    fn clear_auto_update(&mut self) {
+        self.auto_task = None;
+        self.auto_requested.clear();
+        self.auto_busy = false;
+        self.auto_failed = false;
     }
 
     fn accepts(&self, generation: u64) -> bool {
@@ -115,6 +139,65 @@ fn existing_translation<'a>(
                 .into_iter()
                 .find_map(|id| settings.translations.get(id))
         })
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct TranslationUpdate {
+    source: Source,
+    previous: cap_project::CaptionTranslation,
+}
+
+fn pending_updates(
+    settings: &cap_project::CaptionSettings,
+    source: Vec<Source>,
+) -> Vec<TranslationUpdate> {
+    source
+        .into_iter()
+        .filter_map(|source| {
+            if settings.translation_for(&source.id, &source.text).is_some() {
+                return None;
+            }
+            let previous = existing_translation(settings, &source)?.clone();
+            (!previous.language.trim().is_empty()).then_some(TranslationUpdate { source, previous })
+        })
+        .collect()
+}
+
+fn apply_translation_updates(
+    project: &mut cap_project::ProjectConfiguration,
+    requested: &[TranslationUpdate],
+    replies: &HashMap<String, String>,
+) -> bool {
+    let Some((captions, timeline)) = project.captions.as_mut().zip(project.timeline.as_ref())
+    else {
+        return false;
+    };
+    let settings = &mut captions.settings;
+    if !settings.auto_update_translations {
+        return false;
+    }
+    let current: HashMap<_, _> = sources(&timeline.caption_segments, settings)
+        .into_iter()
+        .map(|source| (source.id, source.text))
+        .collect();
+    let mut changed = false;
+    for update in requested {
+        let source = &update.source;
+        if current.get(&source.id) == Some(&source.text)
+            && settings.translation_for(&source.id, &source.text).is_none()
+            && existing_translation(settings, source) == Some(&update.previous)
+            && let Some(text) = replies.get(&source.id)
+        {
+            settings.set_translation(
+                &source.id,
+                &source.text,
+                text.clone(),
+                update.previous.language.clone(),
+            );
+            changed = true;
+        }
+    }
+    changed
 }
 
 fn english_translation_plan(
@@ -204,9 +287,11 @@ fn sources(
     segments: &[CaptionTrackSegment],
     settings: &cap_project::CaptionSettings,
 ) -> Vec<Source> {
-    let mut original = settings.clone();
-    original.display_mode = CaptionDisplayMode::Original;
-    original.uppercase = false;
+    let original = cap_project::CaptionSettings {
+        filler_language: settings.filler_language.clone(),
+        show_filler_words: settings.show_filler_words,
+        ..Default::default()
+    };
     let mut seen = HashSet::new();
     segments
         .iter()
@@ -227,6 +312,104 @@ impl EditorWindow {
             .as_ref()
             .map(|timeline| timeline.caption_segments.clone())
             .unwrap_or_default()
+    }
+
+    pub(crate) fn queue_caption_translation_update(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((captions, timeline)) = self
+            .project
+            .captions
+            .as_ref()
+            .zip(self.project.timeline.as_ref())
+        else {
+            self.sidebar.caption_translation.clear_auto_update();
+            return;
+        };
+        let state = &mut self.sidebar.caption_translation;
+        if !captions.settings.auto_update_translations
+            || state.running
+            || captions.settings.translations.is_empty()
+        {
+            state.clear_auto_update();
+            return;
+        }
+        let requested = pending_updates(
+            &captions.settings,
+            sources(&timeline.caption_segments, &captions.settings),
+        );
+        if requested == state.auto_requested {
+            return;
+        }
+        state.clear_auto_update();
+        if requested.is_empty() {
+            return;
+        }
+        let Some(provider) = llm::default_provider() else {
+            state.auto_failed = true;
+            return;
+        };
+        let provider_id = provider.id;
+        state.auto_requested = requested.clone();
+        state.auto_busy = true;
+        state.auto_task = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(850))
+                .await;
+            let task_requested = requested.clone();
+            let reply = gpui_tokio::Tokio::spawn(cx, async move {
+                let mut groups = BTreeMap::<String, Vec<Source>>::new();
+                for update in task_requested {
+                    groups
+                        .entry(update.previous.language)
+                        .or_default()
+                        .push(update.source);
+                }
+                let mut translated = HashMap::new();
+                for (language, sources) in groups {
+                    for batch in sources.chunks(20) {
+                        let prompt = serde_json::json!({
+                            "target_language": language,
+                            "subtitles": batch,
+                        })
+                        .to_string();
+                        let reply = llm::chat_in_session(
+                            uuid::Uuid::new_v4(),
+                            provider_id,
+                            SYSTEM_PROMPT,
+                            &prompt,
+                        )
+                        .await?;
+                        translated.extend(parse_reply(&reply, batch)?);
+                    }
+                }
+                Ok::<_, String>(translated)
+            })
+            .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let state = &mut this.sidebar.caption_translation;
+                if state.auto_requested != requested || !state.auto_busy {
+                    return;
+                }
+                state.auto_busy = false;
+                match reply {
+                    Ok(Ok(translations)) => {
+                        if apply_translation_updates(&mut this.project, &requested, &translations) {
+                            this.history.amend_all(|project| {
+                                apply_translation_updates(project, &requested, &translations);
+                            });
+                            this.publish_project();
+                            this.schedule_save(window, cx);
+                        }
+                    }
+                    _ => state.auto_failed = true,
+                }
+                cx.notify();
+                window.refresh();
+            });
+        }));
     }
 
     pub(crate) fn render_caption_translation(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -293,6 +476,61 @@ impl EditorWindow {
                     .text_size(px(12.))
                     .text_color(Hsla::from(theme.gray_10))
                     .child(tr::editor::translation::service((provider.name)())),
+            );
+        }
+        column = column.child(
+            ui::Field::inline(&theme, tr::editor::translation::auto_update()).value(
+                ui::Toggle::plain(
+                    &theme,
+                    "caption-translate-auto-update",
+                    settings.auto_update_translations,
+                )
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.edit_project_global_without_timeline(
+                        "caption-translate-auto-update",
+                        window,
+                        cx,
+                        |project| {
+                            let Some(captions) = project.captions.as_mut() else {
+                                return false;
+                            };
+                            captions.settings.auto_update_translations =
+                                !captions.settings.auto_update_translations;
+                            true
+                        },
+                    );
+                }))
+                .into_any_element(),
+            ),
+        );
+        column = column.child(
+            div()
+                .text_size(px(12.))
+                .text_color(Hsla::from(theme.gray_10))
+                .child(tr::editor::translation::auto_update_hint()),
+        );
+        if let Some(status) = state.auto_status() {
+            column = column.child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(Hsla::from(theme.gray_10))
+                    .child(status),
+            );
+        }
+        if state.auto_failed && provider.is_some() {
+            column = column.child(
+                ui::Button::plain(
+                    &theme,
+                    "caption-translation-retry-update",
+                    ui::ButtonVariant::Gray,
+                    ui::ButtonSize::Sm,
+                )
+                .label(tr::editor::translation::retry_updates())
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.sidebar.caption_translation.clear_auto_update();
+                    this.queue_caption_translation_update(window, cx);
+                    this.invalidate_sidebar(cx);
+                })),
             );
         }
         column = column.child(
@@ -1000,6 +1238,7 @@ impl EditorWindow {
         self.sidebar.caption_translation.completed_captions = 0;
         self.sidebar.caption_translation.total_captions = source.len();
         self.sidebar.caption_translation.running = true;
+        self.sidebar.caption_translation.clear_auto_update();
         self.sidebar.caption_translation.error = None;
         self.sidebar.caption_translation.edit = None;
         self.invalidate_sidebar(cx);
@@ -1079,6 +1318,7 @@ impl EditorWindow {
                 {
                     this.sidebar.caption_translation.error = Some(error);
                 }
+                this.queue_caption_translation_update(window, cx);
                 this.invalidate_sidebar(cx);
             });
         }).detach();
@@ -1088,6 +1328,86 @@ impl EditorWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refreshes_only_changed_translated_sentences_in_their_saved_language() {
+        let mut project = cap_project::ProjectConfiguration::default();
+        let mut settings = cap_project::CaptionSettings {
+            auto_update_translations: true,
+            display_mode: CaptionDisplayMode::Translated,
+            ..Default::default()
+        };
+        settings.set_translation("a", "旧原文", "Old translation".into(), "en".into());
+        settings.set_translation("b", "点击按钮", "Cliquez sur le bouton".into(), "fr".into());
+        settings.set_translation("c", "旧问候", "こんにちは".into(), "ja".into());
+        settings.set_translation("d", "旧文字", "Old draft".into(), "en".into());
+        project.captions = Some(cap_project::CaptionsData {
+            settings,
+            ..Default::default()
+        });
+        let source = [
+            ("a", "你好"),
+            ("b", "点击按钮"),
+            ("c", "新问候"),
+            ("d", "新文字"),
+            ("e", "没有译文"),
+        ];
+        let caption_segments: Vec<_> = source
+            .into_iter()
+            .map(|(id, text)| serde_json::json!({"id": id, "start": 0.0, "end": 1.0, "text": text}))
+            .collect();
+        project.timeline = Some(
+            serde_json::from_value(serde_json::json!({
+                "segments": [], "zoomSegments": [], "captionSegments": caption_segments
+            }))
+            .unwrap(),
+        );
+        let settings = &project.captions.as_ref().unwrap().settings;
+        let requested = pending_updates(
+            settings,
+            sources(
+                &project.timeline.as_ref().unwrap().caption_segments,
+                settings,
+            ),
+        );
+        assert_eq!(
+            requested
+                .iter()
+                .map(|update| (update.source.id.as_str(), update.previous.language.as_str()))
+                .collect::<Vec<_>>(),
+            [("a", "en"), ("c", "ja"), ("d", "en")]
+        );
+        project.timeline.as_mut().unwrap().caption_segments[2].text = "又改了".into();
+        project.captions.as_mut().unwrap().settings.set_translation(
+            "d",
+            "新文字",
+            "Manual wording".into(),
+            "en".into(),
+        );
+        let replies = HashMap::from([
+            ("a".into(), "Hello".into()),
+            ("c".into(), "新しい挨拶".into()),
+            ("d".into(), "Automatic wording".into()),
+        ]);
+        assert!(apply_translation_updates(
+            &mut project,
+            &requested,
+            &replies
+        ));
+        let settings = &project.captions.as_ref().unwrap().settings;
+        assert_eq!(settings.translation_for("a", "你好").unwrap().text, "Hello");
+        assert_eq!(
+            settings.translation_for("b", "点击按钮").unwrap().language,
+            "fr"
+        );
+        assert!(settings.translation_for("c", "又改了").is_none());
+        assert_eq!(
+            settings.translation_for("d", "新文字").unwrap().text,
+            "Manual wording"
+        );
+        assert!(settings.translation_for("e", "没有译文").is_none());
+        assert_eq!(settings.display_mode, CaptionDisplayMode::Translated);
+    }
 
     #[test]
     fn automatic_english_fills_missing_and_stale_entries_without_replacing_valid_edits() {

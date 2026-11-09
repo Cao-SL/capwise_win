@@ -47,6 +47,9 @@ ditto "$ROOT/target/native-deps/Spacedrive.framework" "$STAGE/Contents/Framework
 rm -rf "$STAGE/Contents/Frameworks/Spacedrive.framework/Versions/A/Headers" \
   "$STAGE/Contents/Frameworks/Spacedrive.framework/Headers"
 
+ditto "$HERE/assets/backgrounds" "$STAGE/Contents/Resources/assets/backgrounds"
+"$HERE/scripts/verify-capwise-mac.sh" "$STAGE" --resources-only
+
 sign() { codesign --force --timestamp=none --options runtime --sign "$IDENTITY" "$@"; }
 
 # Inside-out: libraries, helper binary, then the app itself.

@@ -2981,6 +2981,7 @@ impl EditorWindow {
         }
         self.publish_project();
         self.schedule_save(window, cx);
+        self.queue_caption_translation_update(window, cx);
         cx.notify();
         window.refresh();
     }
@@ -3218,6 +3219,7 @@ impl EditorWindow {
         }
         self.publish_project();
         self.schedule_save(window, cx);
+        self.queue_caption_translation_update(window, cx);
         if animated_background_changed {
             self.remember_animated_gradient_selection(previous_animated_gradient, window, cx);
         }
@@ -5106,6 +5108,15 @@ impl EditorWindow {
 
     /// `setEditorState("timeline", "selection", ...)`.
     pub(crate) fn set_selection(&mut self, selection: Option<Selection>, cx: &mut Context<Self>) {
+        self.set_selection_with_scroll(selection, false, cx);
+    }
+
+    pub(crate) fn set_selection_with_scroll(
+        &mut self,
+        selection: Option<Selection>,
+        keep_scroll: bool,
+        cx: &mut Context<Self>,
+    ) {
         if self.selection != selection {
             self.stop_canvas_text_edit(cx);
             self.text_menu = None;
@@ -5116,7 +5127,10 @@ impl EditorWindow {
             self.sidebar.menu = None;
             dismiss_indexed_sidebar_menu(&mut self.sidebar.menu);
             self.sidebar.style_target = None;
-            self.sidebar.scroll.set_offset(gpui::point(px(0.), px(0.)));
+            if !keep_scroll {
+                self.sidebar.scroll.set_offset(gpui::point(px(0.), px(0.)));
+            }
+            self.sidebar.caption_reveal = None;
             self.follow_camera3d_look(selection.as_ref());
             self.canvas_selection = selection.as_ref().and_then(|selection| {
                 if selection.indices.len() != 1 {
@@ -5147,9 +5161,10 @@ impl EditorWindow {
                 if selected.track == TrackKind::Caption {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
                     self.sidebar.caption_tab = crate::editor_workbench::CaptionTab::Content;
-                    if let Some(index) = selected.indices.first() {
+                    if let Some(&index) = selected.indices.first() {
                         self.sidebar.caption_page =
                             index / crate::editor_workbench::CAPTIONS_PER_PAGE;
+                        self.sidebar.caption_reveal = Some(index);
                     }
                 } else if selected.track == TrackKind::Audio {
                     self.sidebar.tab = crate::editor_sidebar::SidebarTab::Audio;
