@@ -1338,4 +1338,34 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn the_upload_diagnostics_never_carry_ai_keys_or_other_extra_fields() {
+        const SECRET: &str = "sk-synthetic-must-never-leak-1234";
+        let report = json!({
+            "system": { "os": "Windows" },
+            "cameras": [],
+            "microphones": [],
+            "permissions": {},
+            "capwiseAi": { "apiKeys": { "llm.openai": SECRET } },
+            "general_settings": { "auth": { "token": SECRET } },
+        });
+        let diagnostics = log_diagnostics_from_report(&report);
+        let serialized = serde_json::to_string(&diagnostics).unwrap();
+        assert!(!serialized.contains(SECRET));
+        assert!(!serialized.contains("capwiseAi"));
+        assert!(!serialized.contains("apiKeys"));
+        assert!(!serialized.contains("general_settings"));
+        let mut keys = diagnostics
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["cameras", "microphones", "permissions", "system"]
+        );
+    }
 }
