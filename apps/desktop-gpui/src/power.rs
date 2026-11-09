@@ -1,7 +1,8 @@
 //! Recording across sleep. While a recording runs, idle sleep is held off, so
-//! a long recording of a still screen keeps going. When the Mac sleeps anyway
-//! (lid closed, Sleep chosen, battery empty) the recording is paused first, so
-//! capture never dies inside sleep, and it waits paused for the user on wake.
+//! a long recording of a still screen keeps going: IOPMAssertion on macOS,
+//! SetThreadExecutionState on Windows. When the machine sleeps anyway (lid
+//! closed, Sleep chosen, battery empty) the macOS path pauses the recording
+//! first, so capture never dies inside sleep, and it waits paused on wake.
 
 use gpui::App;
 
@@ -14,8 +15,90 @@ pub(crate) fn holds_off_idle_sleep(phase: Phase) -> bool {
 pub fn install(cx: &mut App) {
     #[cfg(target_os = "macos")]
     macos::install(cx);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    windows::install(cx);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = cx;
+}
+
+#[cfg(target_os = "windows")]
+mod windows {
+    use gpui::{App, AppContext as _, Global};
+
+    use super::holds_off_idle_sleep;
+    use crate::session::RecordingSession;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetThreadExecutionState(flags: u32) -> u32;
+    }
+
+    const ES_CONTINUOUS: u32 = 0x8000_0000;
+    const ES_SYSTEM_REQUIRED: u32 = 0x0000_0001;
+    const ES_DISPLAY_REQUIRED: u32 = 0x0000_0002;
+
+    /// ES_CONTINUOUS keeps the state until the next call, so a recording of a
+    /// still screen does not idle the machine out from under WGC. ES_DISPLAY_
+    /// REQUIRED matches the macOS `PreventUserIdleDisplaySleep` assertion.
+    fn execution_flags(wanted: bool) -> u32 {
+        if wanted {
+            ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+        } else {
+            ES_CONTINUOUS
+        }
+    }
+
+    struct IdleSleepHold(bool);
+
+    impl Global for IdleSleepHold {}
+
+    impl IdleSleepHold {
+        fn hold(&mut self, wanted: bool) {
+            if self.0 == wanted {
+                return;
+            }
+            if unsafe { SetThreadExecutionState(execution_flags(wanted)) } == 0 {
+                tracing::warn!("could not update the idle sleep hold while recording");
+                return;
+            }
+            tracing::info!(wanted, "idle sleep hold updated");
+            self.0 = wanted;
+        }
+    }
+
+    impl Drop for IdleSleepHold {
+        fn drop(&mut self) {
+            if self.0 {
+                unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
+            }
+        }
+    }
+
+    pub(super) fn install(cx: &mut App) {
+        let session = RecordingSession::global(cx);
+        cx.set_global(IdleSleepHold(false));
+        cx.observe(&session, |session, cx| {
+            let wanted = holds_off_idle_sleep(session.read(cx).phase);
+            cx.global_mut::<IdleSleepHold>().hold(wanted);
+        })
+        .detach();
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn holding_and_releasing_use_complementary_flag_sets() {
+            assert_eq!(
+                execution_flags(true),
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+            );
+            assert_eq!(execution_flags(false), ES_CONTINUOUS);
+            assert_ne!(execution_flags(true) & !ES_CONTINUOUS, 0);
+            assert_eq!(execution_flags(false) & !ES_CONTINUOUS, 0);
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
