@@ -1,3 +1,4 @@
+pub mod avatar;
 pub mod benchmark;
 pub mod camera_placement;
 mod capture_pipeline;

@@ -4623,10 +4623,16 @@ pub(crate) fn studio_camera_snapshot(
                 .ok()
         })
         .or_else(|| {
-            let state = crate::store::load().camera_window?;
+            let saved = crate::store::load();
+            let state = saved.camera_window?;
+            let real_camera = saved.camera_avatar == cap_recording::avatar::AvatarKind::Camera;
             Some(crate::recording::StudioCameraSnapshot {
-                blur: state.background_blur,
-                skin_smoothing: state.skin_smoothing,
+                blur: if real_camera {
+                    state.background_blur
+                } else {
+                    crate::store::BlurMode::Off
+                },
+                skin_smoothing: real_camera && state.skin_smoothing,
                 shape: state.shape,
                 placement: None,
             })

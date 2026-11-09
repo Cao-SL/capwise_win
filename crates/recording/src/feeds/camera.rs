@@ -45,6 +45,10 @@ fn camera_capture_lifecycle_guard() -> std::sync::MutexGuard<'static, ()> {
 
 #[derive(Actor)]
 pub struct CameraFeed {
+    #[cfg(target_os = "macos")]
+    avatar: Arc<crate::avatar::AvatarControl>,
+    #[cfg(target_os = "macos")]
+    avatar_worker: Option<crate::avatar::AvatarWorker>,
     setup_slots: Arc<tokio::sync::Semaphore>,
     setup_cancel: tokio_util::sync::CancellationToken,
     _cancel_setup: tokio_util::sync::DropGuard,
@@ -67,6 +71,8 @@ pub struct CameraFeed {
 /// capture thread and must never wait for the feed.
 #[derive(Debug, Default)]
 pub struct NativeCameraIngress {
+    #[cfg(target_os = "macos")]
+    avatar: Arc<crate::avatar::AvatarControl>,
     senders: std::sync::atomic::AtomicUsize,
     mailbox_full: std::sync::atomic::AtomicU64,
     mjpeg_budget: Arc<MjpegOverlayBudget>,
@@ -296,6 +302,10 @@ impl Default for CameraFeed {
     fn default() -> Self {
         let setup_cancel = tokio_util::sync::CancellationToken::new();
         Self {
+            #[cfg(target_os = "macos")]
+            avatar: Arc::new(crate::avatar::AvatarControl::default()),
+            #[cfg(target_os = "macos")]
+            avatar_worker: None,
             setup_slots: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_CAMERA_SETUPS)),
             _cancel_setup: setup_cancel.clone().drop_guard(),
             setup_cancel,
@@ -320,6 +330,15 @@ impl Default for CameraFeed {
 }
 
 impl CameraFeed {
+    #[cfg(target_os = "macos")]
+    pub fn with_avatar_control(mut self, control: Arc<crate::avatar::AvatarControl>) -> Self {
+        self.native_ingress = Arc::new(NativeCameraIngress {
+            avatar: control.clone(),
+            ..Default::default()
+        });
+        self.avatar = control;
+        self
+    }
     fn next_setup_generation(&mut self) -> u64 {
         self.setup_generation = self.setup_generation.wrapping_add(1);
         self.setup_generation
@@ -1170,6 +1189,7 @@ async fn start_camera_capture_attempt(
                 .senders
                 .load(std::sync::atomic::Ordering::Relaxed)
                 > 0
+                || native_ingress.avatar.kind() != crate::avatar::AvatarKind::Camera
             {
                 hand_native_frame_to_feed(
                     &native_recipient,
@@ -1828,6 +1848,10 @@ impl Message<NewFrame> for CameraFeed {
     type Reply = ();
 
     async fn handle(&mut self, msg: NewFrame, _: &mut Context<Self, Self::Reply>) -> Self::Reply {
+        #[cfg(target_os = "macos")]
+        if self.avatar.kind() != crate::avatar::AvatarKind::Camera {
+            return;
+        }
         if let State::Open(OpenState {
             connecting: None,
             attached: Some(attached),
@@ -1871,6 +1895,59 @@ impl Message<NewNativeFrame> for CameraFeed {
         {
             attached.last_frame_at = Some(std::time::Instant::now());
         }
+        #[cfg(target_os = "macos")]
+        let msg = {
+            let snapshot = self.avatar.snapshot();
+            let kind = crate::avatar::AvatarControl::kind_at(snapshot);
+            if kind != crate::avatar::AvatarKind::Camera {
+                if self.avatar_worker.is_none() {
+                    match crate::avatar::AvatarWorker::new() {
+                        Ok(worker) => self.avatar_worker = Some(worker),
+                        Err(error) => {
+                            tracing::error!("Avatar worker unavailable: {error:#}");
+                            return;
+                        }
+                    }
+                }
+                let Some(worker) = &self.avatar_worker else {
+                    return;
+                };
+                let frame = match worker.render(msg.0, kind).await {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        tracing::error!("Avatar frame failed: {error:#}");
+                        return;
+                    }
+                };
+                // Never deliver queued frames from a previous character or expose the camera on failure.
+                if self.avatar.snapshot() != snapshot {
+                    return;
+                }
+                if !self.senders.is_empty()
+                    && let Ok(inner) = cap_camera_ffmpeg::sample_buf_as_ffmpeg(&frame.sample_buf)
+                {
+                    send_frame_to_camera_senders(
+                        &mut self.senders,
+                        FFmpegVideoFrame {
+                            inner,
+                            timestamp: frame.timestamp,
+                        },
+                        0,
+                        "Avatar",
+                        FanoutDrops {
+                            total: &mut self.ffmpeg_fanout_full,
+                            log: &mut self.ffmpeg_fanout_log,
+                        },
+                    );
+                }
+                self.ffmpeg_sender_count
+                    .store(self.senders.len(), std::sync::atomic::Ordering::Release);
+                NewNativeFrame(frame)
+            } else {
+                self.avatar_worker = None;
+                msg
+            }
+        };
         let frame_num =
             NATIVE_CAMERA_FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 

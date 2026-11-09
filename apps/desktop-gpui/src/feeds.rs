@@ -731,6 +731,8 @@ fn run_camera_preview_worker(config: CameraPreviewWorkerConfig) {
 }
 
 pub struct Feeds {
+    #[cfg(target_os = "macos")]
+    avatar: Arc<cap_recording::avatar::AvatarControl>,
     camera_actor: Option<ActorRef<CameraFeed>>,
     camera_preview_sender: Option<flume::Sender<PreviewCameraFrame>>,
     camera_input_gate: Arc<tokio::sync::Mutex<()>>,
@@ -815,13 +817,33 @@ impl MicLevel {
 }
 
 impl Feeds {
+    #[cfg(target_os = "macos")]
+    pub fn set_avatar(&mut self, kind: cap_recording::avatar::AvatarKind, cx: &mut Context<Self>) {
+        self.avatar.set(kind);
+        let avatar = self.avatar.clone();
+        cx.background_executor()
+            .spawn(async move {
+                crate::store::update(|state| state.camera_avatar = avatar.kind());
+            })
+            .detach();
+        self.camera_preview_not_before = Some(cap_timestamp::Timestamps::now());
+        cx.notify();
+    }
     pub fn camera_input_pending(&self) -> bool {
         self.camera_input_pending
     }
 
     pub fn init(cx: &mut App) -> Entity<Self> {
         let mic_level = cx.new(|_| MicLevel { db: -96.0 });
+        #[cfg(target_os = "macos")]
+        let avatar = {
+            let control = Arc::new(cap_recording::avatar::AvatarControl::default());
+            control.set(crate::store::load().camera_avatar);
+            control
+        };
         let feeds = cx.new(|_| Self {
+            #[cfg(target_os = "macos")]
+            avatar,
             camera_actor: None,
             camera_preview_sender: None,
             camera_input_gate: Arc::new(tokio::sync::Mutex::new(())),
@@ -1401,7 +1423,11 @@ impl Feeds {
         // spawn panics (unwind across the objc frame aborts the process).
         let actor = actor.unwrap_or_else(|| {
             let _runtime = gpui_tokio::Tokio::handle(cx).enter();
-            CameraFeed::spawn(CameraFeed::default())
+            #[cfg(target_os = "macos")]
+            let feed = CameraFeed::default().with_avatar_control(self.avatar.clone());
+            #[cfg(not(target_os = "macos"))]
+            let feed = CameraFeed::default();
+            CameraFeed::spawn(feed)
         });
 
         // The preview channel: bounded(4) so a stalled UI drops frames instead

@@ -4089,3 +4089,10 @@ wiggle = "摇摆"
 float = "浮动"
 point = "指向"
 apply_all = "应用到所有图片和贴纸"
+
+[camera.avatar]
+title = "形象"
+camera = "真人摄像头"
+cat = "小猫"
+bear = "小熊"
+fox = "小狐狸"

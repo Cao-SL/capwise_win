@@ -4091,3 +4091,10 @@ wiggle = "Wiggle"
 float = "Float"
 point = "Point"
 apply_all = "Apply to all pictures and stickers"
+
+[camera.avatar]
+title = "Avatar"
+camera = "Camera"
+cat = "Cat"
+bear = "Bear"
+fox = "Fox"

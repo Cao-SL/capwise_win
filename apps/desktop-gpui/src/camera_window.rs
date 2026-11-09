@@ -240,7 +240,7 @@ fn normalized_size(state: &CameraWindowState) -> f32 {
     (clamp_size(state.size) - CAMERA_MIN_SIZE) / (CAMERA_MAX_SIZE - CAMERA_MIN_SIZE)
 }
 
-const TOOLBAR_MOST_BUTTONS: usize = if cfg!(target_os = "macos") { 6 } else { 5 };
+const TOOLBAR_MOST_BUTTONS: usize = if cfg!(target_os = "macos") { 7 } else { 5 };
 
 /// The fit uses each button's footprint (a 22px icon in 8px padding, 4px
 /// apart, in a 4px-padded strip with a 1px border). The preview-only blur,
@@ -1733,6 +1733,8 @@ pub struct CameraWindow {
     #[cfg(target_os = "macos")]
     dock_frame: Option<[f32; 4]>,
     layout_menu: Option<ui::MenuState>,
+    avatar_menu: Option<ui::MenuState>,
+    avatar: cap_recording::avatar::AvatarKind,
     layout_focus: gpui::FocusHandle,
     resizing: Option<ResizeDrag>,
     hovered_handle: Option<ResizeCorner>,
@@ -1808,8 +1810,13 @@ impl CameraWindow {
             cap_recording::camera_placement::recording_camera_placement(target, bounds)
         })();
         crate::recording::StudioCameraSnapshot {
-            blur: self.state.background_blur,
-            skin_smoothing: self.state.skin_smoothing,
+            blur: if self.avatar == cap_recording::avatar::AvatarKind::Camera {
+                self.state.background_blur
+            } else {
+                BlurMode::Off
+            },
+            skin_smoothing: self.avatar == cap_recording::avatar::AvatarKind::Camera
+                && self.state.skin_smoothing,
             shape: self.state.shape,
             placement,
         }
@@ -1979,6 +1986,9 @@ impl CameraWindow {
             window,
             |this, session, window, cx| {
                 let active = session.read(cx).phase != crate::session::Phase::Idle;
+                if active {
+                    this.avatar_menu = None;
+                }
                 if active && this.layout_menu.take().is_some() {
                     cx.notify();
                 }
@@ -2002,6 +2012,8 @@ impl CameraWindow {
             #[cfg(target_os = "macos")]
             dock_frame: None,
             layout_menu: None,
+            avatar_menu: None,
+            avatar: store::load().camera_avatar,
             layout_focus: cx.focus_handle(),
             resizing: None,
             hovered_handle: None,
@@ -2191,7 +2203,10 @@ impl CameraWindow {
 
     #[cfg(target_os = "macos")]
     fn active_blur_mode(&self) -> Option<cap_camera_effects::BlurMode> {
-        if self.effect_failures.blur || camera_blur::is_low_spec_preview() {
+        if self.avatar != cap_recording::avatar::AvatarKind::Camera
+            || self.effect_failures.blur
+            || camera_blur::is_low_spec_preview()
+        {
             return None;
         }
         match self.state.background_blur {
@@ -2204,7 +2219,8 @@ impl CameraWindow {
 
     #[cfg(target_os = "macos")]
     fn active_skin_smoothing(&self) -> bool {
-        self.state.skin_smoothing
+        self.avatar == cap_recording::avatar::AvatarKind::Camera
+            && self.state.skin_smoothing
             && !self.effect_failures.skin_smoothing
             && !camera_blur::is_low_spec_preview()
     }
@@ -2744,6 +2760,17 @@ impl CameraWindow {
         let theme = self.theme;
         div()
             .id(id)
+            .when(id == "avatar", |button| {
+                button
+                    .tab_index(0)
+                    .tab_stop(true)
+                    .role(gpui::Role::Button)
+                    .aria_label(tr::camera::avatar::title())
+                    .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+                    .tooltip(move |_, cx| {
+                        ui::Tooltip::new(&theme, tr::camera::avatar::title()).view(cx)
+                    })
+            })
             .when(id == "layout", |button| {
                 button
                     .tab_index(0)
@@ -2807,6 +2834,76 @@ impl CameraWindow {
                         )
                     }),
             )
+    }
+
+    fn avatar_items(&self) -> Vec<ui::MenuItem> {
+        use cap_recording::avatar::AvatarKind;
+        [
+            tr::camera::avatar::camera(),
+            tr::camera::avatar::cat(),
+            tr::camera::avatar::bear(),
+            tr::camera::avatar::fox(),
+        ]
+        .into_iter()
+        .zip(AvatarKind::ALL)
+        .map(|(label, kind)| ui::MenuItem::new(label, self.avatar == kind))
+        .collect()
+    }
+
+    fn choose_avatar(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.avatar_menu = None;
+        if crate::session::RecordingSession::global(cx).read(cx).phase
+            != crate::session::Phase::Idle
+        {
+            cx.notify();
+            return;
+        }
+        if let Some(kind) = cap_recording::avatar::AvatarKind::ALL.get(index).copied() {
+            self.avatar = kind;
+            clear_parked_camera_preview(cx);
+            #[cfg(target_os = "macos")]
+            {
+                Feeds::global(cx).update(cx, |feeds, cx| feeds.set_avatar(kind, cx));
+                self.convert_rebuilds += 1;
+                self.blur = None;
+                self.preview.update(cx, |preview, cx| {
+                    preview.latest_frame = None;
+                    if let Some(image) = preview.retained.take() {
+                        let _ = window.drop_image(image);
+                    }
+                    if let Some(image) = preview.painted_cutout_frame.take() {
+                        let _ = window.drop_image(image);
+                    }
+                    if let Some(image) = preview.cutout_frame.take() {
+                        let _ = window.drop_image(image);
+                    }
+                    preview.frame_dims = None;
+                    cx.notify();
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    fn render_avatar_menu(&self, cx: &mut Context<Self>) -> Option<ui::Menu> {
+        let state = self.avatar_menu.as_ref()?;
+        Some(
+            ui::Menu::plain(
+                &self.theme,
+                "camera-avatar-menu",
+                self.avatar_items(),
+                state,
+            )
+            .on_select(
+                cx.listener(|this, index: &usize, window, cx| {
+                    this.choose_avatar(*index, window, cx)
+                }),
+            )
+            .on_dismiss(cx.listener(|this, _, _, cx| {
+                this.avatar_menu = None;
+                cx.notify();
+            })),
+        )
     }
 
     fn studio_layout_controls(&self, cx: &gpui::App) -> bool {
@@ -2930,7 +3027,8 @@ impl CameraWindow {
                         !setup
                             && !self.chrome_visible
                             && self.resizing.is_none()
-                            && self.layout_menu.is_none(),
+                            && self.layout_menu.is_none()
+                            && self.avatar_menu.is_none(),
                         |this| this.invisible(),
                     )
                     .child(self.toolbar_button(
@@ -2942,25 +3040,29 @@ impl CameraWindow {
                         cx,
                         |this, _, cx| this.close(cx),
                     ))
-                    .when(self.undocked_bounds.is_none(), |toolbar| {
-                        toolbar.child(self.toolbar_button(
-                            "size",
-                            "icons/enlarge.svg",
-                            self.state.size >= CAMERA_PRESET_LARGE,
-                            scale,
-                            None,
-                            cx,
-                            |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.size = if state.size < CAMERA_PRESET_LARGE {
-                                        CAMERA_PRESET_LARGE
-                                    } else {
-                                        CAMERA_PRESET_SMALL
-                                    };
-                                })
-                            },
-                        ))
-                    })
+                    .when(
+                        self.undocked_bounds.is_none()
+                            && (!cfg!(target_os = "macos") || buttons >= 4),
+                        |toolbar| {
+                            toolbar.child(self.toolbar_button(
+                                "size",
+                                "icons/enlarge.svg",
+                                self.state.size >= CAMERA_PRESET_LARGE,
+                                scale,
+                                None,
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.size = if state.size < CAMERA_PRESET_LARGE {
+                                            CAMERA_PRESET_LARGE
+                                        } else {
+                                            CAMERA_PRESET_SMALL
+                                        };
+                                    })
+                                },
+                            ))
+                        },
+                    )
                     .when(setup, |toolbar| {
                         toolbar.child(self.toolbar_button(
                             "layout",
@@ -2977,6 +3079,7 @@ impl CameraWindow {
                                 {
                                     let origin =
                                         gpui::point(px(12.), px(CAMERA_TOOLBAR_HEIGHT - 2.));
+                                    this.avatar_menu = None;
                                     this.layout_menu = Some(ui::MenuState::new(
                                         origin,
                                         &this.studio_layout_items(),
@@ -3012,59 +3115,97 @@ impl CameraWindow {
                     // Preview-only, like both Tauri paths (the WGSL UV flip /
                     // the legacy `scaleX(-1)`); the recorded camera track is
                     // never mirrored by either app.
-                    .when(buttons >= 4, |this| {
-                        this.child(self.toolbar_button(
-                            "mirror",
-                            "icons/arrows.svg",
-                            self.state.mirrored && !mirror_failed,
+                    .when(cfg!(target_os = "macos"), |toolbar| {
+                        toolbar.child(self.toolbar_button(
+                            "avatar",
+                            "icons/smile.svg",
+                            self.avatar != cap_recording::avatar::AvatarKind::Camera,
                             scale,
-                            mirror_failed.then_some("!"),
+                            None,
                             cx,
                             |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.mirrored = !state.mirrored;
-                                })
+                                if crate::session::RecordingSession::global(cx).read(cx).phase
+                                    != crate::session::Phase::Idle
+                                {
+                                    return;
+                                }
+                                this.layout_menu = None;
+                                if this.avatar_menu.take().is_none() {
+                                    this.avatar_menu = Some(ui::MenuState::new(
+                                        gpui::point(px(12.), px(CAMERA_TOOLBAR_HEIGHT - 2.)),
+                                        &this.avatar_items(),
+                                    ));
+                                    window.focus(&this.layout_focus, cx);
+                                }
+                                cx.notify();
                             },
                         ))
                     })
-                    .when(buttons >= 5, |this| {
-                        this.child(self.toolbar_button(
-                            "blur",
-                            "icons/person-standing.svg",
-                            self.state.background_blur != BlurMode::Off && !blur_failed,
-                            scale,
-                            if blur_failed {
-                                Some("!")
-                            } else {
-                                self.state.background_blur.label()
-                            },
-                            cx,
-                            |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.background_blur = state.background_blur.cycle();
-                                })
-                            },
-                        ))
-                    })
-                    .when(cfg!(target_os = "macos") && buttons >= 6, |this| {
-                        #[cfg(target_os = "macos")]
-                        let failed = skin_smoothing_failed;
-                        #[cfg(not(target_os = "macos"))]
-                        let failed = false;
-                        this.child(self.toolbar_button(
-                            "skin-smoothing",
-                            "icons/sparkles.svg",
-                            self.state.skin_smoothing && !failed,
-                            scale,
-                            failed.then_some("!"),
-                            cx,
-                            |this, window, cx| {
-                                this.mutate_state(window, cx, |state| {
-                                    state.skin_smoothing = !state.skin_smoothing;
-                                })
-                            },
-                        ))
-                    }),
+                    .when(
+                        buttons >= if cfg!(target_os = "macos") { 5 } else { 4 },
+                        |this| {
+                            this.child(self.toolbar_button(
+                                "mirror",
+                                "icons/arrows.svg",
+                                self.state.mirrored && !mirror_failed,
+                                scale,
+                                mirror_failed.then_some("!"),
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.mirrored = !state.mirrored;
+                                    })
+                                },
+                            ))
+                        },
+                    )
+                    .when(
+                        buttons >= (if cfg!(target_os = "macos") { 6 } else { 5 })
+                            && self.avatar == cap_recording::avatar::AvatarKind::Camera,
+                        |this| {
+                            this.child(self.toolbar_button(
+                                "blur",
+                                "icons/person-standing.svg",
+                                self.state.background_blur != BlurMode::Off && !blur_failed,
+                                scale,
+                                if blur_failed {
+                                    Some("!")
+                                } else {
+                                    self.state.background_blur.label()
+                                },
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.background_blur = state.background_blur.cycle();
+                                    })
+                                },
+                            ))
+                        },
+                    )
+                    .when(
+                        cfg!(target_os = "macos")
+                            && buttons >= 7
+                            && self.avatar == cap_recording::avatar::AvatarKind::Camera,
+                        |this| {
+                            #[cfg(target_os = "macos")]
+                            let failed = skin_smoothing_failed;
+                            #[cfg(not(target_os = "macos"))]
+                            let failed = false;
+                            this.child(self.toolbar_button(
+                                "skin-smoothing",
+                                "icons/sparkles.svg",
+                                self.state.skin_smoothing && !failed,
+                                scale,
+                                failed.then_some("!"),
+                                cx,
+                                |this, window, cx| {
+                                    this.mutate_state(window, cx, |state| {
+                                        state.skin_smoothing = !state.skin_smoothing;
+                                    })
+                                },
+                            ))
+                        },
+                    ),
             )
     }
 
@@ -3298,6 +3439,19 @@ impl Render for CameraWindow {
             .relative()
             .track_focus(&self.layout_focus)
             .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                if let Some(menu) = this.avatar_menu.as_mut() {
+                    match menu.on_key(event.keystroke.key.as_str()) {
+                        ui::MenuKey::Commit(index) => this.choose_avatar(index, window, cx),
+                        ui::MenuKey::Dismiss => {
+                            this.avatar_menu = None;
+                            cx.notify();
+                        }
+                        ui::MenuKey::Moved => cx.notify(),
+                        ui::MenuKey::Ignored => return,
+                    }
+                    cx.stop_propagation();
+                    return;
+                }
                 let Some(menu) = this.layout_menu.as_mut() else {
                     return;
                 };
@@ -3395,6 +3549,7 @@ impl Render for CameraWindow {
                 root.child(self.render_resize_handles(cx))
             })
             .children(self.render_layout_menu(cx))
+            .children(self.render_avatar_menu(cx))
     }
 }
 

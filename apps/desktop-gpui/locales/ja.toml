@@ -4017,3 +4017,10 @@ name = "Display name"
 command = "Executable path"
 args = "Arguments (JSON array)"
 connecting = "Connecting…"
+
+[camera.avatar]
+title = "アバター"
+camera = "カメラ"
+cat = "猫"
+bear = "クマ"
+fox = "キツネ"

@@ -101,6 +101,8 @@ impl Default for CameraWindowState {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PersistedState {
+    #[serde(default)]
+    pub camera_avatar: cap_recording::avatar::AvatarKind,
     pub camera_window: Option<CameraWindowState>,
     #[serde(default)]
     pub export: Option<ExportPrefs>,
@@ -237,6 +239,19 @@ fn state_path() -> PathBuf {
 pub(crate) fn camera_skin_smoothing_preference() -> Option<bool> {
     let value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(state_path()).ok()?).ok()?;
+    camera_skin_smoothing_for(&value)
+}
+
+fn camera_skin_smoothing_for(value: &serde_json::Value) -> Option<bool> {
+    if value
+        .get("camera_avatar")
+        .and_then(|value| {
+            serde_json::from_value::<cap_recording::avatar::AvatarKind>(value.clone()).ok()
+        })
+        .is_some_and(|kind| kind != cap_recording::avatar::AvatarKind::Camera)
+    {
+        return Some(false);
+    }
     value.get("camera_window")?.get("skin_smoothing")?.as_bool()
 }
 
@@ -3805,5 +3820,20 @@ mod tests {
                 behaviour
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod avatar_tests {
+    #[test]
+    fn cartoon_disables_processing_without_changing_camera_preferences() {
+        let mut saved =
+            serde_json::json!({"camera_avatar": "cat", "camera_window": {"skin_smoothing": true}});
+        assert_eq!(super::camera_skin_smoothing_for(&saved), Some(false));
+        assert_eq!(saved["camera_window"]["skin_smoothing"], true);
+        saved["camera_avatar"] = serde_json::json!("camera");
+        assert_eq!(super::camera_skin_smoothing_for(&saved), Some(true));
+        saved.as_object_mut().unwrap().remove("camera_avatar");
+        assert_eq!(super::camera_skin_smoothing_for(&saved), Some(true));
     }
 }

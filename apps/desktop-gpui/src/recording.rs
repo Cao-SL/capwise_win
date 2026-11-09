@@ -1803,6 +1803,9 @@ fn apply_default_preset_to_project_config(
 /// here persists every cycle to `gpui-state.json`, so reading it back is the
 /// same "whatever the toggle says now" semantics.
 fn current_camera_blur() -> crate::store::BlurMode {
+    if crate::store::load().camera_avatar != cap_recording::avatar::AvatarKind::Camera {
+        return crate::store::BlurMode::Off;
+    }
     crate::store::load()
         .camera_window
         .map(|state| state.background_blur)
@@ -1810,6 +1813,9 @@ fn current_camera_blur() -> crate::store::BlurMode {
 }
 
 fn current_camera_skin_smoothing() -> bool {
+    if crate::store::load().camera_avatar != cap_recording::avatar::AvatarKind::Camera {
+        return false;
+    }
     crate::store::load()
         .camera_window
         .is_some_and(|state| state.skin_smoothing)

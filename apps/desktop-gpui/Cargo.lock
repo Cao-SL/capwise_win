@@ -1951,6 +1951,7 @@ dependencies = [
  "specta",
  "sysinfo 0.35.2",
  "thiserror 1.0.69",
+ "tiny-skia",
  "tokio",
  "tokio-util",
  "tracing",
