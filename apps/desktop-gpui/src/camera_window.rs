@@ -2754,12 +2754,9 @@ impl CameraWindow {
                     .when(studio_layout, |toolbar| {
                         toolbar.child(self.toolbar_button(
                             "layout",
-                            if self.studio_layout == StudioLayout::PictureInPicture {
-                                shape_icon
-                            } else {
-                                "icons/columns-2.svg"
-                            },
-                            self.layout_menu.is_some(),
+                            "icons/columns-2.svg",
+                            self.layout_menu.is_some()
+                                || self.studio_layout != StudioLayout::PictureInPicture,
                             scale,
                             None,
                             cx,
