@@ -163,7 +163,9 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path apps/desktop-gpui/Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-          ./apps/desktop-gpui/scripts/verify-capwise-windows.ps1 -Installer candidate/Capwise-Windows-x64-Setup.exe -Version $version
+          $signatureArg = @{}
+          if ($env:WINDOWS_SIGNING_ENABLED -eq 'true') { $signatureArg['RequireAuthenticode'] = $true }
+          ./apps/desktop-gpui/scripts/verify-capwise-windows.ps1 -Installer candidate/Capwise-Windows-x64-Setup.exe -Version $version @signatureArg
 
       - name: Record candidate provenance
         shell: bash

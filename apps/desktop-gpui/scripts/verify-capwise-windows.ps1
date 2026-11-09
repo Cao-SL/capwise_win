@@ -1,6 +1,7 @@
 param(
 	[Parameter(Mandatory = $true)][string] $Installer,
-	[Parameter(Mandatory = $true)][string] $Version
+	[Parameter(Mandatory = $true)][string] $Version,
+	[switch] $RequireAuthenticode
 )
 
 Set-StrictMode -Version Latest
@@ -32,6 +33,16 @@ $Required = @(
 foreach ($Name in $Required) {
 	$File = Get-Item -LiteralPath (Join-Path $Destination $Name)
 	if ($File.Length -eq 0) { throw "Bundled file is empty: $Name" }
+}
+if ($RequireAuthenticode) {
+	$Signed = @($Installer, (Join-Path $Destination "Capwise.exe"), (Join-Path $Destination "cap-cli.exe"), (Join-Path $Destination "cap-muxer.exe"))
+	foreach ($Path in $Signed) {
+		$Signature = Get-AuthenticodeSignature -FilePath $Path
+		if ($Signature.Status -ne "Valid" -or $null -eq $Signature.SignerCertificate) {
+			throw "Missing or invalid Authenticode signature: $Path ($($Signature.Status))"
+		}
+		Write-Output "Verified Authenticode signature on $([IO.Path]::GetFileName($Path))"
+	}
 }
 foreach ($Name in @("Cap.exe", "cap-gpui.exe", "cap-exporter.exe")) {
 	if (Test-Path -LiteralPath (Join-Path $Destination $Name)) {
