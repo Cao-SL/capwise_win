@@ -280,6 +280,7 @@ sign_out = "Abmelden"
 signed_in = "Angemeldet"
 
 [settings.recordings]
+delete_failed = "Das Projekt konnte nicht vollständig gelöscht werden. Öffne den Ordner, prüfe die Dateien und versuche es erneut. Details: {error}"
 corrupted_body = "Die Aufnahme ist fehlgeschlagen, daher kann diese Datei im Editor Probleme machen! Wenn Sie die Datei nicht wiederherstellen können, wenden Sie sich bitte an den Support!"
 corrupted_title = "Die Aufnahme ist möglicherweise beschädigt"
 delete = "Löschen"
@@ -305,6 +306,8 @@ studio = "Keine Studio-Aufnahmen"
 studio_matching = "Keine passenden Studio-Aufnahmen"
 
 [settings.screenshots]
+save_failed = "Der Screenshot konnte nicht gespeichert werden. Wähle einen anderen Ordner und versuche es erneut. Details: {error}"
+delete_failed = "Der Screenshot konnte nicht vollständig gelöscht werden. Öffne den Ordner, prüfe die Dateien und versuche es erneut. Details: {error}"
 copy = "In die Zwischenablage kopieren"
 delete = "Löschen"
 description = "Verwalten Sie Ihre Bildschirmfotos und führen Sie Aktionen aus."
@@ -2052,6 +2055,7 @@ title = "Das ist Capwise"
 typewriter = "wird getippt…"
 
 [editor.panel.text_segment]
+default_content = "Text eingeben"
 basic = "Basis"
 alignment = "Ausrichtung"
 more_typography = "Weitere Typografie"
@@ -2292,6 +2296,8 @@ unfinished_target = "Schließen Sie diese Aufnahme ab oder stellen Sie sie wiede
 unsupported_video = "Nicht unterstützte Videodatei: {path}"
 
 [editor.export]
+review_settings = "Einstellungen prüfen und erneut versuchen"
+save_dialog_failed = "Der Speicherort konnte nicht gewählt werden: {error}. Versuche es erneut oder exportiere in die Zwischenablage."
 back = "Zurück zum Editor"
 existing_link_description = "Durch erneutes Hochladen wird das Video unter diesem Link durch Ihre neueste Bearbeitung ersetzt. Alle mit dem Link sehen die aktualisierte Version."
 existing_link_title = "Bestehenden Link aktualisieren"
@@ -2339,6 +2345,7 @@ file = "Datei"
 link = "Link zum Teilen"
 
 [editor.export.done]
+show_in_folder = "Im Ordner anzeigen"
 copy_link = "Link kopieren"
 link_copied = "Link kopiert"
 open_file = "Datei öffnen"
@@ -2489,8 +2496,6 @@ done = "Fertig"
 apply = "Anwenden"
 
 [editor.tabs.captions]
-regenerate = "Untertitel neu erstellen"
-undo_style = "Widerrufen"
 outline_color = "Konturfarbe"
 shadow_color = "Schattenfarbe"
 edit_style = "Untertitelstil bearbeiten"
@@ -2748,8 +2753,6 @@ paused = "Pausiert"
 title = "Zeitleiste"
 
 [editor.timeline.empty]
-add_audio = "Audio hinzufügen"
-audio = "Fügen Sie Hintergrundmusik hinzu oder importieren Sie eigenes Audio"
 record_audio = "Zum Aufnehmen klicken"
 add_scene = "Szene hinzufügen"
 captions = "Keine Untertitel"
@@ -2821,7 +2824,6 @@ video = "Video"
 zoom = "Zoom"
 
 [editor.transcript]
-title = "Transkript"
 back_to_captions = "Zurück zu Untertiteln"
 cleanup = "Aufräumen"
 cleanup_tooltip = "Füllwörter entfernen und Pausen kürzen"
@@ -2892,7 +2894,6 @@ save_failed = "{path} konnte nicht gespeichert werden. Lassen Sie den Editor ge�
 undo = "Rückgängig"
 
 [editor.window.add_track]
-button = "Hinzufügen"
 hide_3d = "Die 3D-Spur ausblenden."
 more = "Mehr"
 
@@ -2981,8 +2982,6 @@ window_title_placeholder = "Fenstertitel"
 windows_description = "Titelleiste mit Fenstersteuerung"
 
 [editor.window.header]
-transcript = "Transkript"
-transcript_tooltip = "Per Transkript bearbeiten"
 delete_recording = "Aufnahme löschen"
 export = "Exportieren"
 open_bundle = "Aufnahmepaket öffnen"
@@ -3221,6 +3220,9 @@ label = "Untertitel nach der Aufnahme erzeugen"
 description = "Erstellt Untertitel für neue Aufnahmen mit einem heruntergeladenen lokalen Modell. Modelle werden nicht automatisch heruntergeladen und Audio wird nicht automatisch hochgeladen."
 
 [editor.tabs.captions.auto_draft]
+snapshot_unloaded = "Eine Untertitelkopie ist vorhanden, aber im Projekt sind keine Untertitel geladen. Erstelle sie erneut oder exportiere mit den aktuellen Untertiteln."
+status_unreadable = "Kein Zugriff auf den Untertitelstatus. Prüfe die Zugriffsrechte des Projektordners oder exportiere mit den aktuellen Untertiteln."
+status_invalid = "Der Status der automatischen Untertitel konnte nicht gelesen werden. Vorhandene Untertitel wurden beibehalten. Behalte sie bei oder erstelle sie erneut."
 queued = "Lokaler Untertitelentwurf wird vorbereitet…"
 needs_model = "Automatische Untertitel benötigen ein lokales Modell. Wähle unten Qwen, Whisper Small oder Medium, lade es herunter und starte die lokalen Untertitel erneut."
 running = "Untertitel werden lokal mit {model} erzeugt. Du kannst weiter bearbeiten."
@@ -3265,6 +3267,8 @@ progress = "{completed} von {total} Untertiteln übersetzt"
 review = "Übersetzungen prüfen · {translated}/{total}"
 
 [settings.workflow]
+delete_description = "Diese Vorlage wird dauerhaft gelöscht. Vorhandene Aufnahmen bleiben unverändert."
+delete_title = "„{name}“ löschen?"
 title = "Vorlagen für die Nachbearbeitung"
 description = "Gilt nur für neue Aufnahmen. Bearbeite eine Vorlage oder erstelle eine eigene Kopie. Für KI-Schritte müssen die Modelle bereit sein. Wenn du Sprachverbesserung oder Kamera-Beauty ausdrücklich deaktiviert hast, bleibt das maßgeblich."
 enabled = "Vorlage nach der Aufnahme anwenden"
@@ -3428,8 +3432,6 @@ unreadable = "Diese Vorlage kann nicht gelesen werden: {error}. Sie kann entfern
 unreadable_name = "Unlesbare Vorlage"
 
 [editor.voiceover]
-audition_original = "Originalaufnahme anhören"
-retry_save = "Erneut im Projekt speichern"
 input_level = "Eingangspegel"
 level_low = "Sprechen Sie zur Pegelprüfung. Bei niedrigem Pegel näher ans Mikrofon gehen oder die Eingangslautstärke erhöhen."
 level_good = "Guter Pegel. Abstand beibehalten."
@@ -3618,6 +3620,7 @@ no_microphone = "Diese Aufnahme hat keine Mikrofonspur. Zum automatischen Absenk
 microphone_muted = "Das Mikrofon ist stummgeschaltet. Dieser Clip behält seine aktuelle Lautstärke, bis Mikrofonton aktiviert wird."
 
 [editor.export.captions]
+current_note_idle = "Exportiert die aktuell gespeicherten Untertitel. Noch nicht abgeschlossene Verarbeitung wird nicht in dieses Video übernommen."
 waiting = "Untertitel werden für den Export vorbereitet"
 needs_attention = "Untertitel erfordern Aufmerksamkeit"
 recognizing = "Sprache wird transkribiert…"
@@ -3756,7 +3759,6 @@ tokendance = "Tokendance"
 zhipu = "Zhipu GLM"
 
 [settings.cover]
-models_link = "Offizielle Bildmodelle"
 title = "KI-Titelbilder (optional)"
 description = "Hintergründe mit den konfigurierten Bildanbieter erzeugen. Titel bleiben lokal bearbeitbar. Ein separater Bildschlüssel ist erforderlich; Text- und Sprachschlüssel werden nie automatisch übernommen. Speichern erzeugt kein Bild."
 not_configured = "Nicht eingerichtet"
@@ -3828,6 +3830,7 @@ settings = "Einstellungen öffnen"
 choose_microphone = "Mikrofon auswählen"
 
 [editor.workbench]
+captions_hidden = "Untertitel sind in der Vorschau und im Export ausgeblendet."
 content = "Inhalt"
 translation = "Übersetzung"
 previous = "Zurück"
@@ -3862,8 +3865,6 @@ description = "Standardordner für Videos, Untertitel und Cover. Beim Export kan
 default_location = "Letzten Systemspeicherort verwenden"
 
 [editor.assistant]
-suggest_audio = "Lautstärke anpassen"
-suggest_edit = "Schnitt vorschlagen"
 no_changes = "Keine passenden Inhalte zu ändern. Das Projekt bleibt unverändert."
 favorites = "Favoriten"
 custom_model = "Eigenes Modell: {model}"
@@ -3914,7 +3915,6 @@ visible = "Anzeigen"
 hidden = "Ausblenden"
 
 [settings.agents]
-default_model = "Agent default"
 title = "Local AI agents (ACP)"
 description = "Connect an installed agent using its existing login. Suggestions are reviewed in the editor before applying."
 save_failed = "Could not save the agent."

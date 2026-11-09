@@ -45,6 +45,15 @@ pub(super) fn is_capwise_key(key: &str) -> bool {
     CAPWISE_KEYS.iter().any(|prefix| key.starts_with(prefix))
 }
 
+const FORMATTED: &[&str] = &[
+    "tray.version",
+    "settings.general.excluded_windows.missing_body",
+    "settings.general.self_host.confirm_change",
+    "menu.update.badge_progress",
+    "menu.update.badge_version",
+    "editor.assistant.custom_model",
+];
+
 #[test]
 fn capwise_key_groups_are_present_and_do_not_overlap() {
     for prefix in CAPWISE_KEYS {
@@ -155,8 +164,8 @@ fn english_matches_the_literals_it_replaced() {
         (tr::settings::nav::general(), "General".into()),
         (tr::settings::nav::integrations(), "Integrations".into()),
         (tr::settings::nav::license(), "Plan & license".into()),
-        (tr::settings::nav::quality(), "Recording quality".into()),
-        (tr::settings::nav::recordings(), "Recordings".into()),
+        (tr::settings::nav::quality(), "Recording & Export".into()),
+        (tr::settings::nav::recordings(), "Projects".into()),
         (tr::settings::nav::screenshots(), "Screenshots".into()),
         (tr::settings::nav::shortcuts(), "Shortcuts".into()),
         (tr::settings::nav::transcription(), "AI models".into()),
@@ -536,6 +545,117 @@ fn english_matches_the_literals_it_replaced() {
             tr::settings::general::privacy::telemetry::label(),
             "Share anonymous telemetry".into(),
         ),
+        (tr::menu::file::new_recording(), "New Recording".into()),
+        (tr::settings::ai_tabs::recognition(), "Subtitle Recognition".into()),
+        (tr::settings::ai_tabs::content(), "Content Generation".into()),
+        (tr::settings::ai_tabs::cover(), "Cover Generation".into()),
+        (tr::settings::export_folder::save_failed(), "Could not save the export folder. Please try again.".into()),
+        (tr::settings::export_folder::title(), "Export Folder".into()),
+        (tr::settings::export_folder::description(), "Choose the default folder for videos, subtitles and covers. You can change it when exporting.".into()),
+        (tr::settings::export_folder::default_location(), "Use the last system save location".into()),
+        (tr::settings::agents::title(), "Local AI agents (ACP)".into()),
+        (tr::settings::agents::description(), "Connect an installed agent using its existing login. Suggestions are reviewed in the editor before applying.".into()),
+        (tr::settings::agents::save_failed(), "Could not save the agent.".into()),
+        (tr::settings::agents::invalid_command(), "Choose an executable using an absolute path. Arguments must be a JSON array of strings.".into()),
+        (tr::settings::agents::launch_failed(), "Could not start this agent. Check its installation and command.".into()),
+        (tr::settings::agents::protocol_error(), "This agent returned an unsupported ACP response. Check its adapter version.".into()),
+        (tr::settings::agents::disconnected(), "The agent disconnected before completing the request.".into()),
+        (tr::settings::agents::login_required(), "Sign in using this agent’s CLI, then reconnect.".into()),
+        (tr::settings::agents::timeout(), "The agent did not respond in time.".into()),
+        (tr::settings::agents::cancelled(), "The agent cancelled this request.".into()),
+        (tr::settings::agents::empty_reply(), "The agent returned no text.".into()),
+        (tr::settings::agents::connect(), "Connect and get models".into()),
+        (tr::settings::agents::refresh(), "Refresh models".into()),
+        (tr::settings::agents::remove(), "Disconnect".into()),
+        (tr::settings::agents::detect(), "Detect installed agents".into()),
+        (tr::settings::agents::not_found(), "Not detected".into()),
+        (tr::settings::agents::connected(), "Connected".into()),
+        (tr::settings::agents::custom(), "Add custom ACP agent".into()),
+        (tr::settings::agents::name(), "Display name".into()),
+        (tr::settings::agents::command(), "Executable path".into()),
+        (tr::settings::agents::args(), "Arguments (JSON array)".into()),
+        (tr::settings::agents::connecting(), "Connecting…".into()),
+        (tr::editor::workbench::captions_hidden(), "Captions are hidden in the preview and export.".into()),
+        (tr::editor::workbench::content(), "Content".into()),
+        (tr::editor::workbench::translation(), "Translation".into()),
+        (tr::editor::workbench::previous(), "Previous".into()),
+        (tr::editor::workbench::next(), "Next".into()),
+        (tr::editor::workbench::back_audio(), "Back to audio".into()),
+        (tr::editor::workbench::added_audio(), "Added audio".into()),
+        (tr::editor::workbench::audio_empty(), "Record a voiceover or add music using the buttons above.".into()),
+        (tr::editor::workbench::adjust(), "Adjust".into()),
+        (tr::editor::workbench::recognize_again(), "Recognize again".into()),
+        (tr::editor::workbench::text_video_edit(), "Edit video by text".into()),
+        (tr::editor::workbench::video_edit_hint(), "Deleting text here also cuts the corresponding video.".into()),
+        (tr::editor::workbench::caption_empty(), "Generate captions from your recording to start editing.".into()),
+        (tr::editor::workbench::adjust_style(), "Edit style".into()),
+        (tr::editor::workbench::original_audio(), "Original recording audio".into()),
+        (tr::editor::workbench::no_microphone(), "This recording has no microphone audio.".into()),
+        (tr::editor::workbench::voice_enhance(), "Enhance voice".into()),
+        (tr::editor::workbench::search_safe_hint(), "Find and replace changes caption text only. Your video stays intact.".into()),
+        (tr::editor::workbench::setup_ai(), "Set up AI proofreading".into()),
+        (tr::editor::workbench::more_actions(), "More actions".into()),
+        (tr::editor::workbench::show_captions(), "Show captions".into()),
+        (tr::editor::workbench::my_styles(), "My styles".into()),
+        (tr::editor::assistant::no_changes(), "No matching content needs changing. Your project is unchanged.".into()),
+        (tr::editor::assistant::favorites(), "Favorites".into()),
+        (tr::editor::assistant::skills(), "Skills".into()),
+        (tr::editor::assistant::skill_search(), "Search local skills…".into()),
+        (tr::editor::assistant::skill_notice(), "The selected skill is sent to your model. Capwise previews and applies edits using its guidance; skill scripts are not executed.".into()),
+        (tr::editor::assistant::skill_none(), "No skill".into()),
+        (tr::editor::assistant::skill_import(), "Import SKILL.md".into()),
+        (tr::editor::assistant::skill_loading(), "Loading skills…".into()),
+        (tr::editor::assistant::skill_empty(), "No matching skills. Import a SKILL.md file.".into()),
+        (tr::editor::assistant::skill_invalid(), "Cannot read skill. Choose a valid SKILL.md file (up to 64 KB).".into()),
+        (tr::editor::assistant::welcome(), "What would you like to create?".into()),
+        (tr::editor::assistant::copy_reply(), "Copy response".into()),
+        (tr::editor::assistant::details(), "View details".into()),
+        (tr::editor::assistant::edit_request(), "Edit and retry".into()),
+        (tr::editor::assistant::send_shortcut(), "⌘ Enter to send".into()),
+        (tr::editor::assistant::caption_edits(), "Caption text changes".into()),
+        (tr::editor::assistant::translate(), "Translate captions".into()),
+        (tr::editor::assistant::suggest_rewrite(), "Rewrite captions".into()),
+        (tr::editor::assistant::suggest_fillers(), "Remove filler words".into()),
+        (tr::editor::assistant::model_search(), "Search, or type a model ID…".into()),
+        (tr::editor::assistant::model_settings(), "Model settings".into()),
+        (tr::editor::assistant::model_empty(), "No matching models".into()),
+        (tr::editor::assistant::default_agent(), "Agent default".into()),
+        (tr::editor::assistant::new_chat(), "New conversation".into()),
+        (tr::editor::assistant::working(), "Preparing an edit proposal…".into()),
+        (tr::editor::assistant::suggest_cover(), "Design a cover".into()),
+        (tr::editor::assistant::title(), "AI assistant".into()),
+        (tr::editor::assistant::notice(), "Your request, timeline settings and some captions go to the selected model.".into()),
+        (tr::editor::assistant::placeholder(), "Describe an edit or a cover idea…".into()),
+        (tr::editor::assistant::configure(), "Configure a content generation model in Settings.".into()),
+        (tr::editor::assistant::request_limit(), "Enter a request of up to 8,000 bytes.".into()),
+        (tr::editor::assistant::invalid(), "The model returned an invalid plan after automatic correction. Your project is unchanged. Retry or switch models.".into()),
+        (tr::editor::assistant::cut_blocked(), "This cut conflicts with a transition, title card or the last remaining clip. Choose another range.".into()),
+        (tr::editor::assistant::failed(), "The request failed. Please try again.".into()),
+        (tr::editor::assistant::changed(), "The project has changed. Generate a new plan before applying.".into()),
+        (tr::editor::assistant::applied(), "Changes applied. Use Undo to restore the previous version.".into()),
+        (tr::editor::assistant::apply(), "Apply changes".into()),
+        (tr::editor::assistant::send(), "Send".into()),
+        (tr::editor::assistant::stop(), "Stop".into()),
+        (tr::editor::assistant::duration(), "Duration".into()),
+        (tr::editor::assistant::cut(), "Remove from clip".into()),
+        (tr::editor::assistant::zoom(), "Add zoom".into()),
+        (tr::editor::assistant::audio(), "Audio gain".into()),
+        (tr::editor::assistant::camera(), "Camera".into()),
+        (tr::editor::assistant::captions(), "Captions".into()),
+        (tr::editor::assistant::visible(), "Show".into()),
+        (tr::editor::assistant::hidden(), "Hide".into()),
+        (tr::editor::assistant::cover_settings(), "Edit cover".into()),
+        (tr::editor::assistant::cover_working(), "Making the cover…".into()),
+        (tr::editor::assistant::regenerate(), "Make another".into()),
+        (tr::editor::stickers::title(), "Stickers".into()),
+        (tr::editor::stickers::tooltip(), "Insert an emoji or icon".into()),
+        (tr::editor::stickers::search(), "Search, e.g. rocket, arrow, check".into()),
+        (tr::editor::stickers::emoji(), "Emoji".into()),
+        (tr::editor::stickers::icons(), "Icons".into()),
+        (tr::editor::stickers::thin(), "Thin".into()),
+        (tr::editor::stickers::regular(), "Regular".into()),
+        (tr::editor::stickers::bold(), "Bold".into()),
+        (tr::editor::stickers::empty(), "Nothing found. Try arrow, heart or warning.".into()),
     ];
     for (translated, literal) in pairs {
         assert_eq!(*translated, literal.as_str());
@@ -553,14 +673,15 @@ fn english_matches_the_literals_it_replaced() {
                 && !is_capwise_key(key)
         })
         .count()
-        // `tray.version`, `excluded_windows.missing_body`, `self_host.confirm_change`,
-        // `menu.update.badge_progress` and `menu.update.badge_version` take arguments.
-        - 5;
+        - FORMATTED.len();
     assert_eq!(
         pairs.len(),
         plain_keys,
         "every plain key has a literal above"
     );
+    for key in FORMATTED {
+        assert!(KEYS.contains(key), "{key}");
+    }
 }
 
 const NEW_IN_THE_LANGUAGE_PICKER: &str = "settings.general.language.";
@@ -897,6 +1018,14 @@ fn english_messages_format_like_the_literals_they_replaced() {
 #[test]
 fn capwise_product_messages_preserve_arguments() {
     let cases = [
+        (
+            tr::editor::assistant::custom_model("model-example"),
+            "Use custom model: model-example",
+        ),
+        (
+            tr::settings::workflow::delete_title("教程"),
+            "Delete “教程”?",
+        ),
         (
             tr::settings::workflow::copy_name("教程", 2),
             "教程 · Copy 2",

@@ -19,6 +19,7 @@ pub(super) fn is_editor_shell_surface_key(key: &str) -> bool {
 }
 
 const FORMATTED: &[&str] = &[
+    "editor.export.save_dialog_failed",
     "editor.tabs.captions.auto_draft.running",
     "editor.tabs.captions.auto_draft.skip_failed",
     "editor.transcript.fillers.needs_review",
@@ -112,6 +113,22 @@ const FORMATTED: &[&str] = &[
 #[test]
 fn editor_shell_surfaces_match_the_literals_they_replaced() {
     let pairs: &[(&str, &str)] = &[
+        (
+            tr::editor::tabs::captions::auto_draft::status_invalid(),
+            "The automatic caption status could not be read. Existing captions were kept. Keep the current captions or generate them again.",
+        ),
+        (
+            tr::editor::tabs::captions::auto_draft::status_unreadable(),
+            "Cannot access the automatic caption status. Check the project folder permissions, or export with the current captions.",
+        ),
+        (
+            tr::editor::tabs::captions::auto_draft::snapshot_unloaded(),
+            "A caption snapshot exists, but no captions are loaded in this project. Generate captions again, or export with the current captions.",
+        ),
+        (
+            tr::editor::export::captions::current_note_idle(),
+            "Exports the captions currently saved. Unfinished caption processing will not be included in this video.",
+        ),
         (
             tr::editor::tabs::captions::edit_style(),
             "Edit caption style",
@@ -227,6 +244,11 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Exports as a transparent MOV. Files are large and best for compositing or editing.",
         ),
         (tr::editor::export::back(), "Back to editor"),
+        (
+            tr::editor::export::review_settings(),
+            "Review settings and retry",
+        ),
+        (tr::editor::export::done::show_in_folder(), "Show in folder"),
         (
             tr::editor::export::captions::waiting(),
             "Preparing captions before export",
@@ -777,10 +799,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Refining word timings…",
         ),
         (
-            tr::editor::tabs::captions::regenerate(),
-            "Regenerate Captions",
-        ),
-        (
             tr::editor::tabs::captions::reset_position(),
             "Reset Position",
         ),
@@ -943,12 +961,7 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (tr::editor::tabs::weight::medium(), "Medium"),
         (tr::editor::tabs::weight::normal(), "Normal"),
         (tr::editor::timeline::add_shot(), "Add shot"),
-        (tr::editor::timeline::empty::add_audio(), "Add audio"),
         (tr::editor::timeline::empty::add_scene(), "Add scene"),
-        (
-            tr::editor::timeline::empty::audio(),
-            "Add background music or import your own audio",
-        ),
         (tr::editor::timeline::empty::captions(), "No captions"),
         (
             tr::editor::timeline::empty::keyboard(),
@@ -1094,7 +1107,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Remove pauses and filler words",
         ),
         (tr::editor::timeline::track::zoom(), "Zoom"),
-        (tr::editor::window::add_track::button(), "Add"),
         (
             tr::editor::window::add_track::hide_3d(),
             "Hide the 3D track.",
@@ -1323,14 +1335,8 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::transcript::skipped_last_clip(),
             "The last clip cannot be cut away.",
         ),
-        (tr::editor::transcript::title(), "Transcript"),
         (tr::editor::transcript::transcribe(), "Transcribe"),
         (tr::editor::transcript::transcribing(), "Transcribing…"),
-        (tr::editor::window::header::transcript(), "Transcript"),
-        (
-            tr::editor::window::header::transcript_tooltip(),
-            "Edit by transcript",
-        ),
         (
             tr::editor::window::image::changed(),
             "This image changed while choosing a replacement. Select it and try again.",
@@ -1538,7 +1544,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         ),
         (tr::editor::tabs::captions::shadow_size(), "Shadow spread"),
         (tr::editor::tabs::captions::more_styles(), "More styles"),
-        (tr::editor::tabs::captions::undo_style(), "Undo"),
         (
             tr::editor::tabs::captions::preview_original(),
             "清晰表达每一步",
@@ -1617,6 +1622,9 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             tr::editor::window::track_menu::audio_settings(),
             "Volume & fades",
         ),
+        (tr::editor::canvas::edit_text(), "Edit on canvas"),
+        (tr::editor::window::aspect::button(), "Ratio"),
+        (tr::editor::window::header::new_recording(), "New recording"),
     ];
     for (translated, literal) in pairs {
         assert_eq!(translated, literal);
@@ -1689,8 +1697,8 @@ fn derived_track_copy_matches_the_sentences_it_replaced() {
         );
     }
     assert_eq!(
-        tr::editor::timeline::empty::audio(),
-        TrackKind::Audio.picker_description().trim_end_matches('.')
+        TrackKind::Audio.picker_description(),
+        "Add background music or import your own audio."
     );
     assert_eq!(
         tr::editor::timeline::empty::scene(),
@@ -1980,4 +1988,12 @@ fn selection_headers_read_as_whole_sentences() {
             old_zoom(count, total)
         );
     }
+}
+
+#[test]
+fn export_save_dialog_error_preserves_details_and_recovery() {
+    assert_eq!(
+        tr::editor::export::save_dialog_failed("permission denied"),
+        "Could not choose a save location: permission denied. Try again, or export to the clipboard."
+    );
 }

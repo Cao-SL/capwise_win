@@ -320,6 +320,9 @@ fn caption_export_status(state: CaptionExportState<'_>) -> CaptionExportReadines
         return Blocked(error);
     }
     match automatic {
+        Some(Request::CaptionSnapshot) if !crate::recording_autocaptions::has_captions(project) => {
+            return Blocked(tr::editor::tabs::captions::auto_draft::snapshot_unloaded().into());
+        }
         Some(Request::NeedsModel) => {
             return Blocked(tr::editor::tabs::captions::auto_draft::needs_model().into());
         }
@@ -1140,9 +1143,11 @@ impl EditorWindow {
                     .any(|segment| !segment.words.is_empty())
         });
         let loaded = processing(&self.project_path);
-        let waiting_save = loaded.as_ref().ok().and_then(Option::as_ref).is_some_and(
-            |request| request.status == ProcessingStatus::AwaitingSave,
-        );
+        let waiting_save = loaded
+            .as_ref()
+            .ok()
+            .and_then(Option::as_ref)
+            .is_some_and(|request| request.status == ProcessingStatus::AwaitingSave);
         let mut button = ui::EditorButton::plain(&theme, "caption-review-start")
             .tinted(&theme)
             .height(px(32.))
@@ -1734,6 +1739,39 @@ mod tests {
                 CaptionExportReadiness::Active(stage)
             );
         }
+    }
+
+    #[test]
+    fn caption_snapshot_allows_saved_captions_but_does_not_claim_unloaded_captions_are_ready() {
+        let directory = tempfile::tempdir().unwrap();
+        let bytes = include_bytes!("recording_autocaptions/fixtures/caption-snapshot.json");
+        std::fs::write(directory.path().join("auto-captions.json"), bytes).unwrap();
+        let automatic = crate::recording_autocaptions::read_checked(directory.path()).unwrap();
+        let project = ProjectConfiguration::default();
+        let mut state = export_state(&project);
+        state.automatic = automatic.clone();
+        assert_eq!(
+            caption_export_status(state),
+            CaptionExportReadiness::Blocked(
+                tr::editor::tabs::captions::auto_draft::snapshot_unloaded().into()
+            )
+        );
+        let mut project = ProjectConfiguration {
+            captions: Some(serde_json::from_slice(bytes).unwrap()),
+            ..Default::default()
+        };
+        project.captions.as_mut().unwrap().segments[0].text = "User correction".into();
+        let mut state = export_state(&project);
+        state.automatic = automatic;
+        assert_eq!(caption_export_status(state), CaptionExportReadiness::Ready);
+        assert_eq!(
+            std::fs::read(directory.path().join("auto-captions.json")).unwrap(),
+            bytes
+        );
+        assert_eq!(
+            project.captions.as_ref().unwrap().segments[0].text,
+            "User correction"
+        );
     }
 
     #[test]

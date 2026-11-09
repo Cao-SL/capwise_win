@@ -281,6 +281,7 @@ sign_out = "退出登录"
 signed_in = "已登录"
 
 [settings.recordings]
+delete_failed = "未能完成删除项目。请打开项目文件夹检查文件，然后重试。详情：{error}"
 corrupted_body = "录制失败，因此此文件在编辑器中可能会出现问题！如果你在恢复文件时遇到问题，请联系支持团队！"
 corrupted_title = "录制可能已损坏"
 delete = "删除"
@@ -306,6 +307,8 @@ studio = "还没有录制"
 studio_matching = "没有匹配的录制"
 
 [settings.screenshots]
+save_failed = "未能保存截图。请选择其他文件夹后重试。详情：{error}"
+delete_failed = "未能完成删除截图。请打开截图文件夹检查文件，然后重试。详情：{error}"
 copy = "复制到剪贴板"
 delete = "删除"
 description = "管理你的截图并执行操作。"
@@ -1942,7 +1945,7 @@ edit = "编辑"
 apply = "应用"
 create = "保存"
 create_title = "保存样式预设"
-custom = "自定义样式"
+custom = "样式预设"
 default_badge = "默认"
 delete = "删除"
 delete_confirm = "删除“{name}”？已使用此样式的项目会保留它。"
@@ -2062,6 +2065,7 @@ title = "隆重推出灵录"
 typewriter = "逐字输入中…"
 
 [editor.panel.text_segment]
+default_content = "输入文字"
 basic = "基础"
 alignment = "对齐"
 more_typography = "更多排版"
@@ -2302,6 +2306,8 @@ unfinished_target = "导入片段前，请先完成或恢复此录制"
 unsupported_video = "不支持的视频文件：{path}"
 
 [editor.export]
+review_settings = "调整设置并重试"
+save_dialog_failed = "无法选择保存位置：{error}。请重试，或导出到剪贴板。"
 back = "返回编辑器"
 existing_link_description = "重新上传会用你最新的编辑替换此链接中的视频。拥有链接的所有人都会看到更新后的版本。"
 existing_link_title = "更新现有链接"
@@ -2349,6 +2355,7 @@ file = "文件"
 link = "分享链接"
 
 [editor.export.done]
+show_in_folder = "在文件夹中显示"
 copy_link = "复制链接"
 link_copied = "链接已复制"
 open_file = "打开文件"
@@ -2510,8 +2517,6 @@ done = "完成"
 apply = "应用"
 
 [editor.tabs.captions]
-undo_style = "撤销"
-regenerate = "重新生成字幕"
 outline_color = "描边颜色"
 shadow_color = "阴影颜色"
 edit_style = "编辑字幕样式"
@@ -2773,8 +2778,6 @@ paused = "已暂停"
 title = "时间线"
 
 [editor.timeline.empty]
-add_audio = "添加音频"
-audio = "添加背景音乐或导入你自己的音频"
 record_audio = "点击录制"
 add_scene = "添加场景"
 captions = "没有字幕"
@@ -2846,7 +2849,6 @@ video = "视频"
 zoom = "缩放"
 
 [editor.transcript]
-title = "转写"
 back_to_captions = "返回字幕"
 replace = "替换"
 replace_all = "全部替换"
@@ -2917,7 +2919,6 @@ save_failed = "无法保存 {path}。请保持编辑器打开并重试：{error}
 undo = "撤销"
 
 [editor.window.add_track]
-button = "添加"
 hide_3d = "隐藏 3D 轨道。"
 more = "更多"
 
@@ -3007,8 +3008,6 @@ window_title_placeholder = "窗口标题"
 windows_description = "带窗口控制按钮的标题栏"
 
 [editor.window.header]
-transcript = "转写"
-transcript_tooltip = "通过转写编辑"
 new_recording = "新录制"
 delete_recording = "删除录制"
 export = "导出"
@@ -3442,6 +3441,9 @@ label = "录完自动生成字幕"
 description = "新录制打开后，使用已下载的本地模型准备字幕。不会自动下载模型或上传录音。"
 
 [editor.tabs.captions.auto_draft]
+snapshot_unloaded = "项目中有字幕快照，但当前未载入字幕。请重新生成字幕，或按当前字幕导出。"
+status_unreadable = "无法读取自动字幕状态。请检查项目文件夹的访问权限，或按当前字幕导出。"
+status_invalid = "自动字幕状态文件无法识别。已有字幕未改动；可保留当前字幕继续，或重新生成字幕。"
 queued = "正在准备本地字幕初稿…"
 needs_model = "自动字幕需要本地模型。请在下方选择 Qwen、Whisper Small 或 Medium，下载后点“重试本地字幕”。"
 running = "正在使用本地 {model} 生成字幕，可继续编辑。"
@@ -3486,6 +3488,8 @@ progress = "已翻译 {completed}/{total} 条"
 review = "审阅译文 · {translated}/{total}"
 
 [settings.workflow]
+delete_description = "此预设将被永久删除，已有录制不受影响。"
+delete_title = "删除「{name}」？"
 title = "录后工作流预设"
 description = "只影响新录制。可修改当前预设，或复制后建立自己的预设。AI 步骤需相应模型就绪；已有明确关闭的声音增强和美颜选项优先。"
 enabled = "录制后应用预设"
@@ -3650,6 +3654,7 @@ not_persisted = "未能保存自动整理进度，重启后可能无法恢复：
 cleanup_failed = "未能更新自动整理的恢复状态，请重试。"
 
 [editor.export.captions]
+current_note_idle = "将导出当前已保存的字幕；未完成的字幕处理不会计入本次视频。"
 waiting = "字幕完成后导出"
 needs_attention = "字幕需要处理"
 recognizing = "正在转写语音…"
@@ -3704,8 +3709,6 @@ unsupported_template = "请更新应用后再编辑此卡片模板。"
 invalid_content = "请检查文字长度及背景颜色（#RRGGBB），然后重试。"
 
 [editor.voiceover]
-audition_original = "单独试听原始录音"
-retry_save = "重试保存到项目"
 input_level = "输入电平"
 level_low = "请先说一句话；若电平持续偏低，请靠近麦克风或提高系统输入音量。"
 level_good = "电平合适，注意保持说话距离。"
@@ -3790,7 +3793,6 @@ unreadable = "无法读取此模板：{error}。可以移除后重新保存。"
 unreadable_name = "无法读取的模板"
 
 [settings.cover]
-models_link = "查看官方图片模型"
 title = "AI 封面图片（可选）"
 description = "选择图片服务商，填写 API Key 和地址，再获取并选择模型；也可手动编辑模型 ID。"
 not_configured = "尚未配置"
@@ -3862,6 +3864,7 @@ settings = "打开设置"
 choose_microphone = "选择麦克风"
 
 [editor.workbench]
+captions_hidden = "字幕已隐藏，预览和导出都不显示。"
 content = "内容"
 translation = "翻译"
 previous = "上一页"
@@ -3896,8 +3899,6 @@ description = "选择视频、字幕和封面默认保存的位置，导出时�
 default_location = "使用系统上次保存的位置"
 
 [editor.assistant]
-suggest_audio = "调整音量"
-suggest_edit = "剪辑建议"
 no_changes = "没有找到需要修改的匹配内容，项目未更改。"
 favorites = "收藏"
 custom_model = "使用自定义模型：{model}"
@@ -3951,7 +3952,6 @@ cover_working = "正在生成封面…"
 regenerate = "换一张"
 
 [settings.agents]
-default_model = "使用助手默认模型"
 title = "本地 AI 助手（ACP）"
 description = "连接已安装的助手，使用其现有登录状态。修改建议会在编辑器中预览后应用。"
 save_failed = "无法保存助手配置。"

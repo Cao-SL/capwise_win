@@ -280,6 +280,7 @@ sign_out = "साइन आउट करें"
 signed_in = "साइन इन है"
 
 [settings.recordings]
+delete_failed = "प्रोजेक्ट पूरी तरह हटाया नहीं जा सका। उसका फ़ोल्डर खोलकर फ़ाइलें जाँचें, फिर कोशिश करें। विवरण: {error}"
 corrupted_body = "रिकॉर्डिंग विफल रही, इसलिए एडिटर में इस फ़ाइल के साथ समस्याएँ हो सकती हैं! अगर फ़ाइल रिकवर करने में दिक्कत हो, तो कृपया सपोर्ट से संपर्क करें!"
 corrupted_title = "रिकॉर्डिंग शायद खराब हो गई है"
 delete = "हटाएँ"
@@ -305,6 +306,8 @@ studio = "कोई Studio रिकॉर्डिंग नहीं"
 studio_matching = "कोई मिलती-जुलती Studio रिकॉर्डिंग नहीं"
 
 [settings.screenshots]
+save_failed = "स्क्रीनशॉट सहेजा नहीं जा सका। कोई दूसरा फ़ोल्डर चुनकर फिर कोशिश करें। विवरण: {error}"
+delete_failed = "स्क्रीनशॉट पूरी तरह हटाया नहीं जा सका। उसका फ़ोल्डर खोलकर फ़ाइलें जाँचें, फिर कोशिश करें। विवरण: {error}"
 copy = "क्लिपबोर्ड पर कॉपी करें"
 delete = "हटाएँ"
 description = "अपने स्क्रीनशॉट मैनेज करें और उन पर कार्रवाई करें।"
@@ -2052,6 +2055,7 @@ title = "पेश है Capwise"
 typewriter = "टाइप हो रहा है…"
 
 [editor.panel.text_segment]
+default_content = "टेक्स्ट लिखें"
 basic = "मूल"
 alignment = "संरेखण"
 more_typography = "और टाइपोग्राफ़ी"
@@ -2292,6 +2296,8 @@ unfinished_target = "क्लिप इम्पोर्ट करने स�
 unsupported_video = "असमर्थित वीडियो फ़ाइल: {path}"
 
 [editor.export]
+review_settings = "सेटिंग जाँचें और फिर कोशिश करें"
+save_dialog_failed = "सहेजने का स्थान नहीं चुना जा सका: {error}। फिर कोशिश करें या क्लिपबोर्ड पर निर्यात करें।"
 back = "एडिटर पर वापस जाएँ"
 existing_link_description = "दोबारा अपलोड करने पर इस लिंक का वीडियो आपके नए संपादन से बदल जाता है। लिंक वाले सभी लोग अपडेट किया गया वर्ज़न देखेंगे।"
 existing_link_title = "अपना मौजूदा लिंक अपडेट करें"
@@ -2339,6 +2345,7 @@ file = "फ़ाइल"
 link = "शेयर लिंक"
 
 [editor.export.done]
+show_in_folder = "फ़ोल्डर में दिखाएँ"
 copy_link = "लिंक कॉपी करें"
 link_copied = "लिंक कॉपी हो गया"
 open_file = "फ़ाइल खोलें"
@@ -2489,8 +2496,6 @@ done = "पूर्ण"
 apply = "लागू करें"
 
 [editor.tabs.captions]
-regenerate = "कैप्शन दोबारा बनाएँ"
-undo_style = "परवत कर"
 outline_color = "आउटलाइन का रंग"
 shadow_color = "छाया का रंग"
 edit_style = "उपशीर्षक शैली बदलें"
@@ -2748,8 +2753,6 @@ paused = "रुका हुआ"
 title = "टाइमलाइन"
 
 [editor.timeline.empty]
-add_audio = "ऑडियो जोड़ें"
-audio = "बैकग्राउंड म्यूज़िक जोड़ें या अपना ऑडियो इम्पोर्ट करें"
 record_audio = "रिकॉर्ड करने के लिए क्लिक करें"
 add_scene = "सीन जोड़ें"
 captions = "कोई कैप्शन नहीं"
@@ -2821,7 +2824,6 @@ video = "वीडियो"
 zoom = "ज़ूम"
 
 [editor.transcript]
-title = "ट्रांसक्रिप्ट"
 back_to_captions = "उपशीर्षक पर वापस जाएँ"
 cleanup = "साफ़ करें"
 cleanup_tooltip = "फ़िलर शब्द हटाएँ और ठहराव छोटे करें"
@@ -2892,7 +2894,6 @@ save_failed = "{path} सेव नहीं हो सका। एडिटर
 undo = "पहले जैसा करें"
 
 [editor.window.add_track]
-button = "जोड़ें"
 hide_3d = "3D ट्रैक छिपाएँ।"
 more = "और"
 
@@ -2981,8 +2982,6 @@ window_title_placeholder = "विंडो टाइटल"
 windows_description = "विंडो कंट्रोल के साथ टाइटल बार"
 
 [editor.window.header]
-transcript = "ट्रांसक्रिप्ट"
-transcript_tooltip = "ट्रांसक्रिप्ट से एडिट करें"
 delete_recording = "रिकॉर्डिंग हटाएँ"
 export = "एक्सपोर्ट"
 open_bundle = "रिकॉर्डिंग बंडल खोलें"
@@ -3221,6 +3220,9 @@ label = "रिकॉर्डिंग के बाद कैप्शन ब�
 description = "डाउनलोड किए गए स्थानीय मॉडल से नई रिकॉर्डिंग के कैप्शन तैयार करें। मॉडल अपने आप डाउनलोड नहीं होते और ऑडियो अपने आप अपलोड नहीं होता।"
 
 [editor.tabs.captions.auto_draft]
+snapshot_unloaded = "उपशीर्षकों की एक प्रति मौजूद है, लेकिन इस प्रोजेक्ट में उपशीर्षक लोड नहीं हैं। इन्हें फिर से बनाएँ या मौजूदा उपशीर्षकों के साथ निर्यात करें।"
+status_unreadable = "उपशीर्षकों की स्थिति तक पहुँच नहीं है। प्रोजेक्ट फ़ोल्डर की अनुमतियाँ जाँचें या मौजूदा उपशीर्षकों के साथ निर्यात करें।"
+status_invalid = "स्वचालित उपशीर्षकों की स्थिति पढ़ी नहीं जा सकी। मौजूदा उपशीर्षक सुरक्षित हैं। इन्हें रखें या फिर से बनाएँ।"
 queued = "स्थानीय कैप्शन का मसौदा तैयार हो रहा है…"
 needs_model = "स्वचालित कैप्शन के लिए स्थानीय मॉडल चाहिए। नीचे Qwen, Whisper Small या Medium चुनकर डाउनलोड करें, फिर स्थानीय कैप्शन बनाने का प्रयास करें।"
 running = "{model} से स्थानीय रूप से कैप्शन बन रहे हैं। आप संपादन जारी रख सकते हैं।"
@@ -3265,6 +3267,8 @@ progress = "{total} म स {completed} कपन क अनवद हआ"
 review = "अनवद क समक कर · {translated}/{total}"
 
 [settings.workflow]
+delete_description = "यह प्रीसेट हमेशा के लिए हटा दिया जाएगा। मौजूदा रिकॉर्डिंग नहीं बदलेंगी।"
+delete_title = "“{name}” हटाएँ?"
 title = "रिकॉर्डिंग के बाद के काम की प्रीसेट"
 description = "केवल नई रिकॉर्डिंग पर लागू होता है। प्रीसेट संपादित करें या उसकी कॉपी से अपना प्रीसेट बनाएँ। AI चरणों के लिए मॉडल तैयार होने चाहिए। यदि आपने आवाज़ सुधार या कैमरा ब्यूटी को स्पष्ट रूप से बंद किया है, तो वही चुनाव लागू रहेगा।"
 enabled = "रिकॉर्डिंग के बाद प्रीसेट लागू करें"
@@ -3428,8 +3432,6 @@ unreadable = "यह टेम्पलेट पढ़ा नहीं जा �
 unreadable_name = "अपठनीय टेम्पलेट"
 
 [editor.voiceover]
-audition_original = "मूल रिकॉर्डिंग सुनें"
-retry_save = "प्रोजेक्ट में फिर से सहेजें"
 input_level = "इनपुट स्तर"
 level_low = "स्तर जाँचने के लिए बोलें। कम रहने पर माइक्रोफ़ोन के पास जाएँ या सिस्टम इनपुट वॉल्यूम बढ़ाएँ।"
 level_good = "स्तर सही है। दूरी समान रखें।"
@@ -3618,6 +3620,7 @@ no_microphone = "इस रकरग म मइकफन टक नह ह। �
 microphone_muted = "मइकफन मट ह। मइकफन क आवज चल हन तक इस कप क वलम नह बदलग।"
 
 [editor.export.captions]
+current_note_idle = "अभी सहेजे गए उपशीर्षक निर्यात होंगे। अधूरी उपशीर्षक प्रक्रिया इस वीडियो में शामिल नहीं होगी।"
 waiting = "नरत स पहल कपन तयर ह रह ह"
 needs_attention = "कपन पर धन आवशक ह"
 recognizing = "बल गई बत क पठ म बदल ज रह ह…"
@@ -3756,7 +3759,6 @@ tokendance = "Tokendance"
 zhipu = "Zhipu GLM"
 
 [settings.cover]
-models_link = "आधिकारिक चित्र मॉडल"
 title = "AI कवर चित्र (वैकल्पिक)"
 description = "आपके कॉन्फ़िगर किए गए चित्र प्रदाता से पृष्ठभूमि बनाएँ। शीर्षक इस Mac पर संपादन योग्य रहेंगे। अलग चित्र कुंजी सेट करें; टेक्स्ट या आवाज़ की कुंजियाँ अपने आप उपयोग नहीं होतीं। सेटिंग सहेजने से चित्र नहीं बनता।"
 not_configured = "कॉन्फ़िगर नहीं किया गया"
@@ -3828,6 +3830,7 @@ settings = "सेटिंग खोलें"
 choose_microphone = "माइक्रोफ़ोन चुनें"
 
 [editor.workbench]
+captions_hidden = "पूर्वावलोकन और निर्यात में उपशीर्षक छिपे हुए हैं।"
 content = "सामग्री"
 translation = "अनुवाद"
 previous = "पिछला"
@@ -3862,8 +3865,6 @@ description = "वीडियो, उपशीर्षक और कवर क
 default_location = "सिस्टम का पिछला सेव स्थान उपयोग करें"
 
 [editor.assistant]
-suggest_audio = "आवाज़ समायोजित करें"
-suggest_edit = "संपादन सुझाएं"
 no_changes = "बदलने के लिए कोई मिलती सामग्री नहीं है। प्रोजेक्ट अपरिवर्तित है।"
 favorites = "पसंदीदा"
 custom_model = "कस्टम मॉडल: {model}"
@@ -3914,7 +3915,6 @@ visible = "दिखाएँ"
 hidden = "छिपाएँ"
 
 [settings.agents]
-default_model = "Agent default"
 title = "Local AI agents (ACP)"
 description = "Connect an installed agent using its existing login. Suggestions are reviewed in the editor before applying."
 save_failed = "Could not save the agent."

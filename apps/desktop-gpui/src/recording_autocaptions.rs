@@ -19,19 +19,67 @@ const REQUEST_FILE: &str = "auto-captions.json";
 pub(crate) enum Request {
     Queued,
     NeedsModel,
-    Running { model: String },
-    Failed { message: String },
+    Running {
+        model: String,
+    },
+    Failed {
+        message: String,
+    },
     Complete,
     Skipped,
+    #[serde(skip_deserializing)]
+    CaptionSnapshot,
+}
+
+fn decode_request(bytes: &[u8]) -> Result<Request, String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    if value.get("state").is_some() {
+        return serde_json::from_value(value).map_err(|error| error.to_string());
+    }
+    let object = value
+        .as_object()
+        .ok_or("Expected a caption status object")?;
+    if !object.contains_key("segments")
+        || !object.contains_key("settings")
+        || !object
+            .keys()
+            .all(|key| matches!(key.as_str(), "segments" | "settings" | "sourceTimed"))
+    {
+        return Err("Unrecognized caption status fields".into());
+    }
+    let captions: cap_project::CaptionsData =
+        serde_json::from_value(value).map_err(|error| error.to_string())?;
+    let valid = captions.segments.iter().all(|segment| {
+        !segment.id.is_empty()
+            && segment.start.is_finite()
+            && segment.end.is_finite()
+            && segment.start >= 0.0
+            && segment.end >= segment.start
+            && segment.words.iter().all(|word| {
+                word.start.is_finite()
+                    && word.end.is_finite()
+                    && word.start >= 0.0
+                    && word.end >= word.start
+            })
+    });
+    if !valid {
+        return Err("Invalid caption snapshot timing".into());
+    }
+    Ok(Request::CaptionSnapshot)
 }
 
 pub(crate) fn read_checked(path: &Path) -> Result<Option<Request>, String> {
     match std::fs::read(path.join(REQUEST_FILE)) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|error| error.to_string()),
+        Ok(bytes) => decode_request(&bytes).map(Some).map_err(|error| {
+            tracing::warn!(%error, path = %path.display(), "Invalid automatic caption status");
+            tr::editor::tabs::captions::auto_draft::status_invalid().to_string()
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "Could not read automatic caption status");
+            Err(tr::editor::tabs::captions::auto_draft::status_unreadable().to_string())
+        }
     }
 }
 
@@ -72,6 +120,21 @@ pub(crate) fn complete_saved_recognition(path: &Path) -> Result<(), String> {
 }
 
 pub(crate) fn write(path: &Path, request: &Request) -> Result<(), String> {
+    match std::fs::read(path.join(REQUEST_FILE)) {
+        Ok(previous) if serde_json::from_slice::<Request>(&previous).is_err() => {
+            let directory = path.join("caption-reviews");
+            std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+            let backup = directory.join(format!("automatic-state-{}.json", uuid::Uuid::new_v4()));
+            let mut file = std::fs::File::create_new(backup).map_err(|error| error.to_string())?;
+            file.write_all(&previous)
+                .map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+        }
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            return Err(error.to_string());
+        }
+        _ => {}
+    }
     let staging = path.join(format!(".auto-captions-{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| {
         let mut file = std::fs::File::create_new(&staging).map_err(|error| error.to_string())?;
@@ -293,8 +356,10 @@ impl EditorWindow {
         let Some(request) = read(&self.project_path) else {
             return;
         };
-        if matches!(request, Request::Complete | Request::Skipped)
-            || transcription::ui_snapshot(&self.project_path).generating
+        if matches!(
+            request,
+            Request::Complete | Request::Skipped | Request::CaptionSnapshot
+        ) || transcription::ui_snapshot(&self.project_path).generating
         {
             return;
         }
@@ -387,22 +452,30 @@ impl EditorWindow {
         &self,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
-        let request = read(&self.project_path)?;
-        let label = match &request {
-            Request::Queued => tr::editor::tabs::captions::auto_draft::queued().to_string(),
-            Request::NeedsModel => {
+        let request = read_checked(&self.project_path);
+        let recovery = request.is_err() || matches!(&request, Ok(Some(Request::CaptionSnapshot)));
+        let label = match request {
+            Err(error) => error,
+            Ok(Some(Request::Queued)) => {
+                tr::editor::tabs::captions::auto_draft::queued().to_string()
+            }
+            Ok(Some(Request::NeedsModel)) => {
                 tr::editor::tabs::captions::auto_draft::needs_model().to_string()
             }
-            Request::Running { .. } => running_model(&self.project_path, true).map_or_else(
-                || tr::editor::tabs::captions::auto_draft::interrupted().to_string(),
-                |model| {
-                    tr::editor::tabs::captions::auto_draft::running(
-                        crate::editor_tabs::caption_model_label(&model),
-                    )
-                },
-            ),
-            Request::Failed { message } => message.clone(),
-            Request::Complete | Request::Skipped => return None,
+            Ok(Some(Request::Running { .. })) => running_model(&self.project_path, true)
+                .map_or_else(
+                    || tr::editor::tabs::captions::auto_draft::interrupted().to_string(),
+                    |model| {
+                        tr::editor::tabs::captions::auto_draft::running(
+                            crate::editor_tabs::caption_model_label(&model),
+                        )
+                    },
+                ),
+            Ok(Some(Request::Failed { message })) => message,
+            Ok(Some(Request::CaptionSnapshot)) if !has_captions(&self.project) => {
+                tr::editor::tabs::captions::auto_draft::snapshot_unloaded().to_string()
+            }
+            Ok(_) => return None,
         };
         let theme = self.theme;
         let busy = transcription::ui_snapshot(&self.project_path).generating;
@@ -426,10 +499,18 @@ impl EditorWindow {
                             ui::ButtonSize::Sm,
                         )
                         .label(tr::editor::tabs::captions::auto_draft::retry())
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.cancel_caption_export_wait(cx);
-                            this.start_recording_captions(true, window, cx)
-                        })),
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.cancel_caption_export_wait(cx);
+                                if recovery
+                                    && let Err(error) = write(&this.project_path, &Request::Queued)
+                                {
+                                    this.caption_processing_save_failed(error, cx);
+                                    return;
+                                }
+                                this.start_recording_captions(true, window, cx)
+                            },
+                        )),
                     )
                 })
                 .child(
@@ -439,7 +520,11 @@ impl EditorWindow {
                         ui::ButtonVariant::Gray,
                         ui::ButtonSize::Sm,
                     )
-                    .label(tr::editor::tabs::captions::auto_draft::skip())
+                    .label(if recovery {
+                        tr::editor::review::retain_current()
+                    } else {
+                        tr::editor::tabs::captions::auto_draft::skip()
+                    })
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.skip_recording_captions(cx);
                     })),
@@ -466,6 +551,95 @@ mod tests {
         )
         .unwrap();
         dir
+    }
+
+    #[test]
+    fn caption_content_sidecar_is_not_a_completed_or_pending_task() {
+        let dir = fixture(true);
+        let bytes = include_bytes!("recording_autocaptions/fixtures/caption-snapshot.json");
+        std::fs::write(dir.path().join(REQUEST_FILE), bytes).unwrap();
+        assert_eq!(
+            read_checked(dir.path()).unwrap(),
+            Some(Request::CaptionSnapshot)
+        );
+        assert_eq!(
+            serde_json::to_value(read(dir.path())).unwrap()["state"],
+            "captionSnapshot"
+        );
+        enqueue(dir.path(), true, &ProjectConfiguration::default()).unwrap();
+        complete_saved_recognition(dir.path()).unwrap();
+        keep_current_captions(dir.path()).unwrap();
+        assert_eq!(std::fs::read(dir.path().join(REQUEST_FILE)).unwrap(), bytes);
+        assert!(
+            guard_generation_outcome(dir.path(), true, false, Ok(true))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn explicit_caption_state_recovery_archives_original_bytes_before_replacing_them() {
+        for bytes in [
+            include_bytes!("recording_autocaptions/fixtures/caption-snapshot.json").as_slice(),
+            b"{invalid status".as_slice(),
+        ] {
+            for next in [Request::Skipped, Request::Queued] {
+                let dir = fixture(true);
+                std::fs::write(dir.path().join(REQUEST_FILE), bytes).unwrap();
+                write(dir.path(), &next).unwrap();
+                assert_eq!(read_checked(dir.path()).unwrap(), Some(next));
+                let backups = std::fs::read_dir(dir.path().join("caption-reviews"))
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .collect::<Vec<_>>();
+                assert_eq!(backups.len(), 1);
+                assert_eq!(std::fs::read(&backups[0]).unwrap(), bytes);
+                write(dir.path(), &Request::Skipped).unwrap();
+                assert_eq!(
+                    std::fs::read_dir(dir.path().join("caption-reviews"))
+                        .unwrap()
+                        .count(),
+                    1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_does_not_replace_caption_content_when_backup_cannot_be_written() {
+        let dir = fixture(true);
+        let bytes = include_bytes!("recording_autocaptions/fixtures/caption-snapshot.json");
+        std::fs::write(dir.path().join(REQUEST_FILE), bytes).unwrap();
+        std::fs::write(dir.path().join("caption-reviews"), b"not a directory").unwrap();
+        assert!(write(dir.path(), &Request::Queued).is_err());
+        assert_eq!(std::fs::read(dir.path().join(REQUEST_FILE)).unwrap(), bytes);
+    }
+
+    #[test]
+    fn unknown_or_damaged_state_is_never_treated_as_a_caption_snapshot_or_success() {
+        let snapshot: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "recording_autocaptions/fixtures/caption-snapshot.json"
+        ))
+        .unwrap();
+        let mut unknown_state = snapshot.clone();
+        unknown_state["state"] = "futureTask".into();
+        let mut bad_timing = snapshot;
+        bad_timing["segments"][0]["end"] = (-1).into();
+        for bytes in [
+            b"{invalid status".to_vec(),
+            b"{}".to_vec(),
+            b"{\"segments\":[],\"settings\":{},\"status\":\"running\"}".to_vec(),
+            serde_json::to_vec(&unknown_state).unwrap(),
+            serde_json::to_vec(&bad_timing).unwrap(),
+        ] {
+            let dir = fixture(true);
+            std::fs::write(dir.path().join(REQUEST_FILE), &bytes).unwrap();
+            assert_eq!(
+                read_checked(dir.path()).unwrap_err(),
+                tr::editor::tabs::captions::auto_draft::status_invalid()
+            );
+            assert_eq!(std::fs::read(dir.path().join(REQUEST_FILE)).unwrap(), bytes);
+        }
     }
 
     #[test]

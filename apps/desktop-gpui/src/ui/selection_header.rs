@@ -198,7 +198,7 @@ impl RenderOnce for SelectionHeader {
                     })
                     .child(
                         EditorButton::plain(&theme, SharedString::from(format!("{id}-done")))
-                            .filled(&theme)
+                            .tinted(&theme)
                             .padding_x(px(12.))
                             .text_size(px(12.))
                             .label(tr::ui::selection::done())

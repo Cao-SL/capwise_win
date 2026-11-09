@@ -41,6 +41,10 @@ const FORMATTED: &[&str] = &[
 #[test]
 fn editor_panels_match_the_literals_they_replaced() {
     let pairs: &[(&str, &str)] = &[
+        (
+            tr::editor::panel::text_segment::default_content(),
+            "Enter text",
+        ),
         (tr::editor::panel::enabled(), "Enabled"),
         (tr::editor::panel::name(), "Name"),
         (tr::editor::panel::duration(), "Duration"),
@@ -832,7 +836,7 @@ fn editor_panels_match_the_literals_they_replaced() {
             tr::editor::panel::style_presets::create_title(),
             "Save Style Preset",
         ),
-        (tr::editor::panel::style_presets::custom(), "Custom style"),
+        (tr::editor::panel::style_presets::custom(), "Presets"),
         (tr::editor::panel::style_presets::default_badge(), "Default"),
         (tr::editor::panel::style_presets::delete(), "Delete"),
         (
@@ -966,6 +970,40 @@ fn editor_panels_match_the_literals_they_replaced() {
         (tr::editor::shape::animations::fade(), "Fade"),
         (tr::editor::shape::animations::scale(), "Scale"),
         (tr::editor::shape::animations::draw(), "Draw on"),
+        (tr::editor::color::camera_title(), "Picture style"),
+        (tr::editor::panel::image::motion::title(), "Animation"),
+        (tr::editor::panel::image::motion::enter(), "In"),
+        (tr::editor::panel::image::motion::emphasis(), "While shown"),
+        (tr::editor::panel::image::motion::exit(), "Out"),
+        (tr::editor::panel::image::motion::none(), "None"),
+        (tr::editor::panel::image::motion::fade(), "Fade"),
+        (tr::editor::panel::image::motion::pop(), "Pop"),
+        (tr::editor::panel::image::motion::zoom(), "Zoom"),
+        (tr::editor::panel::image::motion::stamp(), "Stamp"),
+        (tr::editor::panel::image::motion::spin(), "Spin"),
+        (tr::editor::panel::image::motion::slide_in(), "Slide in"),
+        (tr::editor::panel::image::motion::slide_out(), "Slide out"),
+        (tr::editor::panel::image::motion::up(), "Up"),
+        (tr::editor::panel::image::motion::down(), "Down"),
+        (tr::editor::panel::image::motion::left(), "Left"),
+        (tr::editor::panel::image::motion::right(), "Right"),
+        (tr::editor::panel::image::motion::pulse(), "Pulse"),
+        (tr::editor::panel::image::motion::breathe(), "Breathe"),
+        (tr::editor::panel::image::motion::wiggle(), "Wiggle"),
+        (tr::editor::panel::image::motion::float(), "Float"),
+        (tr::editor::panel::image::motion::point(), "Point"),
+        (
+            tr::editor::panel::image::motion::apply_all(),
+            "Apply to all pictures and stickers",
+        ),
+        (tr::editor::panel::text_segment::basic(), "Basic"),
+        (tr::editor::panel::text_segment::alignment(), "Alignment"),
+        (
+            tr::editor::panel::text_segment::more_typography(),
+            "More typography",
+        ),
+        (tr::editor::panel::text_segment::italic(), "Italic"),
+        (tr::editor::panel::text_segment::uppercase(), "All caps"),
     ];
     for (translated, literal) in pairs {
         assert_eq!(translated, literal);

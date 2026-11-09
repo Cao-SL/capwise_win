@@ -1272,12 +1272,12 @@ impl SettingsWindow {
     /// thread, which is where `NSAlert` has to run, so the task is both the
     /// right thread and the right borrow state.
     fn delete_recording(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        cx.spawn_in(window, async move |_, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             let confirmed = crate::platform::confirm_dialog(
-                "Cap",
+                tr::brand::name(),
                 tr::main::delete_recording_confirm(),
-                tr::common::yes(),
-                tr::common::no(),
+                tr::settings::recordings::delete(),
+                tr::common::cancel(),
                 false,
             );
             if !confirmed {
@@ -1292,6 +1292,10 @@ impl SettingsWindow {
             let deleted = task.await.unwrap_or_else(|error| Err(error.to_string()));
             if let Err(error) = deleted {
                 tracing::error!(path = %path.display(), "deleting the recording failed: {error}");
+                this.update_in(cx, |this, window, cx| {
+                    this.info_dialog(&tr::settings::recordings::delete_failed(&error), window, cx);
+                })
+                .ok();
                 return;
             }
             tracing::info!(path = %path.display(), "deleted a recording");
@@ -1408,10 +1412,10 @@ impl SettingsWindow {
     fn delete_screenshot(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         cx.spawn_in(window, async move |this, cx| {
             let confirmed = crate::platform::confirm_dialog(
-                "Cap",
+                tr::brand::name(),
                 tr::main::delete_screenshot_confirm(),
-                tr::common::yes(),
-                tr::common::no(),
+                tr::settings::screenshots::delete(),
+                tr::common::cancel(),
                 false,
             );
             if !confirmed {
@@ -1427,6 +1431,14 @@ impl SettingsWindow {
                 .await;
             if let Err(error) = deleted {
                 tracing::error!(path = %path.display(), "deleting the screenshot failed: {error}");
+                this.update_in(cx, |this, window, cx| {
+                    this.info_dialog(
+                        &tr::settings::screenshots::delete_failed(&error),
+                        window,
+                        cx,
+                    );
+                })
+                .ok();
                 return;
             }
             this.update_in(cx, |this, window, cx| this.refresh_screenshots(window, cx))
@@ -1453,6 +1465,10 @@ impl SettingsWindow {
             };
             if let Err(error) = library::copy_file_to_path(&src, &dest) {
                 tracing::error!("saving screenshot failed: {error}");
+                this.update_in(cx, |this, window, cx| {
+                    this.info_dialog(&tr::settings::screenshots::save_failed(&error), window, cx);
+                })
+                .ok();
             }
         })
         .detach();
@@ -3030,7 +3046,10 @@ impl SettingsWindow {
             })
             .map(|this| {
                 if opens_editor {
-                    this.cursor_pointer()
+                    this.when(self.keyboard_nav, ui::keyboard_nav::stop)
+                        .role(gpui::Role::Button)
+                        .aria_label(library::display_project_name(&item.pretty_name))
+                        .cursor_pointer()
                         .hover(|style| style.bg(theme.settings_fill()))
                 } else {
                     this.cursor_default()
@@ -3039,8 +3058,11 @@ impl SettingsWindow {
             .child(left)
             .child(
                 div()
-                    .invisible()
-                    .group_hover("recording-row", |style| style.visible())
+                    .when(!self.keyboard_nav, |actions| {
+                        actions
+                            .invisible()
+                            .group_hover("recording-row", |style| style.visible())
+                    })
                     .child(self.render_recording_actions(item, cx)),
             )
             .when(opens_editor, |this| {
@@ -3248,6 +3270,9 @@ impl SettingsWindow {
 
         div()
             .id(id.into())
+            .when(!disabled && self.keyboard_nav, ui::keyboard_nav::stop)
+            .role(gpui::Role::Button)
+            .aria_label(tooltip)
             .flex()
             .items_center()
             .justify_center()
@@ -3270,7 +3295,10 @@ impl SettingsWindow {
                             .view(cx)
                     })
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        on_click(this, window, cx);
+                    }))
             })
     }
 
@@ -3311,6 +3339,41 @@ impl SettingsWindow {
         self.workflow_name_input
             .update(cx, |input, cx| input.set_text(name, cx));
         cx.notify();
+    }
+
+    fn confirm_delete_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let catalog = crate::workflow_presets::WorkflowPresets::load();
+        let Some(preset) = catalog.selected() else {
+            return;
+        };
+        if preset.id == crate::workflow_presets::QIAOMU_ID {
+            return;
+        }
+        let preset_id = preset.id.clone();
+        let answer = window.prompt(
+            gpui::PromptLevel::Warning,
+            &tr::settings::workflow::delete_title(&preset.name),
+            Some(tr::settings::workflow::delete_description()),
+            &[tr::common::cancel(), tr::settings::workflow::delete()],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            if answer.await != Ok(1) {
+                return;
+            }
+            this.update_in(cx, |this, _, cx| {
+                this.update_workflow(
+                    |catalog| {
+                        if catalog.selected_id == preset_id {
+                            catalog.delete_selected();
+                        }
+                    },
+                    cx,
+                );
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn render_workflow_presets(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -3513,8 +3576,8 @@ impl SettingsWindow {
                         text::delete(),
                         catalog.selected_id == crate::workflow_presets::QIAOMU_ID,
                         cx,
-                        |this, _, cx| {
-                            this.update_workflow(|catalog| catalog.delete_selected(), cx);
+                        |this, window, cx| {
+                            this.confirm_delete_workflow(window, cx);
                         },
                     ))
                     .into_any_element(),

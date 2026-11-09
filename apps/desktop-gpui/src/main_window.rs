@@ -5093,6 +5093,7 @@ impl MainWindow {
         let theme = self.theme;
         div()
             .id(id)
+            .when(self.keyboard_nav, ui::keyboard_nav::stop)
             .role(gpui::Role::Button)
             .aria_label(label)
             .tooltip(move |_, cx| ui::Tooltip::new(&theme, label).view(cx))
@@ -5139,6 +5140,9 @@ impl MainWindow {
             .child(
                 div()
                     .id("library-card-open")
+                    .when(self.keyboard_nav, ui::keyboard_nav::stop)
+                    .role(gpui::Role::Button)
+                    .aria_label(label.clone())
                     .cursor_pointer()
                     .flex()
                     .flex_col()
@@ -5166,10 +5170,10 @@ impl MainWindow {
     ) {
         cx.spawn_in(window, async move |_, cx| {
             if !crate::platform::confirm_dialog(
-                "Cap",
+                tr::brand::name(),
                 tr::main::delete_recording_confirm(),
-                tr::common::yes(),
-                tr::common::no(),
+                tr::settings::recordings::delete(),
+                tr::common::cancel(),
                 false,
             ) {
                 return;
@@ -5182,6 +5186,10 @@ impl MainWindow {
             let deleted = task.await.unwrap_or_else(|error| Err(error.to_string()));
             if let Err(error) = deleted {
                 tracing::error!(path = %path.display(), "deleting the recording failed: {error}");
+                crate::platform::alert_dialog(
+                    tr::brand::name(),
+                    &tr::settings::recordings::delete_failed(&error),
+                );
                 return;
             }
             cx.update(|_, cx| cx.defer(app_windows::refresh_library_after_delete))
@@ -5198,10 +5206,10 @@ impl MainWindow {
     ) {
         cx.spawn_in(window, async move |this, cx| {
             if !crate::platform::confirm_dialog(
-                "Cap",
+                tr::brand::name(),
                 tr::main::delete_screenshot_confirm(),
-                tr::common::yes(),
-                tr::common::no(),
+                tr::settings::screenshots::delete(),
+                tr::common::cancel(),
                 false,
             ) {
                 return;
@@ -5215,6 +5223,10 @@ impl MainWindow {
                 .await;
             if let Err(error) = deleted {
                 tracing::error!(path = %bundle.display(), "deleting the screenshot failed: {error}");
+                crate::platform::alert_dialog(
+                    tr::brand::name(),
+                    &tr::settings::screenshots::delete_failed(&error),
+                );
                 return;
             }
             this.update_in(cx, |this, window, cx| {
@@ -5243,6 +5255,10 @@ impl MainWindow {
             };
             if let Err(error) = library::copy_file_to_path(&src, &dest) {
                 tracing::error!("saving screenshot failed: {error}");
+                crate::platform::alert_dialog(
+                    tr::brand::name(),
+                    &tr::settings::screenshots::save_failed(&error),
+                );
             }
         })
         .detach();
@@ -6815,8 +6831,8 @@ impl MainWindow {
                     .when(self.keyboard_nav, ui::keyboard_nav::stop)
                     .role(gpui::Role::Button)
                     .aria_label(match target {
-                        TargetType::Display => "Choose a display",
-                        _ => "Choose a window",
+                        TargetType::Display => tr::main::target::choose_display(),
+                        _ => tr::main::target::choose_window(),
                     })
                     .flex()
                     .w(px(28.))
@@ -6911,7 +6927,7 @@ impl MainWindow {
             .id(SharedString::from(target.label()))
             .when(self.keyboard_nav, ui::keyboard_nav::stop)
             .role(gpui::Role::Button)
-            .aria_label(target.label())
+            .aria_label(target.display_label())
             .aria_selected(selected)
             .flex()
             .flex_1()
@@ -7235,7 +7251,7 @@ impl PillState {
     fn render(self, theme: Theme) -> impl IntoElement {
         let (bg, fg, text) = match self {
             Self::On => (
-                Hsla::from(theme.blue_9),
+                Hsla::from(rgb(0x0d74ce)),
                 gpui::white(),
                 tr::main::device::pill::on(),
             ),

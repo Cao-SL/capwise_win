@@ -1,0 +1,147 @@
+{
+	"segments": [
+		{
+			"id": "qa-0",
+			"start": 2.0,
+			"end": 4.7,
+			"text": "嗯今天讲解字幕编辑",
+			"words": [
+				{
+					"text": "嗯",
+					"start": 2.0,
+					"end": 2.3
+				},
+				{
+					"text": "今天",
+					"start": 2.4,
+					"end": 2.7
+				},
+				{
+					"text": "讲解",
+					"start": 2.8,
+					"end": 3.1
+				},
+				{
+					"text": "字幕",
+					"start": 3.2,
+					"end": 3.5
+				},
+				{
+					"text": "编辑",
+					"start": 3.6,
+					"end": 3.9
+				}
+			]
+		},
+		{
+			"id": "qa-1",
+			"start": 5.0,
+			"end": 7.7,
+			"text": "字幕可以润色和翻译",
+			"words": [
+				{
+					"text": "字幕",
+					"start": 5.0,
+					"end": 5.3
+				},
+				{
+					"text": "可以",
+					"start": 5.4,
+					"end": 5.7
+				},
+				{
+					"text": "润色",
+					"start": 5.8,
+					"end": 6.1
+				},
+				{
+					"text": "和",
+					"start": 6.2,
+					"end": 6.5
+				},
+				{
+					"text": "翻译",
+					"start": 6.6,
+					"end": 6.9
+				}
+			]
+		},
+		{
+			"id": "qa-2",
+			"start": 8.0,
+			"end": 10.7,
+			"text": "导出之前请检查修改结果",
+			"words": [
+				{
+					"text": "导出",
+					"start": 8.0,
+					"end": 8.3
+				},
+				{
+					"text": "之前",
+					"start": 8.4,
+					"end": 8.7
+				},
+				{
+					"text": "请",
+					"start": 8.8,
+					"end": 9.1
+				},
+				{
+					"text": "检查",
+					"start": 9.2,
+					"end": 9.5
+				},
+				{
+					"text": "修改",
+					"start": 9.6,
+					"end": 9.9
+				},
+				{
+					"text": "结果",
+					"start": 10.0,
+					"end": 10.3
+				}
+			]
+		}
+	],
+	"settings": {
+		"enabled": true,
+		"displayMode": "original",
+		"font": "宋骨黑体",
+		"size": 42,
+		"translationStyle": {
+			"font": "Montserrat",
+			"size": 25
+		},
+		"translationGap": 10,
+		"bottomMargin": 60,
+		"color": "#FFFFFF",
+		"backgroundColor": "#000000",
+		"backgroundOpacity": 0,
+		"position": "bottom",
+		"italic": false,
+		"fontWeight": 700,
+		"outline": true,
+		"outlineWidth": 2,
+		"outlineColor": "#000000",
+		"shadowColor": "#000000",
+		"shadowOpacity": 65,
+		"shadowSize": 5.0,
+		"exportWithSubtitles": true,
+		"highlightColor": "#FFD400",
+		"fadeDuration": 0.12,
+		"lingerDuration": 0.4,
+		"wordTransitionDuration": 0.25,
+		"activeWordHighlight": false,
+		"manualPosition": {
+			"x": 0.5,
+			"y": 0.65055555
+		},
+		"preset": "white-outline",
+		"animation": "none",
+		"highlightStyle": "color",
+		"uppercase": false
+	},
+	"sourceTimed": true
+}

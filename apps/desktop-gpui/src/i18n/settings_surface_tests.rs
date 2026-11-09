@@ -29,6 +29,9 @@ pub(super) fn is_settings_surface_key(key: &str) -> bool {
 }
 
 const FORMATTED: &[&str] = &[
+    "settings.recordings.delete_failed",
+    "settings.screenshots.delete_failed",
+    "settings.screenshots.save_failed",
     "settings.sidebar.downloading",
     "settings.sidebar.downloading_progress",
     "settings.sidebar.installing",
@@ -1311,6 +1314,18 @@ fn settings_surfaces_match_the_literals_they_replaced() {
 
 #[test]
 fn settings_surface_messages_format_like_the_code_they_replaced() {
+    assert_eq!(
+        tr::settings::recordings::delete_failed("permission denied"),
+        "Couldn't finish deleting this project. Open its folder to check the files, then try again. Details: permission denied"
+    );
+    assert_eq!(
+        tr::settings::screenshots::delete_failed("permission denied"),
+        "Couldn't finish deleting this screenshot. Open its folder to check the files, then try again. Details: permission denied"
+    );
+    assert_eq!(
+        tr::settings::screenshots::save_failed("disk full"),
+        "Couldn't save the screenshot. Choose another folder and try again. Details: disk full"
+    );
     let version = "0.6.2";
     assert_eq!(
         tr::settings::sidebar::downloading(version),

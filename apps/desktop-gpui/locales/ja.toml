@@ -280,6 +280,7 @@ sign_out = "サインアウト"
 signed_in = "サインイン済み"
 
 [settings.recordings]
+delete_failed = "プロジェクトの削除を完了できませんでした。フォルダを開いてファイルを確認し、もう一度試してください。詳細：{error}"
 corrupted_body = "録画に失敗したため、このファイルはエディタで問題が起きる可能性があります。ファイルを復元できない場合は、サポートにお問い合わせください。"
 corrupted_title = "録画が破損している可能性があります"
 delete = "削除"
@@ -305,6 +306,8 @@ studio = "Studio録画はありません"
 studio_matching = "一致するStudio録画はありません"
 
 [settings.screenshots]
+save_failed = "スクリーンショットを保存できませんでした。別のフォルダを選んで、もう一度試してください。詳細：{error}"
+delete_failed = "スクリーンショットの削除を完了できませんでした。フォルダを開いてファイルを確認し、もう一度試してください。詳細：{error}"
 copy = "クリップボードにコピー"
 delete = "削除"
 description = "スクリーンショットを管理し、操作を行います。"
@@ -2052,6 +2055,7 @@ title = "Capwiseのご紹介"
 typewriter = "タイプ中…"
 
 [editor.panel.text_segment]
+default_content = "テキストを入力"
 basic = "基本"
 alignment = "配置"
 more_typography = "その他の文字設定"
@@ -2292,6 +2296,8 @@ unfinished_target = "クリップを読み込む前に、この録画を完了�
 unsupported_video = "対応していない動画ファイルです：{path}"
 
 [editor.export]
+review_settings = "設定を確認して再試行"
+save_dialog_failed = "保存先を選択できませんでした：{error}。もう一度試すか、クリップボードに書き出してください。"
 back = "エディタに戻る"
 existing_link_description = "再アップロードすると、このリンクの動画が最新の編集内容に置き換わります。リンクを知っている全員に更新版が表示されます。"
 existing_link_title = "既存のリンクを更新"
@@ -2339,6 +2345,7 @@ file = "ファイル"
 link = "共有リンク"
 
 [editor.export.done]
+show_in_folder = "フォルダに表示"
 copy_link = "リンクをコピー"
 link_copied = "リンクをコピーしました"
 open_file = "ファイルを開く"
@@ -2489,8 +2496,6 @@ done = "完了"
 apply = "適用"
 
 [editor.tabs.captions]
-regenerate = "字幕を再生成"
-undo_style = "取り消す"
 outline_color = "縁取りの色"
 shadow_color = "影の色"
 edit_style = "字幕スタイルを編集"
@@ -2748,8 +2753,6 @@ paused = "一時停止中"
 title = "タイムライン"
 
 [editor.timeline.empty]
-add_audio = "音声を追加"
-audio = "BGMを追加するか、自分の音声を読み込みます"
 record_audio = "クリックして録音"
 add_scene = "シーンを追加"
 captions = "字幕なし"
@@ -2821,7 +2824,6 @@ video = "動画"
 zoom = "ズーム"
 
 [editor.transcript]
-title = "文字起こし"
 back_to_captions = "字幕に戻る"
 cleanup = "クリーンアップ"
 cleanup_tooltip = "フィラーを削除し、間を短くします"
@@ -2892,7 +2894,6 @@ save_failed = "{path}を保存できませんでした。エディタを開い�
 undo = "取り消す"
 
 [editor.window.add_track]
-button = "追加"
 hide_3d = "3Dトラックを非表示にします。"
 more = "その他"
 
@@ -2981,8 +2982,6 @@ window_title_placeholder = "ウィンドウタイトル"
 windows_description = "ウィンドウボタン付きのタイトルバー"
 
 [editor.window.header]
-transcript = "文字起こし"
-transcript_tooltip = "文字起こしで編集"
 delete_recording = "録画を削除"
 export = "書き出し"
 open_bundle = "録画バンドルを開く"
@@ -3221,6 +3220,9 @@ label = "録画後に字幕を生成"
 description = "ダウンロード済みのローカルモデルで新しい録画の字幕を準備します。モデルのダウンロードや音声のアップロードは自動では行いません。"
 
 [editor.tabs.captions.auto_draft]
+snapshot_unloaded = "字幕のコピーはありますが、このプロジェクトには字幕が読み込まれていません。字幕を再生成するか、現在の字幕で書き出してください。"
+status_unreadable = "自動字幕の状態にアクセスできません。プロジェクトフォルダの権限を確認するか、現在の字幕で書き出してください。"
+status_invalid = "自動字幕の状態を読み取れませんでした。既存の字幕は保持されています。現在の字幕を使用するか、再生成してください。"
 queued = "ローカルで字幕の下書きを準備中…"
 needs_model = "自動字幕にはローカルモデルが必要です。下でQwen、Whisper Small、Mediumのいずれかを選んでダウンロードし、ローカル字幕の生成を再試行してください。"
 running = "{model}でローカル字幕を生成中です。そのまま編集を続けられます。"
@@ -3265,6 +3267,8 @@ progress = "{total}件中{completed}件の字幕を翻訳しました"
 review = "翻訳を確認 · {translated}/{total}"
 
 [settings.workflow]
+delete_description = "このプリセットは完全に削除されます。既存の録画は変更されません。"
+delete_title = "「{name}」を削除しますか？"
 title = "録画後の処理プリセット"
 description = "新しい録画にのみ適用します。プリセットを編集するか、複製して独自の設定を作成できます。AI処理にはモデルの準備が必要です。音声強調やカメラの美肌補正を明示的に無効にした場合は、その選択を優先します。"
 enabled = "録画後にプリセットを適用"
@@ -3428,8 +3432,6 @@ unreadable = "このテンプレートを読み込めません：{error}。削�
 unreadable_name = "読み込めないテンプレート"
 
 [editor.voiceover]
-audition_original = "元の録音だけを試聴"
-retry_save = "プロジェクトへの保存を再試行"
 input_level = "入力レベル"
 level_low = "話して確認してください。低い場合はマイクに近づくか、システムの入力音量を上げてください。"
 level_good = "適切なレベルです。距離を一定に保ってください。"
@@ -3618,6 +3620,7 @@ no_microphone = "この録画にはマイクトラックがありません。音
 microphone_muted = "マイクがミュートされています。マイク音声を有効にするまで、このクリップは現在の音量を維持します。"
 
 [editor.export.captions]
+current_note_idle = "現在保存されている字幕を書き出します。未完了の字幕処理は今回の動画には含まれません。"
 waiting = "書き出し前に字幕を準備しています"
 needs_attention = "字幕の確認が必要です"
 recognizing = "音声を文字起こし中…"
@@ -3756,7 +3759,6 @@ tokendance = "Tokendance"
 zhipu = "Zhipu GLM"
 
 [settings.cover]
-models_link = "公式の画像モデル"
 title = "AIカバー画像（任意）"
 description = "設定した画像プロバイダーで背景を生成します。タイトルはこのMacで編集できます。画像専用のキーを設定してください。テキストや音声のキーは自動流用しません。設定の保存だけでは画像を生成しません。"
 not_configured = "未設定"
@@ -3828,6 +3830,7 @@ settings = "設定を開く"
 choose_microphone = "マイクを選択"
 
 [editor.workbench]
+captions_hidden = "字幕はプレビューと書き出しで非表示になっています。"
 content = "内容"
 translation = "翻訳"
 previous = "前へ"
@@ -3862,8 +3865,6 @@ description = "動画・字幕・カバーの既定の保存先です。書き�
 default_location = "システムの前回の保存先を使用"
 
 [editor.assistant]
-suggest_audio = "音量を調整"
-suggest_edit = "編集の提案"
 no_changes = "変更が必要な一致項目はありません。プロジェクトは変更されていません。"
 favorites = "お気に入り"
 custom_model = "カスタムモデル：{model}"
@@ -3914,7 +3915,6 @@ visible = "表示"
 hidden = "非表示"
 
 [settings.agents]
-default_model = "Agent default"
 title = "Local AI agents (ACP)"
 description = "Connect an installed agent using its existing login. Suggestions are reviewed in the editor before applying."
 save_failed = "Could not save the agent."

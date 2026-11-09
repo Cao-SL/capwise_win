@@ -604,6 +604,7 @@ pub(crate) struct AssistantUi {
     copied_message: Option<usize>,
     messages: Vec<(bool, String)>,
     preview: Option<Preview>,
+    pending_request: Option<String>,
     pub(crate) busy: bool,
     generation: u64,
     task: Option<gpui::Task<()>>,
@@ -629,6 +630,33 @@ pub(crate) struct AssistantUi {
     models_busy: bool,
     pub(crate) cover_active: bool,
     scroll: gpui::ScrollHandle,
+}
+
+impl AssistantUi {
+    fn begin_request(&mut self, request: String) -> u64 {
+        self.pending_request = Some(request);
+        self.busy = true;
+        self.error = None;
+        self.generation = self.generation.wrapping_add(1);
+        self.generation
+    }
+
+    fn finish_request(&mut self, generation: u64) -> bool {
+        if self.generation != generation {
+            return false;
+        }
+        self.busy = false;
+        self.task = None;
+        self.pending_request = None;
+        true
+    }
+
+    fn cancel_request(&mut self) -> Option<String> {
+        self.generation = self.generation.wrapping_add(1);
+        self.task = None;
+        self.busy = false;
+        self.pending_request.take()
+    }
 }
 
 impl EditorWindow {
@@ -1179,7 +1207,9 @@ impl EditorWindow {
                 let header_group = SharedString::from(format!("assistant-model-group-{index}"));
                 list = list.child(
                     div()
-                        .id(SharedString::from(format!("assistant-model-heading-{index}")))
+                        .id(SharedString::from(format!(
+                            "assistant-model-heading-{index}"
+                        )))
                         .group(header_group.clone())
                         .flex()
                         .items_center()
@@ -1199,22 +1229,28 @@ impl EditorWindow {
                                 div()
                                     .invisible()
                                     .group_hover(header_group, |button| button.visible())
-                                    .child(ui::EditorButton::plain(
-                                    &theme,
-                                    SharedString::from(format!("assistant-model-refresh-{index}")),
-                                )
-                                .left_icon("icons/refresh-cw.svg")
-                                .icon_size(px(12.))
-                                .height(px(22.))
-                                .tooltip(&theme, tr::settings::agents::refresh())
-                                .disabled(self.assistant.models_busy)
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.refresh_assistant_models(
-                                        Some(refresh_source.clone()),
-                                        window,
-                                        cx,
-                                    )
-                                }))),
+                                    .child(
+                                        ui::EditorButton::plain(
+                                            &theme,
+                                            SharedString::from(format!(
+                                                "assistant-model-refresh-{index}"
+                                            )),
+                                        )
+                                        .left_icon("icons/refresh-cw.svg")
+                                        .icon_size(px(12.))
+                                        .height(px(22.))
+                                        .tooltip(&theme, tr::settings::agents::refresh())
+                                        .disabled(self.assistant.models_busy)
+                                        .on_click(
+                                            cx.listener(move |this, _, window, cx| {
+                                                this.refresh_assistant_models(
+                                                    Some(refresh_source.clone()),
+                                                    window,
+                                                    cx,
+                                                )
+                                            }),
+                                        ),
+                                    ),
                             )
                         }),
                 );
@@ -1242,7 +1278,9 @@ impl EditorWindow {
             let row_group = SharedString::from(format!("assistant-model-row-{index}"));
             list = list.child(
                 div()
-                    .id(SharedString::from(format!("assistant-model-option-{index}")))
+                    .id(SharedString::from(format!(
+                        "assistant-model-option-{index}"
+                    )))
                     .group(row_group.clone())
                     .flex()
                     .items_center()
@@ -1252,7 +1290,9 @@ impl EditorWindow {
                     .pr(px(4.))
                     .rounded(px(8.))
                     .cursor_pointer()
-                    .when(highlighted, |row| row.bg(Hsla::from(theme.editor.ctl_hover)))
+                    .when(highlighted, |row| {
+                        row.bg(Hsla::from(theme.editor.ctl_hover))
+                    })
                     .hover(|row| row.bg(Hsla::from(theme.editor.ctl_hover)))
                     .child(
                         div()
@@ -1285,16 +1325,13 @@ impl EditorWindow {
                                     .group_hover(row_group.clone(), |star| star.visible())
                             })
                             .hover(|star| star.bg(Hsla::from(theme.editor.ctl_active)))
-                            .child(
-                                gpui::svg()
-                                    .path("icons/star.svg")
-                                    .size(px(13.))
-                                    .text_color(Hsla::from(if favorite {
-                                        theme.editor.text_1
-                                    } else {
-                                        theme.editor.text_3
-                                    })),
-                            )
+                            .child(gpui::svg().path("icons/star.svg").size(px(13.)).text_color(
+                                Hsla::from(if favorite {
+                                    theme.editor.text_1
+                                } else {
+                                    theme.editor.text_3
+                                }),
+                            ))
                             .tooltip(move |_, cx| {
                                 ui::Tooltip::new(&theme, tr::editor::assistant::favorites())
                                     .view(cx)
@@ -1320,14 +1357,12 @@ impl EditorWindow {
                                 cx.notify();
                             })),
                     )
-                    .child(
-                        div().flex_none().w(px(16.)).children(current.then(|| {
-                            gpui::svg()
-                                .path("icons/check.svg")
-                                .size(px(14.))
-                                .text_color(Hsla::from(theme.editor.accent))
-                        })),
-                    )
+                    .child(div().flex_none().w(px(16.)).children(current.then(|| {
+                        gpui::svg()
+                            .path("icons/check.svg")
+                            .size(px(14.))
+                            .text_color(Hsla::from(theme.editor.accent))
+                    })))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.choose_assistant_model(source.clone(), model.clone(), window, cx)
                     })),
@@ -1591,9 +1626,26 @@ impl EditorWindow {
     }
 
     fn cancel_assistant(&mut self, cx: &mut Context<Self>) {
-        self.assistant.generation = self.assistant.generation.wrapping_add(1);
-        self.assistant.task = None;
-        self.assistant.busy = false;
+        if let Some(request) = self.assistant.cancel_request()
+            && let Some(input) = &self.assistant.input
+            && input.read(cx).text().trim().is_empty()
+        {
+            input.update(cx, |input, cx| input.set_text(request, cx));
+        }
+        cx.notify();
+    }
+
+    fn recover_assistant_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(input) = &self.assistant.input {
+            if input.read(cx).text().trim().is_empty()
+                && let Some((_, request)) =
+                    self.assistant.messages.iter().rev().find(|(user, _)| *user)
+            {
+                input.update(cx, |input, cx| input.set_text(request.clone(), cx));
+            }
+            window.focus(&input.read(cx).focus_handle(), cx);
+        }
+        self.assistant.error = None;
         cx.notify();
     }
 
@@ -1654,16 +1706,12 @@ impl EditorWindow {
             self.cancel_cover_generation(cx);
             self.assistant.cover_active = false;
         }
-        self.assistant.busy = true;
+        let generation = self.assistant.begin_request(request);
         self.assistant.model_menu = false;
         self.assistant.skill_menu = false;
         self.assistant.scroll.scroll_to_bottom();
-        self.assistant.preview = None;
-        self.assistant.error = None;
         self.assistant.details_open = false;
         self.assistant.copied_message = None;
-        self.assistant.generation = self.assistant.generation.wrapping_add(1);
-        let generation = self.assistant.generation;
         if let Some(input) = &self.assistant.input {
             input.update(cx, |input, cx| input.set_text("", cx));
         }
@@ -1713,13 +1761,12 @@ impl EditorWindow {
                 .await
                 .unwrap_or_else(|_| Err(tr::editor::assistant::failed().into()));
             this.update_in(cx, |this, window, cx| {
-                if this.assistant.generation != generation {
+                if !this.assistant.finish_request(generation) {
                     return;
                 }
-                this.assistant.busy = false;
-                this.assistant.task = None;
                 match result {
                     Ok(preview) => {
+                        this.assistant.preview = None;
                         let changed = fingerprint(&preview.candidate).ok().as_ref()
                             != Some(&preview.revision);
                         let keyword_no_change = !changed
@@ -1837,44 +1884,30 @@ impl EditorWindow {
                     .text_color(Hsla::from(theme.editor.text_1))
                     .child(tr::editor::assistant::title()),
             )
-            .child(
-                div()
-                    .flex()
-                    .gap(px(2.))
-                    .when(conversation_started, |row| {
-                        row.child(
-                            ui::EditorButton::plain(&theme, "assistant-new")
-                                .left_icon("icons/message-square-plus.svg")
-                                .icon_size(px(15.))
-                                .tooltip(&theme, tr::editor::assistant::new_chat())
-                                .disabled(self.assistant_cover_busy())
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.cancel_assistant(cx);
-                                    if this.assistant.cover_active {
-                                        this.cancel_cover_generation(cx);
-                                    }
-                                    this.assistant.cover_active = false;
-                                    this.assistant.messages.clear();
-                                    this.assistant.preview = None;
-                                    this.assistant.error = None;
-                                    this.assistant.session = None;
-                                    if let Some(input) = &this.assistant.input {
-                                        input.update(cx, |input, cx| input.set_text("", cx));
-                                    }
-                                    this.open_assistant(window, cx);
-                                })),
-                        )
-                    })
-                    .child(
-                        ui::EditorButton::plain(&theme, "assistant-close")
-                            .left_icon("icons/x.svg")
-                            .icon_size(px(15.))
-                            .tooltip(&theme, tr::common::close())
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.close_assistant(window, cx)),
-                            ),
-                    ),
-            );
+            .child(div().flex().gap(px(2.)).when(conversation_started, |row| {
+                row.child(
+                    ui::EditorButton::plain(&theme, "assistant-new")
+                        .left_icon("icons/message-square-plus.svg")
+                        .icon_size(px(15.))
+                        .tooltip(&theme, tr::editor::assistant::new_chat())
+                        .disabled(self.assistant_cover_busy())
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.cancel_assistant(cx);
+                            if this.assistant.cover_active {
+                                this.cancel_cover_generation(cx);
+                            }
+                            this.assistant.cover_active = false;
+                            this.assistant.messages.clear();
+                            this.assistant.preview = None;
+                            this.assistant.error = None;
+                            this.assistant.session = None;
+                            if let Some(input) = &this.assistant.input {
+                                input.update(cx, |input, cx| input.set_text("", cx));
+                            }
+                            this.open_assistant(window, cx);
+                        })),
+                )
+            }));
 
         let mut conversation = div()
             .id("assistant-conversation")
@@ -1945,13 +1978,15 @@ impl EditorWindow {
                                 .icon_size(px(13.))
                                 .height(px(24.))
                                 .tooltip(&theme, tr::editor::assistant::copy_reply())
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                        text.clone(),
-                                    ));
-                                    this.assistant.copied_message = Some(index);
-                                    cx.notify();
-                                })),
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                            text.clone(),
+                                        ));
+                                        this.assistant.copied_message = Some(index);
+                                        cx.notify();
+                                    },
+                                )),
                             ),
                     ),
             );
@@ -2003,17 +2038,7 @@ impl EditorWindow {
                             .text_size(px(12.))
                             .label(tr::editor::assistant::edit_request())
                             .on_click(cx.listener(|this, _, window, cx| {
-                                if let Some((_, request)) =
-                                    this.assistant.messages.iter().rev().find(|(user, _)| *user)
-                                    && let Some(input) = &this.assistant.input
-                                {
-                                    input.update(cx, |input, cx| {
-                                        input.set_text(request.clone(), cx)
-                                    });
-                                    window.focus(&input.read(cx).focus_handle(), cx);
-                                }
-                                this.assistant.error = None;
-                                cx.notify();
+                                this.recover_assistant_request(window, cx);
                             })),
                     ),
             );
@@ -2045,8 +2070,7 @@ impl EditorWindow {
     /// most, each one click away. One quiet line says what leaves the machine.
     fn render_assistant_start(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
-        let disabled =
-            self.assistant.busy || !self.project_ready() || self.voiceover.is_busy();
+        let disabled = self.assistant.busy || !self.project_ready() || self.voiceover.is_busy();
         let mut actions = div().flex().flex_col().gap(px(2.));
         for task in QuickTask::ALL {
             let label = task.label();
@@ -2244,8 +2268,24 @@ impl EditorWindow {
         if stale {
             card = card.child(
                 div()
-                    .text_color(gpui::rgb(0xdc2626))
-                    .child(tr::editor::assistant::changed()),
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .text_color(gpui::rgb(0xdc2626))
+                            .child(tr::editor::assistant::changed()),
+                    )
+                    .child(
+                        ui::EditorButton::plain(&theme, "assistant-refresh-plan")
+                            .outlined(&theme)
+                            .label(tr::editor::assistant::edit_request())
+                            .disabled(state.busy)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.recover_assistant_request(window, cx);
+                            })),
+                    ),
             );
         }
         card = card.child(
@@ -2273,6 +2313,7 @@ impl EditorWindow {
                 .child(div().flex_1())
                 .child(
                     ui::EditorButton::plain(&theme, "assistant-discard")
+                        .disabled(state.busy)
                         .label(tr::common::cancel())
                         .text_size(px(12.))
                         .height(px(28.))
@@ -2548,6 +2589,59 @@ mod tests {
             operations,
             cover: None,
         }
+    }
+
+    fn pending_preview() -> Preview {
+        let original = project();
+        let proposal = plan(vec![Operation::CameraVisible { visible: false }]);
+        Preview {
+            revision: fingerprint(&original).unwrap(),
+            candidate: prepare(&original, &proposal).unwrap(),
+            plan: proposal,
+        }
+    }
+
+    #[test]
+    fn failed_refinement_preserves_the_reviewed_plan() {
+        let preview = pending_preview();
+        let candidate = fingerprint(&preview.candidate).unwrap();
+        let mut state = AssistantUi {
+            preview: Some(preview),
+            ..Default::default()
+        };
+        let generation = state.begin_request("Refine the current proposal".into());
+        assert!(state.preview.is_some());
+        assert!(state.finish_request(generation));
+        state.error = Some("Network unavailable".into());
+        assert_eq!(
+            fingerprint(&state.preview.as_ref().unwrap().candidate).unwrap(),
+            candidate
+        );
+        assert!(!state.busy);
+    }
+
+    #[test]
+    fn stopping_refinement_recovers_request_and_rejects_late_completion() {
+        let mut state = AssistantUi {
+            preview: Some(pending_preview()),
+            ..Default::default()
+        };
+        let stopped = state.begin_request("Keep the camera visible".into());
+        assert_eq!(
+            state.cancel_request().as_deref(),
+            Some("Keep the camera visible")
+        );
+        assert!(state.preview.is_some());
+        assert!(!state.busy);
+        let current = state.begin_request("Use a smaller camera instead".into());
+        assert!(!state.finish_request(stopped));
+        assert!(state.busy);
+        assert_eq!(
+            state.pending_request.as_deref(),
+            Some("Use a smaller camera instead")
+        );
+        assert!(state.finish_request(current));
+        assert!(state.pending_request.is_none());
     }
 
     fn caption_project() -> ProjectConfiguration {

@@ -283,6 +283,7 @@ sign_out = { text = "Sign Out", max_px = 180, size = 13 }
 signed_in = "Signed in"
 
 [settings.recordings]
+delete_failed = "Couldn't finish deleting this project. Open its folder to check the files, then try again. Details: {error}"
 corrupted_body = { text = "The recording failed so this file may have issues in the editor! If your having issues recovering the file please reach out to support!", context = "Shown before opening a failed recording in the editor. The English has a typo (\"your\" for \"you're\"); translate the meaning." }
 corrupted_title = "Recording is potentially corrupted"
 delete = "Delete"
@@ -308,6 +309,8 @@ studio = "No recordings yet"
 studio_matching = "No matching recordings"
 
 [settings.screenshots]
+save_failed = "Couldn't save the screenshot. Choose another folder and try again. Details: {error}"
+delete_failed = "Couldn't finish deleting this screenshot. Open its folder to check the files, then try again. Details: {error}"
 copy = "Copy to clipboard"
 delete = "Delete"
 description = "Manage your screenshots and perform actions."
@@ -1944,7 +1947,7 @@ edit = "Edit"
 apply = "Apply"
 create = "Save"
 create_title = "Save Style Preset"
-custom = { text = "Custom style", context = "Shown on the presets button when the selected item matches no saved preset." }
+custom = { text = "Presets", context = "Shown on the presets button when the selected item matches no saved preset. Names the menu, not a mode." }
 default_badge = { text = "Default", context = "Badge on the saved preset that new items start with." }
 delete = "Delete"
 delete_confirm = { text = "Delete \"{name}\"? Items that already use this style keep it.", context = "{name} is the preset's name." }
@@ -2064,6 +2067,7 @@ title = { text = "Introducing Capwise", context = "Sample text a new text segmen
 typewriter = "typing it out…"
 
 [editor.panel.text_segment]
+default_content = "Enter text"
 basic = "Basic"
 alignment = "Alignment"
 more_typography = "More typography"
@@ -2304,6 +2308,8 @@ unfinished_target = "Finish or recover this recording before importing a clip"
 unsupported_video = "Unsupported video file: {path}"
 
 [editor.export]
+review_settings = "Review settings and retry"
+save_dialog_failed = "Could not choose a save location: {error}. Try again, or export to the clipboard."
 back = "Back to editor"
 existing_link_description = "Reupload replaces the video at this link with your latest edit. Everyone with the link will see the updated version."
 existing_link_title = "Update your existing link"
@@ -2351,6 +2357,7 @@ file = { text = "File", context = "Export destination." }
 link = { text = "Shareable Link", context = "Export destination." }
 
 [editor.export.done]
+show_in_folder = "Show in folder"
 copy_link = "Copy link"
 link_copied = "Link copied"
 open_file = "Open File"
@@ -2512,8 +2519,6 @@ done = "Done"
 apply = "Apply"
 
 [editor.tabs.captions]
-undo_style = "Undo"
-regenerate = "Regenerate Captions"
 outline_color = "Outline color"
 shadow_color = "Shadow color"
 edit_style = "Edit caption style"
@@ -2775,8 +2780,6 @@ paused = "Paused"
 title = { text = "Timeline", context = "Label above the timeline while the editor is still preparing the recording." }
 
 [editor.timeline.empty]
-add_audio = "Add audio"
-audio = "Add background music or import your own audio"
 record_audio = "Click to record"
 add_scene = "Add scene"
 captions = "No captions"
@@ -2848,7 +2851,6 @@ video = { text = "Video", context = "Timeline gutter label of the recording's vi
 zoom = "Zoom"
 
 [editor.transcript]
-title = "Transcript"
 back_to_captions = "Back to captions"
 replace = "Replace"
 replace_all = "Replace all"
@@ -2919,7 +2921,6 @@ save_failed = { text = "Could not save {path}. Keep the editor open and try agai
 undo = "Undo"
 
 [editor.window.add_track]
-button = "Add"
 hide_3d = "Hide the 3D track."
 more = "More"
 
@@ -3009,8 +3010,6 @@ window_title_placeholder = "Window title"
 windows_description = "Title bar with window controls"
 
 [editor.window.header]
-transcript = "Transcript"
-transcript_tooltip = "Edit by transcript"
 new_recording = "New recording"
 delete_recording = "Delete recording"
 export = "Export"
@@ -3444,6 +3443,9 @@ label = "Generate captions after recording"
 description = "Prepare captions for new recordings with a downloaded local model. Models are not downloaded and audio is not uploaded automatically."
 
 [editor.tabs.captions.auto_draft]
+snapshot_unloaded = "A caption snapshot exists, but no captions are loaded in this project. Generate captions again, or export with the current captions."
+status_unreadable = "Cannot access the automatic caption status. Check the project folder permissions, or export with the current captions."
+status_invalid = "The automatic caption status could not be read. Existing captions were kept. Keep the current captions or generate them again."
 queued = "Preparing a local caption draft…"
 needs_model = "Automatic captions need a local model. Select Qwen, Whisper Small or Medium below, download it, then retry local captions."
 running = "Generating captions locally with {model}. You can keep editing."
@@ -3488,6 +3490,8 @@ progress = { text = "Translated {completed} of {total} captions", context = "Pro
 review = { text = "Review translations · {translated}/{total}", context = "Expand or collapse translation review; counts valid translations and total subtitles." }
 
 [settings.workflow]
+delete_description = "This preset will be permanently deleted. Existing recordings will stay unchanged."
+delete_title = "Delete “{name}”?"
 title = "After-recording workflow presets"
 description = "Only affects new recordings. Edit a preset or duplicate it to create your own. AI steps need their models ready. Explicit voice enhancement and camera beauty opt-outs take priority."
 enabled = "Apply preset after recording"
@@ -3652,6 +3656,7 @@ not_persisted = "Preparation could not be saved for recovery after restarting: {
 cleanup_failed = "The preparation recovery status could not be updated. Please try again."
 
 [editor.export.captions]
+current_note_idle = "Exports the captions currently saved. Unfinished caption processing will not be included in this video."
 waiting = "Preparing captions before export"
 needs_attention = "Captions need attention"
 recognizing = "Transcribing speech…"
@@ -3706,8 +3711,6 @@ unsupported_template = "Update the app to edit this card template."
 invalid_content = "Check the text length and background color (#RRGGBB), then try again."
 
 [editor.voiceover]
-audition_original = "Listen to original recording"
-retry_save = "Retry saving to project"
 input_level = "Input level"
 level_low = "Speak to check the level. If it stays low, move closer or raise the system input volume."
 level_good = "Good level. Keep a consistent distance."
@@ -3792,7 +3795,6 @@ unreadable = "Cannot read this template: {error}. You can remove it and save a n
 unreadable_name = "Unreadable template"
 
 [settings.cover]
-models_link = "Official image models"
 title = "AI cover images (optional)"
 description = "Choose a provider, enter its API key and URL, then fetch and select a model. You can also edit the model ID."
 not_configured = "Not configured"
@@ -3864,6 +3866,7 @@ settings = "Open settings"
 choose_microphone = "Choose microphone"
 
 [editor.workbench]
+captions_hidden = "Captions are hidden in the preview and export."
 content = "Content"
 translation = "Translation"
 previous = "Previous"
@@ -3898,8 +3901,6 @@ description = "Choose the default folder for videos, subtitles and covers. You c
 default_location = "Use the last system save location"
 
 [editor.assistant]
-suggest_audio = "Adjust audio"
-suggest_edit = "Suggest edits"
 no_changes = "No matching content needs changing. Your project is unchanged."
 favorites = "Favorites"
 custom_model = "Use custom model: {model}"
@@ -3953,7 +3954,6 @@ cover_working = "Making the cover…"
 regenerate = "Make another"
 
 [settings.agents]
-default_model = "Agent default"
 title = "Local AI agents (ACP)"
 description = "Connect an installed agent using its existing login. Suggestions are reviewed in the editor before applying."
 save_failed = "Could not save the agent."
