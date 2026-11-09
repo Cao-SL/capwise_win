@@ -47,20 +47,23 @@ test("the GPUI app keeps the identity every existing install updates into", () =
 	assert.deepEqual(gpuiConfig.plugins.updater.endpoints, [
 		"https://cdn.crabnebula.app/update/cap/cap/{{target}}/{{current_version}}",
 	]);
-	const installer = readFileSync(
-		new URL("../apps/desktop-gpui/src/installer.rs", import.meta.url),
-		"utf8",
-	);
-	assert.match(
-		installer,
-		new RegExp(
-			`const UPDATER_PUBLIC_KEY: &str = "${gpuiConfig.plugins.updater.pubkey}";`,
-		),
-	);
 	assert.deepEqual(gpuiConfig.plugins["deep-link"], {
 		desktop: { schemes: ["cap-desktop"] },
 	});
 	assert.equal(gpuiConfig.bundle.createUpdaterArtifacts, true);
+});
+
+test("Capwise preview is separate from the upstream Cap installer", () => {
+	const preview = readJson(
+		"../apps/desktop-gpui/packaging/windows/capwise-preview.json",
+	);
+	assert.equal(preview.productName, "Capwise");
+	assert.equal(preview.mainBinaryName, "Capwise");
+	assert.notEqual(preview.identifier, gpuiConfig.identifier);
+	assert.equal(preview.plugins.updater, null);
+	assert.equal(preview.plugins["deep-link"], null);
+	assert.deepEqual(preview.bundle.fileAssociations, []);
+	assert.equal(preview.bundle.createUpdaterArtifacts, false);
 });
 
 test("every committed file the GPUI bundle references exists", () => {

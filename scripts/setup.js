@@ -226,7 +226,13 @@ async function main() {
 			"VC/Tools/LLVM/x64/bin/libclang.dll",
 		);
 		if (!(await fileExists(libclangPath))) {
-			const fallbackLibclang = path.join(targetDir, "native-deps", "libclang", "bin", "libclang.dll");
+			const fallbackLibclang = path.join(
+				targetDir,
+				"native-deps",
+				"libclang",
+				"bin",
+				"libclang.dll",
+			);
 			if (await fileExists(fallbackLibclang)) {
 				libclangPath = fallbackLibclang;
 				console.log(`Using fallback libclang at ${libclangPath}`);
