@@ -1,0 +1,139 @@
+name: Capwise platform candidates
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/capwise-platform-build.yml
+      - apps/desktop-gpui/scripts/fetch-llama-server.sh
+      - apps/desktop-gpui/scripts/release.sh
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: mac-intel
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - platform: windows-x64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    env:
+      RUST_TARGET_TRIPLE: ${{ matrix.target }}
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: ./.github/actions/install-desktop-deps
+        if: runner.os == 'Linux'
+
+      - uses: oven-sh/setup-bun@v2
+        if: runner.os != 'macOS'
+        with:
+          bun-version: 1.4.4
+
+      - name: Prepare GPUI and native dependencies
+        shell: bash
+        run: |
+          scripts/prepare-gpui-dependency.sh
+          node scripts/setup.js
+          rustup toolchain install 1.95.0 --profile minimal
+
+      - name: Package Intel Mac candidate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install minisign
+          xcodebuild -version
+          version="$(sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"/\1/p' apps/desktop-gpui/Cargo.toml)"
+          export MACOSX_DEPLOYMENT_TARGET=13.3
+          cargo build --release --locked -p cap
+          cargo +1.95.0 build --manifest-path apps/desktop-gpui/Cargo.toml --release --locked --bin cap-gpui
+          apps/desktop-gpui/scripts/release.sh "$version" --dry-run --skip-build
+          app="apps/desktop-gpui/target/release-work/Capwise.app"
+          test "$(lipo -archs "$app/Contents/MacOS/Capwise")" = x86_64
+          "$app/Contents/MacOS/cap-cli" --version
+          mkdir -p candidate
+          cp apps/desktop-gpui/dist/"$version"/*_x86_64.app.tar.gz candidate/
+
+      - name: Install desktop bundler
+        if: runner.os != 'macOS'
+        shell: bash
+        run: bun install --frozen-lockfile --filter @cap/desktop
+
+      - name: Build sidecars
+        if: runner.os != 'macOS'
+        shell: bash
+        run: scripts/build-desktop-binaries.sh "$RUST_TARGET_TRIPLE"
+
+      - name: Package Linux candidate
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          node scripts/bundle-gpui.mjs "$RUST_TARGET_TRIPLE" --bundles deb \
+            --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          debs=(apps/desktop-gpui/target/"$RUST_TARGET_TRIPLE"/release/bundle/deb/*.deb)
+          test "${#debs[@]}" -eq 1
+          node scripts/finalize-linux-gpui-packages.mjs --unsigned "${debs[0]}"
+          sudo apt-get install -y "$PWD/${debs[0]}"
+          ! ldd /usr/bin/Cap | grep -q 'not found'
+          profile="$(mktemp -d)"
+          set +e
+          CAP_GPUI_APP_DATA_DIR="$profile" CAP_GPUI_LOG_DIR="$profile/logs" \
+            timeout 20s xvfb-run -a /usr/bin/Cap > "$profile/launch.log" 2>&1
+          result="$?"
+          set -e
+          cat "$profile/launch.log"
+          test "$result" -eq 124
+          mkdir -p candidate
+          cp "${debs[0]}" candidate/
+
+      - name: Package Windows candidate
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          node scripts/bundle-gpui.mjs "$RUST_TARGET_TRIPLE" --bundles nsis \
+            --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          mkdir -p candidate
+          cp apps/desktop-gpui/target/"$RUST_TARGET_TRIPLE"/release/bundle/nsis/*.exe candidate/
+
+      - name: Install and launch Windows candidate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem candidate -Filter *.exe
+          if ($installer.Count -ne 1) { throw "Expected one Windows installer" }
+          $destination = Join-Path $env:RUNNER_TEMP "Capwise-test"
+          $installed = Start-Process $installer.FullName -ArgumentList "/S", "/D=$destination" -Wait -PassThru
+          if ($installed.ExitCode -ne 0) { throw "Installer failed: $($installed.ExitCode)" }
+          $env:CAP_GPUI_APP_DATA_DIR = Join-Path $env:RUNNER_TEMP "Capwise-profile"
+          $env:CAP_GPUI_LOG_DIR = Join-Path $env:CAP_GPUI_APP_DATA_DIR "logs"
+          $app = Start-Process (Join-Path $destination "Cap.exe") -PassThru
+          try {
+            Start-Sleep -Seconds 15
+            if ($app.HasExited) { throw "App exited: $($app.ExitCode)" }
+          } finally {
+            if (!$app.HasExited) { Stop-Process -Id $app.Id }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capwise-${{ matrix.platform }}
+          path: candidate/
+          if-no-files-found: error
