@@ -736,6 +736,7 @@ fn main() {
             {
                 tracing::warn!(%error, "could not install the Windows power event handler");
             }
+            platform::install_jump_list();
         })
         .detach();
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]

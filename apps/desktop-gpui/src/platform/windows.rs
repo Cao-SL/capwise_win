@@ -17,6 +17,7 @@ use super::{ForcedAppearance, MaterialKind, PanelBehavior};
 
 mod capture_exclusion;
 mod hidden_frame;
+mod jump_list;
 mod power_events;
 mod session_end;
 mod taskbar;
@@ -196,6 +197,12 @@ pub fn system_accent_color() -> Option<u32> {
     }
     let rgb = abgr_to_rgb(accent);
     (rgb != 0).then_some(rgb)
+}
+
+/// Registers the process AppUserModelID and enables the taskbar jump list's
+/// recent/frequent categories. Safe when shell integration is unavailable.
+pub fn install_jump_list() {
+    jump_list::install();
 }
 
 /// ITaskbarList3 progress for a long export. The HWND is captured once at the
