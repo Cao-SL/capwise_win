@@ -168,7 +168,7 @@ if [[ -n "$PREBUILT_APP" ]]; then
   ditto "$PREBUILT_APP" "$STAGE"
   while IFS= read -r -d '' candidate; do
     if file -b "$candidate" | grep -q "Mach-O"; then
-      lipo -verify_arch "$MACHINE" "$candidate" || die "wrong architecture: $candidate"
+      lipo "$candidate" -verify_arch "$MACHINE" || die "wrong architecture: $candidate"
     fi
   done < <(find "$STAGE" -type f -print0)
 else
@@ -311,7 +311,7 @@ verify_shipped_app() {
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == "$VERSION" ]] ||
     die "wrong version in $app"
   for executable in "$APP_NAME" cap-cli; do
-    lipo -verify_arch "$MACHINE" "$app/Contents/MacOS/$executable" ||
+    lipo "$app/Contents/MacOS/$executable" -verify_arch "$MACHINE" ||
       die "wrong architecture: $app/Contents/MacOS/$executable"
   done
   codesign --verify --deep --strict "$app"
