@@ -1536,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "cap-desktop-gpui"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "anyhow",
  "ashpd 0.11.1",

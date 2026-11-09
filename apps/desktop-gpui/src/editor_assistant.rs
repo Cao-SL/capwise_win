@@ -156,38 +156,30 @@ fn fingerprint(project: &ProjectConfiguration) -> Result<String, String> {
 
 fn parse_plan(text: &str) -> Result<Plan, String> {
     if text.len() > 128_000 {
-        return Err(tr::editor::assistant::invalid().into());
+        return Err(
+            "The reply is too long. Return at most 12 operations with concise explanations.".into(),
+        );
     }
-    let text = text.trim();
-    let text = text
-        .strip_prefix("```json")
-        .or_else(|| text.strip_prefix("```"))
-        .and_then(|text| text.strip_suffix("```"))
-        .unwrap_or(text)
-        .trim();
     let plan: Plan =
-        serde_json::from_str(text).map_err(|_| tr::editor::assistant::invalid().to_string())?;
-    if plan.operations.len() > 12
-        || plan.message.len() > 6000
-        || plan
-            .operations
-            .iter()
-            .filter(|op| matches!(op, Operation::Cut { .. } | Operation::CaptionCut { .. }))
-            .count()
-            > 1
-        || (plan.cover.is_some()
-            && plan
-                .operations
-                .iter()
-                .any(|op| matches!(op, Operation::Cut { .. } | Operation::CaptionCut { .. })))
-        || plan.cover.as_ref().is_some_and(|cover| {
-            cover.title.trim().is_empty()
-                || cover.title.chars().count() > 120
-                || cover.description.trim().is_empty()
-                || cover.description.len() > 8000
-        })
-    {
-        return Err(tr::editor::assistant::invalid().into());
+        llm::parse_json_reply(text).map_err(|error| format!("JSON schema mismatch: {error}"))?;
+    if plan.operations.len() > 12 || plan.message.len() > 6000 {
+        return Err("Use at most 12 operations and a short message.".into());
+    }
+    let cuts = plan
+        .operations
+        .iter()
+        .filter(|op| matches!(op, Operation::Cut { .. } | Operation::CaptionCut { .. }))
+        .count();
+    if cuts > 1 || (plan.cover.is_some() && cuts != 0) {
+        return Err("Use at most one cut and do not combine a cut with a cover.".into());
+    }
+    if plan.cover.as_ref().is_some_and(|cover| {
+        cover.title.trim().is_empty()
+            || cover.title.chars().count() > 120
+            || cover.description.trim().is_empty()
+            || cover.description.len() > 8000
+    }) {
+        return Err("A cover requires a short title and a nonempty image description.".into());
     }
     Ok(plan)
 }
@@ -206,18 +198,30 @@ where
     for attempt in 0..2 {
         let reply = request(input.clone()).await?;
         let result = parse_plan(&reply)
-            .and_then(|plan| prepare(project, &plan, durations).map(|candidate| (plan, candidate)));
+            .map_err(|detail| (tr::editor::assistant::invalid().to_string(), detail))
+            .and_then(|plan| {
+                prepare(project, &plan, durations)
+                    .map(|candidate| (plan, candidate))
+                    .map_err(|error| {
+                        let detail = if error == tr::editor::assistant::invalid() {
+                            "One or more operations do not fit the supplied project state. Use the supplied IDs, word indices, before values, and valid timeline ranges. Omit any operation that cannot be safely applied.".to_string()
+                        } else {
+                            error.clone()
+                        };
+                        (error, detail)
+                    })
+            });
         match result {
             Ok(result) => return Ok(result),
-            Err(error) if attempt == 0 => {
+            Err((_, detail)) if attempt == 0 => {
                 input = serde_json::json!({
                     "original_request": serde_json::from_str::<serde_json::Value>(payload).map_err(|_| tr::editor::assistant::invalid().to_string())?,
                     "rejected_reply": reply.chars().take(24_000).collect::<String>(),
-                    "validation_error": error,
+                    "validation_error": detail,
                     "repair_instructions": "Return one corrected complete JSON plan against the original project. Follow the exact schema. Only use supplied source/display IDs and exact before text. Do not change already hidden or noneditable words. Only can_hide:true words may be hidden and after must equal before. Omit unchanged edits. If nothing eligible remains, return no operations and explain that nothing safely removable was found. Never claim rejected changes were applied."
                 }).to_string();
             }
-            Err(error) => return Err(error),
+            Err((error, _)) => return Err(error),
         }
     }
     Err(tr::editor::assistant::invalid().into())
@@ -1831,7 +1835,7 @@ impl EditorWindow {
                                     )
                                     .await
                                 } else {
-                                    llm::chat_with_model(
+                                    llm::chat_json(
                                         session,
                                         &provider,
                                         model.as_deref(),
@@ -3002,6 +3006,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ai_reply_regression_assistant_sends_schema_details_to_repair() {
+        let project = caption_project();
+        let mut calls = 0;
+        let (plan, _) = validated_plan(&project, &[10.], "{}", |input| {
+            calls += 1;
+            let reply = if calls == 1 {
+                r#"{"message":"Title","operations":[{"type":"add_title","start":1,"end":3,"title":"Example"}]}"#
+            } else {
+                let repair: serde_json::Value = serde_json::from_str(&input).unwrap();
+                let detail = repair["validation_error"].as_str().unwrap();
+                assert!(detail.contains("title") || detail.contains("text"), "{detail}");
+                r#"{"message":"Title","operations":[{"type":"add_title","start":1,"end":3,"text":"Example"}]}"#
+            };
+            async move { Ok(reply.to_owned()) }
+        })
+        .await
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert!(matches!(plan.operations[0], Operation::AddTitle { .. }));
+    }
+
+    #[tokio::test]
     async fn invalid_model_plan_is_repaired_once_without_mutating_the_project() {
         let project = caption_project();
         let before = fingerprint(&project).unwrap();
@@ -3081,7 +3107,8 @@ mod tests {
             let payload = serde_json::json!({"project":context(&project), "conversation":[], "pending_plan":null, "request": request}).to_string();
             let (plan, candidate) =
                 validated_plan(&project, &[10.0], &payload, |payload| async move {
-                    llm::chat(provider.id, CONTRACT, &payload).await
+                    llm::chat_json(uuid::Uuid::new_v4(), provider.id, None, CONTRACT, &payload)
+                        .await
                 })
                 .await
                 .expect("Synthetic request must produce a supported plan");
@@ -3120,7 +3147,8 @@ mod tests {
             .collect::<Vec<_>>();
         let (plan, candidate) =
             validated_plan(&project, &durations, &payload, |payload| async move {
-                llm::chat(provider.id, CONTRACT, &payload).await
+                llm::chat_json(uuid::Uuid::new_v4(), provider.id, None, CONTRACT, &payload)
+                    .await
             })
             .await
             .expect("Model plan must pass validation");
