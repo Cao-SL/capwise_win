@@ -64,6 +64,7 @@ jobs:
         shell: bash
         run: |
           scripts/prepare-gpui-dependency.sh
+          node scripts/sync-desktop-versions.mjs
           node scripts/setup.js
           rustup toolchain install 1.95.0 --profile minimal
 
@@ -88,6 +89,17 @@ jobs:
         shell: bash
         run: bun install --frozen-lockfile --filter @cap/desktop
 
+      - name: Cache release builds
+        uses: ./.github/actions/setup-rust-cache
+        with:
+          target: ${{ matrix.target }}
+          prefix-key: capwise-platform-release-v1
+          save-cache: "true"
+          cache-on-failure: "true"
+          workspaces: |
+            . -> target
+            apps/desktop-gpui -> target
+
       - name: Build sidecars
         if: runner.os != 'macOS'
         shell: bash
@@ -110,29 +122,37 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          node scripts/bundle-gpui.mjs "$RUST_TARGET_TRIPLE" --bundles nsis \
-            --config '{"bundle":{"createUpdaterArtifacts":false}}'
-          mkdir -p candidate
-          cp apps/desktop-gpui/target/"$RUST_TARGET_TRIPLE"/release/bundle/nsis/*.exe candidate/
+          node scripts/bundle-gpui.mjs "$RUST_TARGET_TRIPLE" --no-bundle
+          node --input-type=module -e 'import {writePlatformConfig} from "./scripts/bundle-gpui.mjs"; await writePlatformConfig("win32");'
+          cd apps/desktop-gpui
+          output="target/$RUST_TARGET_TRIPLE/release"
+          mv "$output/Cap.exe" "$output/Capwise.exe"
+          TAURI_APP_PATH="$(pwd -W)" RUSTUP_TOOLCHAIN=1.95.0 bun run tauri bundle \
+            --target "$RUST_TARGET_TRIPLE" --bundles nsis --config packaging/windows/capwise-preview.json
+          installers=("$output"/bundle/nsis/*.exe)
+          test "${#installers[@]}" -eq 1
+          mkdir -p ../../candidate
+          cp "${installers[0]}" ../../candidate/Capwise-Windows-x64-Setup.exe
 
-      - name: Install and launch Windows candidate
+      - name: Verify installed Windows candidate
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $installer = Get-ChildItem candidate -Filter *.exe
-          if ($installer.Count -ne 1) { throw "Expected one Windows installer" }
-          $destination = Join-Path $env:RUNNER_TEMP "Capwise-test"
-          $installed = Start-Process $installer.FullName -ArgumentList "/S", "/D=$destination" -Wait -PassThru
-          if ($installed.ExitCode -ne 0) { throw "Installer failed: $($installed.ExitCode)" }
-          $env:CAP_GPUI_APP_DATA_DIR = Join-Path $env:RUNNER_TEMP "Capwise-profile"
-          $env:CAP_GPUI_LOG_DIR = Join-Path $env:CAP_GPUI_APP_DATA_DIR "logs"
-          $app = Start-Process (Join-Path $destination "Cap.exe") -PassThru
-          try {
-            Start-Sleep -Seconds 15
-            if ($app.HasExited) { throw "App exited: $($app.ExitCode)" }
-          } finally {
-            if (!$app.HasExited) { Stop-Process -Id $app.Id }
-          }
+          $version = (Select-String -Path apps/desktop-gpui/Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          ./apps/desktop-gpui/scripts/verify-capwise-windows.ps1 -Installer candidate/Capwise-Windows-x64-Setup.exe -Version $version
+
+      - name: Record candidate provenance
+        shell: bash
+        run: |
+          git rev-parse HEAD > candidate/SOURCE_COMMIT
+          git rev-parse 'HEAD^{tree}' > candidate/SOURCE_TREE
+          cd candidate
+          if command -v sha256sum >/dev/null; then
+            sha256sum ./* > ../candidate-shasums.txt
+          else
+            shasum -a 256 ./* > ../candidate-shasums.txt
+          fi
+          mv ../candidate-shasums.txt SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:

@@ -1,0 +1,18 @@
+{
+	"productName": "Capwise",
+	"mainBinaryName": "Capwise",
+	"identifier": "com.capwise.app",
+	"plugins": {
+		"deep-link": null,
+		"updater": null
+	},
+	"bundle": {
+		"createUpdaterArtifacts": false,
+		"fileAssociations": [],
+		"windows": {
+			"nsis": {
+				"installMode": "currentUser"
+			}
+		}
+	}
+}
