@@ -466,6 +466,10 @@ async fn finalize_studio(
                 camera_snapshot.map_or_else(current_camera_skin_smoothing, |snapshot| {
                     snapshot.skin_smoothing
                 }),
+                completed
+                    .meta
+                    .camera_path()
+                    .and_then(|_| camera_snapshot.map(|snapshot| snapshot.shape)),
                 placement,
             );
             if !preset_applied {
@@ -600,6 +604,7 @@ pub(crate) type CaptureStopFuture =
 pub(crate) struct StudioCameraSnapshot {
     pub blur: crate::store::BlurMode,
     pub skin_smoothing: bool,
+    pub shape: crate::store::CameraShape,
     pub placement: Option<cap_recording::camera_placement::RecordingCameraPlacement>,
 }
 
@@ -1700,8 +1705,11 @@ pub(crate) fn preparing_presentation(
         config.audio.improve = true;
         config.audio.isolation = crate::store::studio_sound_isolation();
     }
-    if let Some(placement) = camera_snapshot.and_then(|snapshot| snapshot.placement) {
-        placement.apply(&mut config.camera);
+    if let Some(snapshot) = camera_snapshot {
+        apply_camera_preview_shape(&mut config.camera, snapshot.shape);
+        if let Some(placement) = snapshot.placement {
+            placement.apply(&mut config.camera);
+        }
     }
     Ok(config)
 }
@@ -1965,13 +1973,28 @@ fn apply_camera_blur_to_project_config(
     project_dir: &std::path::Path,
     blur: crate::store::BlurMode,
 ) -> bool {
-    apply_camera_preview_to_project_config(project_dir, blur, false, None)
+    apply_camera_preview_to_project_config(project_dir, blur, false, None, None)
+}
+
+fn apply_camera_preview_shape(camera: &mut cap_project::Camera, shape: crate::store::CameraShape) {
+    use crate::store::CameraShape;
+    camera.shape = match shape {
+        CameraShape::Round | CameraShape::Square => cap_project::CameraShape::Square,
+        CameraShape::Full => cap_project::CameraShape::Source,
+    };
+    camera.aspect_ratio = None;
+    camera.rounding_type = cap_project::CornerStyle::Rounded;
+    camera.rounding = match shape {
+        CameraShape::Round => 100.0,
+        CameraShape::Square | CameraShape::Full => 25.0,
+    };
 }
 
 fn apply_camera_preview_to_project_config(
     project_dir: &std::path::Path,
     blur: crate::store::BlurMode,
     skin_smoothing: bool,
+    shape: Option<crate::store::CameraShape>,
     placement: Option<cap_recording::camera_placement::RecordingCameraPlacement>,
 ) -> bool {
     use serde_json::{Map, Value};
@@ -2020,6 +2043,19 @@ fn apply_camera_preview_to_project_config(
         );
     } else {
         camera.remove("skinSmoothing");
+    }
+
+    if let Some(shape) = shape {
+        let mut styled = cap_project::Camera::default();
+        apply_camera_preview_shape(&mut styled, shape);
+        camera.insert("shape".into(), serde_json::json!(styled.shape));
+        camera.insert("rounding".into(), Value::from(styled.rounding));
+        camera.insert(
+            "roundingType".into(),
+            serde_json::json!(styled.rounding_type),
+        );
+        camera.remove("aspectRatio");
+        camera.remove("rounding_type");
     }
 
     if let Some(placement) = placement {
@@ -4056,6 +4092,7 @@ mod tests {
                 &dir,
                 blur,
                 false,
+                None,
                 Some(placement)
             ));
             let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -4065,6 +4102,54 @@ mod tests {
             expected["camera"]["position"]["x"] = "center".into();
             expected["camera"]["position"]["y"] = "top".into();
             assert_eq!(written, expected);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn bridging_camera_shape_matches_preparing_and_reopens_with_the_same_framing() {
+        use crate::store::CameraShape;
+
+        let dir = temp_project("camera-shape");
+        let path = dir.join("project-config.json");
+        let original = serde_json::json!({
+            "camera": {
+                "shape": "source",
+                "aspectRatio": {"x": 16, "y": 9},
+                "rounding": 0.0,
+                "rounding_type": "squircle",
+                "size": 41.0,
+                "futureCameraSetting": "retained"
+            }
+        });
+        for (shape, expected_aspect, expected_rounding) in [
+            (CameraShape::Round, 1.0, 100.0),
+            (CameraShape::Square, 1.0, 25.0),
+            (CameraShape::Full, 16.0 / 9.0, 25.0),
+        ] {
+            std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+            assert!(apply_camera_preview_to_project_config(
+                &dir,
+                BlurMode::Off,
+                false,
+                Some(shape),
+                None,
+            ));
+            let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            let camera = cap_project::ProjectConfiguration::load(&dir)
+                .unwrap()
+                .camera;
+            let mut preparing: cap_project::Camera =
+                serde_json::from_value(original["camera"].clone()).unwrap();
+            apply_camera_preview_shape(&mut preparing, shape);
+            assert_eq!(
+                camera.framing_aspect_ratio([1920.0, 1080.0]),
+                expected_aspect
+            );
+            assert_eq!(camera.rounding, expected_rounding);
+            assert_eq!(camera.rounding_type, cap_project::CornerStyle::Rounded);
+            assert_eq!(serde_json::json!(camera), serde_json::json!(preparing));
+            assert_eq!(written["camera"]["futureCameraSetting"], "retained");
         }
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -4105,6 +4190,7 @@ mod tests {
             &dir,
             BlurMode::Off,
             true,
+            None,
             None
         ));
         let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -4116,6 +4202,7 @@ mod tests {
             &dir,
             BlurMode::Off,
             false,
+            None,
             None
         ));
         let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();

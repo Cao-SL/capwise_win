@@ -333,8 +333,8 @@ fn ready_cached(target: Target) -> bool {
             || ai_store::key_available_cached(target.kind.store_kind(), target.id) == Some(true))
 }
 
-fn default_provider_cached() -> Option<&'static llm::LlmProvider> {
-    let available: Vec<_> = llm::configured()
+fn content_model_choices_cached() -> impl Iterator<Item = llm::ContentModel> {
+    llm::configured()
         .into_iter()
         .filter(|provider| {
             configured_cached(Target {
@@ -342,10 +342,19 @@ fn default_provider_cached() -> Option<&'static llm::LlmProvider> {
                 id: provider.id,
             })
         })
-        .collect();
-    ai_store::llm_default()
-        .and_then(|id| available.iter().copied().find(|provider| provider.id == id))
-        .or_else(|| available.first().copied())
+        .map(llm::ContentModel::Provider)
+        .chain(llm::agent_content_models())
+}
+
+fn default_content_model_cached() -> Option<llm::ContentModel> {
+    llm::selected_content_model(
+        content_model_choices_cached(),
+        ai_store::llm_default().as_deref(),
+    )
+}
+
+fn content_model_label(model: &llm::ContentModel) -> SharedString {
+    format!("{} · {}", model.provider_name(), model.model_name()).into()
 }
 
 fn selected_recognizer() -> &'static str {
@@ -361,7 +370,7 @@ fn selected_recognizer() -> &'static str {
         .map_or("", |model| model.name)
 }
 
-fn monogram(name: &str) -> String {
+pub(crate) fn monogram(name: &str) -> String {
     name.chars()
         .next()
         .map(|c| c.to_uppercase().collect())
@@ -454,23 +463,12 @@ impl SettingsWindow {
                     .collect()
             }
             MenuKind::AiLlmDefault => {
-                let current = default_provider_cached().map(|p| p.id);
-                llm::configured()
-                    .into_iter()
-                    .filter(|provider| {
-                        configured_cached(Target {
-                            kind: ModelKind::Llm,
-                            id: provider.id,
-                        })
-                    })
-                    .map(|provider| {
+                let current = default_content_model_cached().map(|model| model.id());
+                content_model_choices_cached()
+                    .map(|model| {
                         ui::MenuItem::new(
-                            SharedString::from(format!(
-                                "{} · {}",
-                                (provider.name)(),
-                                provider.endpoint().model
-                            )),
-                            Some(provider.id) == current,
+                            content_model_label(&model),
+                            current.as_deref() == Some(model.id().as_str()),
                         )
                     })
                     .collect()
@@ -524,17 +522,8 @@ impl SettingsWindow {
                 }
             }
             MenuKind::AiLlmDefault => {
-                if let Some(provider) = llm::configured()
-                    .into_iter()
-                    .filter(|provider| {
-                        configured_cached(Target {
-                            kind: ModelKind::Llm,
-                            id: provider.id,
-                        })
-                    })
-                    .nth(index)
-                {
-                    ai_store::set_llm_default(provider.id);
+                if let Some(model) = content_model_choices_cached().nth(index) {
+                    ai_store::set_llm_default(&model.id());
                 }
             }
             _ => {}
@@ -1071,7 +1060,7 @@ impl SettingsWindow {
     }
 
     /// One row: badge, name with a note under it, and whatever sits on the right.
-    fn ai_row(
+    pub(crate) fn ai_row(
         &self,
         badge: String,
         name: SharedString,
@@ -1106,13 +1095,13 @@ impl SettingsWindow {
                             .child(name)
                             .children(tags.into_iter().map(|tag| self.ai_tag(tag))),
                     )
-                    .child(
+                    .children((!note.is_empty()).then(|| {
                         div()
                             .text_size(px(12.))
                             .line_height(px(17.))
                             .text_color(theme.settings_muted())
-                            .child(note),
-                    ),
+                            .child(note)
+                    })),
             )
             .child(div().flex_shrink_0().child(right))
     }
@@ -1884,19 +1873,11 @@ impl SettingsWindow {
             target.kind == ModelKind::Llm && ai_store::endpoint(Kind::Llm, target.id).is_none()
         });
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
-        let ready: Vec<_> = llm::configured()
-            .into_iter()
-            .filter(|p| {
-                configured_cached(Target {
-                    kind: ModelKind::Llm,
-                    id: p.id,
-                })
-            })
-            .collect();
-        if !ready.is_empty() {
-            let default = default_provider_cached().map_or(SharedString::default(), |p| {
-                format!("{} · {}", (p.name)(), p.endpoint().model).into()
-            });
+        if content_model_choices_cached().next().is_some() {
+            let default = default_content_model_cached().map_or_else(
+                || tr::settings::agents::choose_model().into(),
+                |model| content_model_label(&model),
+            );
             rows.push(
                 self.setting_row(
                     tr::settings::ai::llm_default(),
@@ -1936,6 +1917,28 @@ impl SettingsWindow {
                 self.ai_service_right(target, ready_cached(target), cx),
             );
             rows.push(self.ai_service_block(target, row, cx));
+        }
+        let active = default_content_model_cached();
+        for agent in crate::local_agents::connections() {
+            let model = match &active {
+                Some(model @ llm::ContentModel::Agent { connection, .. })
+                    if connection.id == agent.id =>
+                {
+                    model.model_name()
+                }
+                _ => String::new(),
+            };
+            rows.push(
+                self.ai_row(
+                    monogram(&agent.name),
+                    agent.name.into(),
+                    vec!["ACP"],
+                    model.into(),
+                    self.ai_status(Tone::Ready, tr::settings::agents::connected().into())
+                        .into_any_element(),
+                )
+                .into_any_element(),
+            );
         }
         let body = if rows.is_empty() {
             self.card(true)

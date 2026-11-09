@@ -4606,10 +4606,22 @@ pub(crate) fn studio_camera_snapshot(
     target: &ScreenCaptureTarget,
     cx: &mut App,
 ) -> Option<crate::recording::StudioCameraSnapshot> {
-    let handle = cx.global::<AppWindows>().camera?;
-    handle
-        .update(cx, |view, window, _| view.studio_snapshot(window, target))
-        .ok()
+    cx.global::<AppWindows>()
+        .camera
+        .and_then(|handle| {
+            handle
+                .update(cx, |view, window, _| view.studio_snapshot(window, target))
+                .ok()
+        })
+        .or_else(|| {
+            let state = crate::store::load().camera_window?;
+            Some(crate::recording::StudioCameraSnapshot {
+                blur: state.background_blur,
+                skin_smoothing: state.skin_smoothing,
+                shape: state.shape,
+                placement: None,
+            })
+        })
 }
 
 /// Keep the camera bubble above the picker overlays. Not filtered on

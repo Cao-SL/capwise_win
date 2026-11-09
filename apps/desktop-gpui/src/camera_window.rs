@@ -1724,6 +1724,7 @@ impl CameraWindow {
         crate::recording::StudioCameraSnapshot {
             blur: self.state.background_blur,
             skin_smoothing: self.state.skin_smoothing,
+            shape: self.state.shape,
             placement,
         }
     }

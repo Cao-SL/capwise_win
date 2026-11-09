@@ -445,7 +445,7 @@ impl EditorWindow {
             active,
             generation_error,
             setup_pending: crate::recording_setup::pending(&self.project_path),
-            provider_ready: llm::default_provider().is_some(),
+            provider_ready: llm::default_content_model().is_some(),
             review_enabled: ReviewSettings::load().enabled,
         })
     }
@@ -1261,7 +1261,7 @@ impl EditorWindow {
             } else {
                 tr::editor::review::action()
             });
-        if crate::llm::default_provider().is_none() {
+        if crate::llm::default_content_model().is_none() {
             button = button.tooltip(&theme, tr::editor::workbench::setup_ai());
         }
         button
@@ -1275,7 +1275,7 @@ impl EditorWindow {
                     || !has_words,
             )
             .on_click(cx.listener(|this, _, window, cx| {
-                if crate::llm::default_provider().is_none() {
+                if crate::llm::default_content_model().is_none() {
                     cx.defer(|cx| {
                         crate::app_windows::open_ai_settings(crate::settings_ai::AiTab::Content, cx)
                     });
@@ -1473,15 +1473,15 @@ impl EditorWindow {
         if self.read_caption_processing(cx).is_err() {
             return;
         }
-        let Some(provider) = llm::default_provider() else {
+        let Some(provider) = llm::default_content_model() else {
             self.sidebar.caption_review.error = Some(tr::editor::review::setup().into());
             self.invalidate_sidebar(cx);
             return;
         };
         let settings = ReviewSettings::load();
         let prompt = format!("{CONTRACT}\n{}", settings.prompt);
-        let provider_id = provider.id;
-        let model = provider.endpoint().model;
+        let provider_id = provider.id();
+        let model = provider.model_name();
         let path = self.project_path.clone();
         let durations = self.clip_display_durations.clone();
         let terms = crate::store::transcription_hints();
@@ -1538,11 +1538,12 @@ impl EditorWindow {
                         let context = task_original[start.saturating_sub(1)..(start + batch.len() + 1).min(task_original.len())].iter().map(|segment| &segment.text).collect::<Vec<_>>();
                         let message = serde_json::json!({"terms": terms, "context": context, "segments": review_segments(batch)});
                         let prompt = &prompt;
+                        let provider = &provider;
                         changes.extend(review_batch(batch, message, |message| async move {
-                            llm::chat_json(session, provider_id, None, prompt, &message).await
+                            provider.chat_json(session, prompt, &message).await
                         }).await?);
                     }
-                    let evidence = Evidence { original: task_original, changes: changes.clone(), provider: provider_id.into(), model, prompt };
+                    let evidence = Evidence { original: task_original, changes: changes.clone(), provider: provider_id, model, prompt };
                     let directory = task_path.join("caption-reviews");
                     std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
                     write_json(&directory.join(format!("review-{}.json", uuid::Uuid::new_v4())), &evidence)?;

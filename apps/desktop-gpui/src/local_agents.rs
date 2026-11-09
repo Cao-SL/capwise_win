@@ -1,3 +1,5 @@
+mod managed;
+
 use crate::{i18n::tr, store};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -153,6 +155,12 @@ fn search_paths() -> Vec<PathBuf> {
         paths.extend(
             [
                 ".local/bin",
+                ".bun/bin",
+                ".npm-global/bin",
+                ".volta/bin",
+                ".local/share/mise/shims",
+                ".local/share/pnpm",
+                "Library/pnpm",
                 ".opencode/bin",
                 ".kimi-code/bin",
                 ".grok/bin",
@@ -160,15 +168,53 @@ fn search_paths() -> Vec<PathBuf> {
             ]
             .map(|p| home.join(p)),
         );
-        if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
-            let mut versions: Vec<_> = entries.flatten().map(|e| e.path().join("bin")).collect();
-            versions.sort();
-            versions.reverse();
-            paths.extend(versions);
+        let nvm = std::env::var_os("NVM_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".nvm"));
+        let fnm = std::env::var_os("FNM_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join("Library/Application Support/fnm"));
+        for (versions, bin) in [
+            (nvm.join("versions/node"), "bin"),
+            (fnm.join("node-versions"), "installation/bin"),
+            (
+                home.join(".local/share/fnm/node-versions"),
+                "installation/bin",
+            ),
+        ] {
+            paths.extend(node_version_paths(&versions, bin));
         }
     }
-    paths.retain(|p| p.is_absolute());
+    paths.extend(
+        ["PNPM_HOME", "FNM_MULTISHELL_PATH"]
+            .into_iter()
+            .filter_map(std::env::var_os)
+            .map(PathBuf::from),
+    );
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|p| p.is_absolute() && seen.insert(p.clone()));
     paths
+}
+
+fn node_version_paths(directory: &Path, bin: &str) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return Vec::new();
+    };
+    let mut versions: Vec<_> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let version = entry.file_name().to_str()?.strip_prefix('v')?.to_owned();
+            let mut components = version.split('.');
+            let version = [
+                components.next()?.parse::<u32>().ok()?,
+                components.next()?.parse().ok()?,
+                components.next()?.parse().ok()?,
+            ];
+            Some((version, entry.path().join(bin)))
+        })
+        .collect();
+    versions.sort_unstable_by_key(|(version, _)| std::cmp::Reverse(*version));
+    versions.into_iter().map(|(_, path)| path).collect()
 }
 
 fn executable(path: &Path) -> bool {
@@ -187,24 +233,85 @@ fn executable(path: &Path) -> bool {
     }
 }
 
-pub(crate) fn detect(preset: &AgentPreset) -> Option<AgentConnection> {
-    let path = search_paths()
-        .into_iter()
+impl AgentPreset {
+    fn connection(&self, command: PathBuf) -> AgentConnection {
+        AgentConnection {
+            id: self.id.into(),
+            name: self.name.into(),
+            command: command.to_string_lossy().into_owned(),
+            args: self.args.iter().map(|v| (*v).to_owned()).collect(),
+            models: vec![],
+            model: String::new(),
+        }
+    }
+
+    pub(crate) fn pending_connection(&self) -> AgentConnection {
+        self.connection(PathBuf::new())
+    }
+
+    pub(crate) fn can_prepare(&self) -> bool {
+        managed::available(self)
+    }
+}
+
+fn detect_in(preset: &AgentPreset, paths: &[PathBuf]) -> Option<AgentConnection> {
+    paths
+        .iter()
         .flat_map(|path| {
             preset
                 .commands
                 .iter()
                 .map(move |command| path.join(command))
         })
-        .find(|path| executable(path))?;
-    Some(AgentConnection {
-        id: preset.id.into(),
-        name: preset.name.into(),
-        command: path.to_string_lossy().into_owned(),
-        args: preset.args.iter().map(|v| (*v).to_owned()).collect(),
-        models: vec![],
-        model: String::new(),
-    })
+        .find(|path| executable(path))
+        .map(|path| preset.connection(path))
+        .or_else(|| managed::cached(preset))
+}
+
+pub(crate) fn detect_all() -> Vec<AgentConnection> {
+    let paths = search_paths();
+    PRESETS
+        .iter()
+        .filter_map(|preset| detect_in(preset, &paths))
+        .collect()
+}
+
+pub(crate) async fn prepare(id: &str) -> Result<AgentConnection, String> {
+    let preset = PRESETS
+        .iter()
+        .find(|preset| preset.id == id)
+        .ok_or_else(|| tr::settings::agents::not_found().to_owned())?;
+    if let Some(connection) = detect_in(preset, &search_paths()) {
+        return Ok(connection);
+    }
+    managed::install(preset).await
+}
+
+#[derive(Debug)]
+enum AcpRequestError {
+    LoginRequired,
+    Other(String),
+}
+
+impl From<&str> for AcpRequestError {
+    fn from(message: &str) -> Self {
+        Self::Other(message.into())
+    }
+}
+
+impl From<String> for AcpRequestError {
+    fn from(message: String) -> Self {
+        Self::Other(message)
+    }
+}
+
+impl From<AcpRequestError> for String {
+    fn from(error: AcpRequestError) -> Self {
+        match error {
+            AcpRequestError::LoginRequired => tr::settings::agents::login_required().into(),
+            AcpRequestError::Other(message) => message,
+        }
+    }
 }
 
 struct AcpProcess {
@@ -253,7 +360,13 @@ impl AcpProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        if let Ok(paths) = std::env::join_paths(search_paths()) {
+        if let Ok(paths) = std::env::join_paths(
+            command_path
+                .parent()
+                .map(Path::to_path_buf)
+                .into_iter()
+                .chain(search_paths()),
+        ) {
             command.env("PATH", paths);
         }
         #[cfg(unix)]
@@ -297,7 +410,7 @@ impl AcpProcess {
             .map_err(|_| tr::settings::agents::disconnected().to_owned())
     }
 
-    async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    async fn request(&mut self, method: &str, params: Value) -> Result<Value, AcpRequestError> {
         self.next_id += 1;
         let id = self.next_id;
         self.write(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
@@ -347,11 +460,10 @@ impl AcpProcess {
             }
             if let Some(error) = message.get("error") {
                 return Err(if error["code"] == -32000 || error["code"] == -32001 {
-                    tr::settings::agents::login_required()
+                    AcpRequestError::LoginRequired
                 } else {
-                    tr::settings::agents::protocol_error()
-                }
-                .into());
+                    tr::settings::agents::protocol_error().into()
+                });
             }
             return message
                 .get("result")
@@ -363,6 +475,7 @@ impl AcpProcess {
     async fn initialize(
         &mut self,
         connection: &AgentConnection,
+        allow_browser_login: bool,
     ) -> Result<Vec<AgentModel>, String> {
         let initialized = self.request("initialize", json!({"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false},"clientInfo":{"name":"capwise","title":"Capwise","version":"0.1.0"}})).await?;
         if initialized["protocolVersion"] != 1 {
@@ -380,12 +493,26 @@ impl AcpProcess {
                 .await?;
             }
         }
-        let session = self
-            .request(
-                "session/new",
-                json!({"cwd":self.workspace.path(),"mcpServers":[]}),
-            )
-            .await?;
+        let request = json!({"cwd":self.workspace.path(),"mcpServers":[]});
+        let session = match self.request("session/new", request.clone()).await {
+            Err(AcpRequestError::LoginRequired)
+                if allow_browser_login
+                    && connection.id == "codex"
+                    && initialized["authMethods"]
+                        .as_array()
+                        .is_some_and(|methods| {
+                            methods.iter().any(|method| {
+                                method["id"] == "chat-gpt"
+                                    && method["type"].as_str().is_none_or(|kind| kind == "agent")
+                            })
+                        }) =>
+            {
+                self.request("authenticate", json!({"methodId":"chat-gpt"}))
+                    .await?;
+                self.request("session/new", request).await?
+            }
+            result => result?,
+        };
         self.session = session["sessionId"]
             .as_str()
             .filter(|s| !s.is_empty())
@@ -453,9 +580,21 @@ fn models_from_session(session: &Value) -> (Option<String>, Vec<AgentModel>) {
 }
 
 pub(crate) async fn probe(connection: &AgentConnection) -> Result<Vec<AgentModel>, String> {
-    tokio::time::timeout(Duration::from_secs(35), async {
+    probe_with_login(connection, false).await
+}
+
+pub(crate) async fn connect(connection: &AgentConnection) -> Result<Vec<AgentModel>, String> {
+    probe_with_login(connection, connection.id == "codex").await
+}
+
+async fn probe_with_login(
+    connection: &AgentConnection,
+    allow_browser_login: bool,
+) -> Result<Vec<AgentModel>, String> {
+    let duration = if allow_browser_login { 300 } else { 35 };
+    tokio::time::timeout(Duration::from_secs(duration), async {
         let mut process = AcpProcess::launch(connection)?;
-        process.initialize(connection).await
+        process.initialize(connection, allow_browser_login).await
     })
     .await
     .map_err(|_| tr::settings::agents::timeout().to_owned())?
@@ -469,7 +608,7 @@ pub(crate) async fn chat(
 ) -> Result<String, String> {
     tokio::time::timeout(Duration::from_secs(180), async {
         let mut process = AcpProcess::launch(connection)?;
-        let models = process.initialize(connection).await?;
+        let models = process.initialize(connection, false).await?;
         if !model.is_empty() {
             if !models.iter().any(|m| m.id == model) { return Err(tr::ai::model_missing().to_owned()); }
             if let Some(config) = &process.model_config {
@@ -548,6 +687,92 @@ for line in sys.stdin:
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn content_model_selection_uses_the_connected_agent_and_named_model() {
+        use crate::llm::{ContentModel, selected_content_model};
+        use std::sync::Arc;
+
+        let (_dir, connection) = mock_agent(
+            r#"
+import json,sys
+for line in sys.stdin:
+    m=json.loads(line); method=m['method']; p=m.get('params',{}); result={}
+    if method=='initialize':
+        result={'protocolVersion':1}
+    elif method=='session/new':
+        result={'sessionId':'s','configOptions':[{'id':'model','category':'model','options':[{'value':'a:b','name':'Named Model'}]}]}
+    elif method=='session/set_config_option':
+        assert p['value']=='a:b'
+    elif method=='session/prompt':
+        assert p['prompt'][0]['text']=='system\n\nuser'
+        print(json.dumps({'method':'session/update','params':{'sessionId':'s','update':{'sessionUpdate':'agent_message_chunk','content':{'type':'text','text':'{"ok":true}'}}}}),flush=True)
+        result={'stopReason':'end_turn'}
+    print(json.dumps({'jsonrpc':'2.0','id':m['id'],'result':result}),flush=True)
+"#,
+        );
+        let model = probe(&connection).await.unwrap().pop().unwrap();
+        let source = ContentModel::Agent {
+            connection: Arc::new(connection),
+            model: Some(model),
+        };
+        assert!(selected_content_model([source.clone()], None).is_none());
+        let selected = selected_content_model([source], Some("acp:test:a:b")).unwrap();
+        assert_eq!(selected.model_name(), "Named Model");
+        assert_eq!(
+            selected
+                .chat_json(uuid::Uuid::new_v4(), "system", "user")
+                .await
+                .unwrap(),
+            r#"{"ok":true}"#,
+        );
+        let http = ContentModel::Provider(crate::llm::provider("deepseek").unwrap());
+        assert!(selected_content_model([http], Some("acp:removed:")).is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn codex_browser_login_is_only_attempted_during_explicit_connection() {
+        let (_dir, mut connection) = mock_agent(
+            r#"
+import json,sys
+authenticated=False
+for line in sys.stdin:
+    m=json.loads(line)
+    method=m['method']
+    reply={'jsonrpc':'2.0','id':m['id']}
+    if method=='initialize':
+        reply['result']={'protocolVersion':1,'authMethods':[{'id':'chat-gpt','type':'agent'}]}
+    elif method=='session/new':
+        if authenticated:
+            reply['result']={'sessionId':'s'}
+        else:
+            reply['error']={'code':-32000,'message':'Authentication required'}
+    elif method=='authenticate':
+        assert m['params']['methodId']=='chat-gpt'
+        authenticated=True
+        reply['result']={}
+    print(json.dumps(reply),flush=True)
+"#,
+        );
+        connection.id = "codex".into();
+        assert!(probe(&connection).await.is_err());
+        assert!(connect(&connection).await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn node_paths_rank_newer_major_versions_first() {
+        let dir = tempfile::tempdir().unwrap();
+        for version in ["v9.2.0", "v22.1.0", "v24.1.2", "v24.1.10", "cache"] {
+            std::fs::create_dir(dir.path().join(version)).unwrap();
+        }
+        assert_eq!(
+            node_version_paths(dir.path(), "bin"),
+            ["v24.1.10", "v24.1.2", "v22.1.0", "v9.2.0"]
+                .map(|version| dir.path().join(version).join("bin"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn dropping_acp_session_stops_owned_child() {
         let (_dir, connection) = mock_agent("import time; time.sleep(60)");
         let process = AcpProcess::launch(&connection).unwrap();
@@ -567,7 +792,7 @@ for line in sys.stdin:
     async fn installed_adapter_probe() {
         let id = std::env::var("CAPWISE_TEST_AGENT").unwrap();
         let preset = PRESETS.iter().find(|p| p.id == id).unwrap();
-        let agent = detect(preset).expect("adapter must be installed");
+        let agent = detect_in(preset, &search_paths()).expect("adapter must be installed");
         let models = probe(&agent).await.unwrap();
         eprintln!("ACP probe {}: {} models", agent.name, models.len());
     }
