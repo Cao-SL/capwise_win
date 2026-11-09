@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod macos;
 #[cfg(target_os = "macos")]
 pub(crate) use macos::AvatarWorker;
+#[cfg(any(target_os = "macos", test))]
 mod paint;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +51,7 @@ impl AvatarControl {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Pose {
     pub yaw: f32,
@@ -61,6 +63,7 @@ pub(crate) struct Pose {
     pub smile: f32,
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl Default for Pose {
     fn default() -> Self {
         Self {
@@ -75,6 +78,7 @@ impl Default for Pose {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl Pose {
     pub fn approach(&mut self, next: Self, amount: f32) {
         fn blend(old: &mut f32, next: f32, amount: f32) {
