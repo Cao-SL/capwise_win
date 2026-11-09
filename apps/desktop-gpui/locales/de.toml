@@ -1654,6 +1654,7 @@ preparing = "Modell-Download wird vorbereitet"
 progress = "Modell wird geladen: {percent} %"
 
 [transcription.error]
+no_speech = "Keine Sprache erkannt. Prüfe, ob in der Mikrofon- oder Systemtonspur der Aufnahme Sprache hörbar ist."
 intel_mac = "Parakeet-Modelle sind auf Intel-Macs nicht verfügbar. Verwenden Sie stattdessen ein Whisper-Modell"
 model_load = "Das Untertitelmodell konnte nicht geladen werden. Laden Sie es erneut herunter"
 model_missing = "Untertitelmodell nicht gefunden. Bitte laden Sie es zuerst herunter"
@@ -3863,9 +3864,28 @@ show_captions = "Untertitel anzeigen"
 my_styles = "Meine Stile"
 
 [settings.ai_tabs]
+narration = "Sprachsynthese"
 recognition = "Untertitelerkennung"
 content = "Inhalte erstellen"
 cover = "Cover erstellen"
+
+[settings.speech]
+title = "Doubao-Sprachsynthese"
+description = "Die CLI verwendet dieses Modell und diese Stimme für den Kommentar. Der API-Schlüssel wird im macOS-Schlüsselbund gespeichert."
+key = "Doubao-API-Schlüssel für Sprache"
+key_hint = "Schlüssel einfügen oder leer lassen, um den gespeicherten Schlüssel zu behalten"
+model = "Modellressourcen-ID"
+voice = "Stimmen-ID"
+voice_list = "Stimmenkatalog"
+preview = "Hörprobe"
+working = "Wird verarbeitet…"
+sample = "Hallo, das ist ein Beispiel für deine Capwise-Kommentarstimme."
+preview_done = "Hörprobe abgespielt."
+saved = "Gespeichert. Die CLI verwendet dieses Modell und diese Stimme."
+save_failed = "Die Spracheinstellungen konnten nicht gespeichert werden. Erneut versuchen."
+key_required = "Gib einen Doubao-API-Schlüssel für Sprache ein."
+invalid_settings = "Prüfe die Modellressourcen-ID und die Stimmen-ID."
+play_failed = "Die Hörprobe konnte nicht abgespielt werden. Prüfe die Audioausgabe."
 
 [settings.export_folder]
 save_failed = "Exportordner konnte nicht gespeichert werden. Bitte erneut versuchen."

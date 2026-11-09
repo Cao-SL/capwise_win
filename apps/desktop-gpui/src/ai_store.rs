@@ -12,7 +12,7 @@ use crate::{i18n::tr, store};
 
 const SECTION: &str = "capwise_ai";
 const LLM_DEFAULT: &str = "llmDefault";
-const KEYCHAIN_SERVICE: &str = "com.capwise.app.ai";
+const KEYCHAIN_SERVICE: &str = cap_utils::speech::KEYCHAIN_SERVICE;
 const LEGACY_KEYCHAIN_SERVICE: &str = "com.capwise.app.asr";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -21,6 +21,7 @@ pub enum Kind {
     Llm,
     Stock,
     Image,
+    Tts,
 }
 
 impl Kind {
@@ -30,6 +31,7 @@ impl Kind {
             Self::Llm => "llm",
             Self::Stock => "stock",
             Self::Image => "image",
+            Self::Tts => "tts",
         }
     }
 }
@@ -73,8 +75,9 @@ mod test_keychain {
         let path = std::env::var_os("CAPWISE_DEV_KEYS")
             .map(std::path::PathBuf::from)
             .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|home| std::path::PathBuf::from(home).join(".config/capwise/dev-keys.json"))
+                std::env::var_os("HOME").map(|home| {
+                    std::path::PathBuf::from(home).join(".config/capwise/dev-keys.json")
+                })
             })?;
         let text = std::fs::read_to_string(path).ok()?;
         let json: serde_json::Value = serde_json::from_str(&text).ok()?;

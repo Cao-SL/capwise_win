@@ -1658,6 +1658,7 @@ preparing = "正在准备下载模型"
 progress = "正在下载模型：{percent}%"
 
 [transcription.error]
+no_speech = "没有检测到人声。请确认录制的麦克风或系统音轨里有可听见的语音。"
 intel_mac = "Parakeet 模型不支持 Intel Mac。请改用 Whisper 模型"
 model_load = "无法加载字幕模型。请尝试重新下载"
 model_missing = "未找到字幕模型。请先下载"
@@ -3897,9 +3898,28 @@ show_captions = "显示字幕"
 my_styles = "我的样式"
 
 [settings.ai_tabs]
+narration = "语音合成"
 recognition = "字幕识别"
 content = "内容生成"
 cover = "封面生成"
+
+[settings.speech]
+title = "豆包语音合成"
+description = "CLI 使用此模型和音色生成旁白。API Key 保存在 macOS 钥匙串。"
+key = "豆包语音 API Key"
+key_hint = "粘贴密钥，留空则沿用已保存的密钥"
+model = "模型资源 ID"
+voice = "音色 ID"
+voice_list = "查看音色库"
+preview = "试听"
+working = "处理中…"
+sample = "你好，这是一段灵录的旁白音色示例。"
+preview_done = "试听已播放。"
+saved = "已保存，CLI 将使用此模型和音色。"
+save_failed = "无法保存语音设置，请重试。"
+key_required = "请输入豆包语音 API Key。"
+invalid_settings = "请检查模型资源 ID 和音色 ID。"
+play_failed = "无法播放试听，请检查音频输出。"
 
 [settings.export_folder]
 save_failed = "无法保存导出文件夹，请重试。"

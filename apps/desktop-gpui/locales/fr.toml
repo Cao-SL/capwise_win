@@ -1654,6 +1654,7 @@ preparing = "Préparation du téléchargement du modèle"
 progress = "Téléchargement du modèle : {percent} %"
 
 [transcription.error]
+no_speech = "Aucune voix détectée. Vérifiez que la piste du micro ou du son système contient une voix audible."
 intel_mac = "Les modèles Parakeet ne sont pas disponibles sur les Mac Intel. Utilisez plutôt un modèle Whisper"
 model_load = "Impossible de charger le modèle de sous-titres. Essayez de le télécharger à nouveau"
 model_missing = "Modèle de sous-titres introuvable. Téléchargez-le d'abord"
@@ -3863,9 +3864,28 @@ show_captions = "Afficher les sous-titres"
 my_styles = "Mes styles"
 
 [settings.ai_tabs]
+narration = "Synthèse vocale"
 recognition = "Reconnaissance des sous-titres"
 content = "Génération de contenu"
 cover = "Génération de couvertures"
+
+[settings.speech]
+title = "Synthèse vocale Doubao"
+description = "La CLI utilise ce modèle et cette voix pour générer une narration. La clé API est conservée dans le trousseau macOS."
+key = "Clé API vocale Doubao"
+key_hint = "Collez une clé ou laissez ce champ vide pour conserver la clé enregistrée"
+model = "ID de la ressource du modèle"
+voice = "ID de la voix"
+voice_list = "Catalogue des voix"
+preview = "Écouter un extrait"
+working = "Traitement…"
+sample = "Bonjour, voici un exemple de votre voix de narration Capwise."
+preview_done = "Extrait lu."
+saved = "Enregistré. La CLI utilisera ce modèle et cette voix."
+save_failed = "Impossible d’enregistrer les paramètres vocaux. Réessayez."
+key_required = "Saisissez une clé API vocale Doubao."
+invalid_settings = "Vérifiez les identifiants du modèle et de la voix."
+play_failed = "Impossible de lire l’extrait. Vérifiez la sortie audio."
 
 [settings.export_folder]
 save_failed = "Impossible d’enregistrer le dossier d’export. Réessayez."

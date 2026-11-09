@@ -1098,6 +1098,7 @@ dependencies = [
  "same-file",
  "scap-screencapturekit",
  "scap-targets",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "sha2",
@@ -1817,11 +1818,13 @@ name = "cap-utils"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "base64 0.22.1",
  "directories 5.0.1",
  "flume",
  "futures",
  "libc",
  "nix",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",

@@ -1654,6 +1654,7 @@ preparing = "モデルのダウンロードを準備中"
 progress = "モデルをダウンロード中：{percent}%"
 
 [transcription.error]
+no_speech = "音声が検出されませんでした。録画のマイク音声またはシステム音声に、聞き取れる声が含まれているか確認してください。"
 intel_mac = "ParakeetモデルはIntel搭載のMacでは使えません。代わりにWhisperモデルを使ってください"
 model_load = "字幕モデルを読み込めませんでした。もう一度ダウンロードしてください"
 model_missing = "字幕モデルが見つかりません。先にダウンロードしてください"
@@ -3863,9 +3864,28 @@ show_captions = "字幕を表示"
 my_styles = "マイスタイル"
 
 [settings.ai_tabs]
+narration = "音声合成"
 recognition = "字幕認識"
 content = "コンテンツ生成"
 cover = "カバー生成"
+
+[settings.speech]
+title = "Doubao 音声合成"
+description = "CLI でナレーションを生成するときにこのモデルと音色を使います。API キーは macOS のキーチェーンに保存されます。"
+key = "Doubao 音声 API キー"
+key_hint = "キーを貼り付けます。空欄の場合は保存済みのキーを使います"
+model = "モデルリソース ID"
+voice = "音色 ID"
+voice_list = "音色一覧"
+preview = "試聴"
+working = "処理中…"
+sample = "こんにちは。Capwise のナレーション音声のサンプルです。"
+preview_done = "試聴が完了しました。"
+saved = "保存しました。CLI でこのモデルと音色が使われます。"
+save_failed = "音声設定を保存できませんでした。もう一度お試しください。"
+key_required = "Doubao 音声 API キーを入力してください。"
+invalid_settings = "モデルリソース ID と音色 ID を確認してください。"
+play_failed = "試聴を再生できませんでした。音声出力を確認してください。"
 
 [settings.export_folder]
 save_failed = "書き出し先を保存できませんでした。もう一度お試しください。"

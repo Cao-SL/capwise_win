@@ -17,6 +17,7 @@ mod guide;
 mod jobs;
 mod library;
 mod mcp;
+mod narration;
 mod notifications;
 mod organizations;
 mod overlays;
@@ -353,6 +354,8 @@ enum ProjectCommands {
     TitleCard(title_cards::TitleCardArgs),
     #[command(about = "Add titles, image overlays and redactions to a local project")]
     Overlay(overlays::OverlayArgs),
+    #[command(about = "Generate cloud narration and add it to the project audio timeline")]
+    Narrate(narration::NarrationArgs),
 }
 
 #[derive(Args)]
@@ -755,6 +758,7 @@ impl ProjectArgs {
             ProjectCommands::Captions(args) => args.run(json),
             ProjectCommands::TitleCard(args) => args.run(json).await,
             ProjectCommands::Overlay(args) => args.run(json),
+            ProjectCommands::Narrate(args) => args.run(json).await,
             // validate emits its own structured report (incl. JSON errors), so it is not wrapped.
             ProjectCommands::Validate(args) => {
                 project::validate(args.project_path, resolve_format(json, args.format))

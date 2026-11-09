@@ -1660,6 +1660,7 @@ preparing = "Preparing model download"
 progress = { text = "Downloading model: {percent}%", context = "{percent} is a whole number." }
 
 [transcription.error]
+no_speech = "No speech was detected. Check that the recording contains audible microphone or system audio."
 intel_mac = "Parakeet models are not available on Intel Macs. Use a Whisper model instead"
 model_load = "Failed to load the caption model. Try downloading it again"
 model_missing = "Caption model not found. Please download it first"
@@ -3899,9 +3900,28 @@ show_captions = "Show captions"
 my_styles = "My styles"
 
 [settings.ai_tabs]
+narration = "Speech Synthesis"
 recognition = "Subtitle Recognition"
 content = "Content Generation"
 cover = "Cover Generation"
+
+[settings.speech]
+title = "Doubao Speech Synthesis"
+description = "Generate narration from the CLI using this model and voice. The API key is stored in the macOS Keychain."
+key = "Doubao Speech API Key"
+key_hint = "Paste a key, or leave blank to keep the saved key"
+model = "Model resource ID"
+voice = "Voice ID"
+voice_list = "Voice catalog"
+preview = "Listen to sample"
+working = "Working…"
+sample = "Hi, this is a sample of your Capwise narration voice."
+preview_done = "Sample played."
+saved = "Saved. Capwise CLI will use this model and voice."
+save_failed = "Could not save the speech settings. Try again."
+key_required = "Enter a Doubao Speech API key."
+invalid_settings = "Check the model resource ID and voice ID."
+play_failed = "Could not play the sample. Check the audio output."
 
 [settings.export_folder]
 save_failed = "Could not save the export folder. Please try again."

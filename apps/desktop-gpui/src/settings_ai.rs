@@ -131,6 +131,7 @@ impl Drop for ModelDiscovery {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiTab {
     Recognition,
+    Narration,
     Content,
     Cover,
 }
@@ -1970,6 +1971,11 @@ impl SettingsWindow {
                 "icons/captions.svg",
             ),
             (
+                AiTab::Narration,
+                tr::settings::ai_tabs::narration(),
+                "icons/volume-2.svg",
+            ),
+            (
                 AiTab::Content,
                 tr::settings::ai_tabs::content(),
                 "icons/sparkles.svg",
@@ -2016,6 +2022,7 @@ impl SettingsWindow {
                 self.ai_review_section(cx),
             ],
             AiTab::Cover => vec![self.render_cover_settings(cx)],
+            AiTab::Narration => vec![self.render_speech_settings(cx)],
         }
     }
 
