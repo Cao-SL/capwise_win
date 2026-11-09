@@ -831,6 +831,10 @@ fn dialog_surfaces_match_the_literals_they_replaced() {
             "No audio found in the video file",
         ),
         (
+            tr::transcription::error::no_speech(),
+            "No speech was detected. Check that the recording contains audible microphone or system audio.",
+        ),
+        (
             tr::transcription::error::unsupported_language(),
             "The Recommended and High Accuracy models only transcribe English and 24 other European languages. Download the Small or Medium model to caption this language",
         ),

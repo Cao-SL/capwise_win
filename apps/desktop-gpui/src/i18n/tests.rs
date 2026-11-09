@@ -566,7 +566,6 @@ fn english_matches_the_literals_it_replaced() {
         (tr::settings::speech::key_required(), "Enter a Doubao Speech API key.".into()),
         (tr::settings::speech::invalid_settings(), "Check the model resource ID and voice ID.".into()),
         (tr::settings::speech::play_failed(), "Could not play the sample. Check the audio output.".into()),
-        (tr::transcription::error::no_speech(), "No speech was detected. Check that the recording contains audible microphone or system audio.".into()),
         (tr::settings::export_folder::save_failed(), "Could not save the export folder. Please try again.".into()),
         (tr::settings::export_folder::title(), "Export Folder".into()),
         (tr::settings::export_folder::description(), "Choose the default folder for videos, subtitles and covers. You can change it when exporting.".into()),
