@@ -117,7 +117,7 @@ pub static SERVICES: &[AsrService] = &[
         name: tr::ai::asr::doubao::name,
         note: tr::ai::asr::doubao::note,
         protocol: Protocol::DoubaoFlash,
-        base_url: "https://openspeech.bytedance.com/api/v3",
+        base_url: cap_utils::speech::RECOGNITION_ENDPOINT,
         models: &["bigmodel"],
         key_url: Some("https://console.volcengine.com/speech/new/experience/asr"),
         needs_key: true,

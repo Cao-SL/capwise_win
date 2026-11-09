@@ -338,18 +338,14 @@ fn caption_export_status(state: CaptionExportState<'_>) -> CaptionExportReadines
     }
     if let Some(request) = &request {
         match request.status {
-            ProcessingStatus::FailedReview
-            | ProcessingStatus::FailedTranslation
-            | ProcessingStatus::Changed => {
+            ProcessingStatus::Changed | ProcessingStatus::Cancelled => return Ready,
+            ProcessingStatus::FailedReview | ProcessingStatus::FailedTranslation => {
                 return Blocked(
                     request
                         .error
                         .clone()
                         .unwrap_or_else(|| tr::editor::review::interrupted().into()),
                 );
-            }
-            ProcessingStatus::Cancelled => {
-                return Blocked(tr::editor::export::captions::cancelled().into());
             }
             ProcessingStatus::Reviewing | ProcessingStatus::Translating => {
                 return Blocked(tr::editor::review::interrupted().into());
@@ -1125,7 +1121,12 @@ impl EditorWindow {
             return;
         }
         if request.bilingual {
-            self.translate_english_once(window, cx);
+            let language = crate::workflow_presets::request_for_project(&self.project_path)
+                .map_or_else(
+                    crate::workflow_presets::default_translation_language,
+                    |workflow| workflow.translation_language,
+                );
+            self.translate_once(&language, window, cx);
         }
     }
 
@@ -1790,13 +1791,27 @@ mod tests {
     }
 
     #[test]
+    fn caption_export_uses_captions_the_user_took_over() {
+        let project = processing_project();
+        for status in [ProcessingStatus::Changed, ProcessingStatus::Cancelled] {
+            let mut state = export_state(&project);
+            let mut request = request(&project);
+            request.status = status;
+            state.request = Some(request);
+            assert_eq!(
+                caption_export_status(state),
+                CaptionExportReadiness::Ready,
+                "{status:?}"
+            );
+        }
+    }
+
+    #[test]
     fn caption_export_blocked_or_orphaned_processing_never_looks_active() {
         let project = processing_project();
         for status in [
             ProcessingStatus::FailedReview,
             ProcessingStatus::FailedTranslation,
-            ProcessingStatus::Changed,
-            ProcessingStatus::Cancelled,
             ProcessingStatus::Reviewing,
             ProcessingStatus::Translating,
         ] {

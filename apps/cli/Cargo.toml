@@ -13,7 +13,7 @@ cap-editor = { path = "../../crates/editor" }
 cap-export = { path = "../../crates/export" }
 cap-media-info = { path = "../../crates/media-info" }
 cap-timestamp = { path = "../../crates/timestamp" }
-cap-utils = { path = "../../crates/utils" }
+cap-utils = { path = "../../crates/utils", features = ["speech"] }
 relative-path = "1.9.3"
 cap-automation = { path = "../../crates/automation" }
 cap-camera = { path = "../../crates/camera" }
@@ -65,6 +65,7 @@ windows = { workspace = true, features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cidre = { workspace = true }
+security-framework = "3"
 scap-screencapturekit = { path = "../../crates/scap-screencapturekit" }
 
 [dev-dependencies]

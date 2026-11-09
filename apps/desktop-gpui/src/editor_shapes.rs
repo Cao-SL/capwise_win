@@ -1095,6 +1095,7 @@ impl EditorWindow {
     pub(crate) fn arm_shape_tool(&mut self, kind: Option<ShapeKind>, cx: &mut Context<Self>) {
         self.shape_tool_menu = false;
         if let Some(kind) = kind {
+            self.clear_redaction_tool();
             self.last_shape_kind = kind;
             if self.playing {
                 self.stop_playback(cx);
@@ -1748,10 +1749,16 @@ impl EditorWindow {
                     .when(!narrow, |button| button.label(tr::editor::shape::toolbar()))
                     .tooltip(&theme, tr::editor::shape::draw())
                     .disabled(!self.project_ready())
-                    .pressed(self.shape_tool.is_some() || self.shape_tool_menu)
+                    .pressed(
+                        self.shape_tool.is_some()
+                            || self.shape_tool_menu
+                            || self.redaction_tool_active(),
+                    )
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.focus_root(window, cx);
-                        if this.shape_tool.is_some() {
+                        if this.redaction_tool_active() {
+                            this.toggle_redaction_tool(window, cx);
+                        } else if this.shape_tool.is_some() {
                             this.arm_shape_tool(None, cx);
                         } else {
                             this.shape_tool_menu = !this.shape_tool_menu;
@@ -1859,6 +1866,21 @@ impl EditorWindow {
                                     .children(row.iter().map(|kind| tile(*kind, cx)))
                             }),
                         ))
+                        .child(
+                            div().flex().px(px(6.)).pb(px(6.)).child(
+                                crate::ui::EditorButton::plain(&theme, "draw-redaction")
+                                    .text(&theme)
+                                    .start()
+                                    .grow()
+                                    .left_icon("icons/eye-off.svg")
+                                    .label(tr::editor::window::overlay::redact_hint())
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.shape_tool_menu = false;
+                                        this.toggle_redaction_tool(window, cx);
+                                        cx.notify();
+                                    })),
+                            ),
+                        )
                         .child(
                             div()
                                 .flex()

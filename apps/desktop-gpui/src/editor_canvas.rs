@@ -1527,6 +1527,7 @@ impl EditorWindow {
                 && self.canvas_drag.is_none()
                 && self.shape_drag.is_none()
                 && self.shape_tool.is_none()
+                && !self.redaction_tool_active()
                 && self.canvas_text_edit.is_none())
         {
             return None;
@@ -1692,6 +1693,7 @@ impl EditorWindow {
             });
         }
 
+        layer = layer.children(self.render_redaction_surface(cx));
         Some(layer.into_any_element())
     }
 

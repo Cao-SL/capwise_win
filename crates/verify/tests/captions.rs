@@ -33,7 +33,9 @@
 //!   moved past fullscreen-text holds (a range ending exactly at a hold ends
 //!   before it). A piece spans its first to last word; its text joins the
 //!   words with spaces, except before punctuation that attaches to the
-//!   previous word. A caption without words maps its own range.
+//!   previous word, between two characters of an unspaced script (Han, kana,
+//!   Hangul, CJK punctuation), and beside CJK punctuation; CJK next to Latin
+//!   keeps its space. A caption without words maps its own range.
 //! - A caption cut into several pieces gets ids `<id>::edl<n>`; pieces are
 //!   sorted by output start (stable); style overrides follow the source id.
 //! - Rendering: at output time `t` the first piece with
@@ -93,10 +95,35 @@ fn attaches_to_previous(text: &str) -> bool {
         .is_some_and(|c| ATTACHING.contains(c))
 }
 
+fn is_cjk_punctuation(c: char) -> bool {
+    matches!(c, '\u{3000}'..='\u{303f}' | '\u{ff00}'..='\u{ffef}')
+}
+
+fn is_unspaced_script(c: char) -> bool {
+    is_cjk_punctuation(c)
+        || matches!(
+            c,
+            '\u{3040}'..='\u{30ff}'
+                | '\u{3400}'..='\u{4dbf}'
+                | '\u{4e00}'..='\u{9fff}'
+                | '\u{ac00}'..='\u{d7af}'
+                | '\u{f900}'..='\u{faff}'
+        )
+}
+
+fn joins_unspaced(previous: &str, next: &str) -> bool {
+    let (Some(before), Some(after)) = (previous.chars().last(), next.chars().next()) else {
+        return false;
+    };
+    (is_unspaced_script(before) && is_unspaced_script(after))
+        || is_cjk_punctuation(before)
+        || is_cjk_punctuation(after)
+}
+
 fn join_words<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
     let mut text = String::new();
     for word in words.into_iter().map(str::trim).filter(|w| !w.is_empty()) {
-        if !text.is_empty() && !attaches_to_previous(word) {
+        if !text.is_empty() && !attaches_to_previous(word) && !joins_unspaced(&text, word) {
             text.push(' ');
         }
         text.push_str(word);
@@ -354,7 +381,7 @@ const VOCABULARY: [&str; 24] = [
     "hello", "world", "is", "a", "river", "cloud", "it", "to", "über", "café", "日本", "so",
     "screen", "record", "of", "we", "on", "capture", "edit", "timeline", "in", "up", "my", "an",
 ];
-const PUNCTUATION: [&str; 6] = [",", ".", "?", "!", "'s", "%"];
+const PUNCTUATION: [&str; 7] = [",", ".", "?", "!", "'s", "%", "。"];
 
 fn random_captions(rng: &mut Rng, total: f64) -> Vec<CaptionSegment> {
     let mut captions = Vec::new();
@@ -913,6 +940,7 @@ fn styled_settings(rng: &mut Rng) -> CaptionSettings {
         uppercase: true,
         show_filler_words: false,
         filler_language: None,
+        ..Default::default()
     }
 }
 

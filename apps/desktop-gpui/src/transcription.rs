@@ -2737,7 +2737,12 @@ pub fn apply_caption_result(
 
 /// `getCaptionGenerationErrorMessage` (`captions.ts:634-662`).
 pub fn caption_generation_error_message(message: &str) -> String {
-    if message.contains("No audio stream found") {
+    if message.contains("No speech detected in the audio") {
+        return tr::transcription::error::no_speech().to_string();
+    }
+    if message.contains("No audio stream found")
+        || message.contains("No audio sources found in the selected timeline")
+    {
         return tr::transcription::error::no_audio().to_string();
     }
     if message.contains("Model file not found") {

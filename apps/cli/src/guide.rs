@@ -412,6 +412,28 @@ fn build() -> Guide {
                     &[],
                 )
             },
+            CommandDoc {
+                notes: Some(
+                    "Use --start and --end in edited output seconds. For redact, --x/--y specify the normalized top-left and --width/--height the normalized size. image copies a local file into the project. Preview each add command with --dry-run --json and pass the returned revision with --expected-revision to write. Close the project in the desktop editor before applying CLI edits.",
+                ),
+                ..cmd(
+                    "project overlay title|image|redact",
+                    "Add a title, image, or redaction without opening the desktop editor.",
+                    OutputMode::SingleJson,
+                    &[],
+                )
+            },
+            CommandDoc {
+                notes: Some(
+                    "Configure Doubao in Capwise AI Models > Speech Synthesis. On macOS the CLI reads the saved model, voice and Keychain credential. A dedicated synthesis key takes priority over the saved key for the official Doubao recognition endpoint. CAPWISE_DOUBAO_TTS_API_KEY is available for headless use and takes priority when set. Use --text or --text-file and --start in edited output seconds. Use --captions for timed Chinese or English subtitles in a project without existing captions. --dry-run never contacts Doubao. Applying with --expected-revision sends the supplied text to Doubao and adds the returned audio to the project. Close the project in the editor before applying.",
+                ),
+                ..cmd(
+                    "project narrate",
+                    "Generate a narration track using the saved Doubao model and voice.",
+                    OutputMode::SingleJson,
+                    &[],
+                )
+            },
             cmd(
                 "version",
                 "CLI version + execution context (distribution, bundled binaries).",

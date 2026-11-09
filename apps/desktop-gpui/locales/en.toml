@@ -1660,6 +1660,7 @@ preparing = "Preparing model download"
 progress = { text = "Downloading model: {percent}%", context = "{percent} is a whole number." }
 
 [transcription.error]
+no_speech = "No speech was detected. Check that the recording contains audible microphone or system audio."
 intel_mac = "Parakeet models are not available on Intel Macs. Use a Whisper model instead"
 model_load = "Failed to load the caption model. Try downloading it again"
 model_missing = "Caption model not found. Please download it first"
@@ -3016,6 +3017,15 @@ export = "Export"
 open_bundle = "Open recording bundle"
 presets = "Presets"
 
+[editor.window.overlay]
+title_hint = "Add a title (T)"
+redact = "Redact"
+redact_hint = "Draw a redaction (R)"
+redact_draw = "Drag to cover an area. Esc cancels."
+redact_range = "Move the playhead onto the recording to draw a redaction."
+pasted_image = "Pasted image"
+paste_failed = "Could not paste the image. Try importing it from a file."
+
 [editor.window.image]
 changed = "This image changed while choosing a replacement. Select it and try again."
 filter = { text = "Images", context = "File type filter name in the image file picker." }
@@ -3501,7 +3511,8 @@ rename = "Save name"
 speed = "Video speed"
 speed_note = "Applies to the timeline for matching preview and export, preserving voice pitch."
 review = "Review captions with AI"
-bilingual = "Create Chinese–English captions"
+bilingual = "Translate captions automatically"
+language = "Translation language"
 voice = "Enhance voice"
 beauty = "Camera beauty (maximum)"
 beauty_note = "Only processes the camera track; screen content is unchanged."
@@ -3668,7 +3679,6 @@ current_note = "Export now uses the captions currently saved. Caption processing
 cancel_wait = "Cancel waiting"
 check = "Check captions"
 setup_required = "Finish the recording setup before waiting for captions."
-cancelled = "Caption processing was cancelled. Check captions or export the current version."
 not_started = "Caption processing did not start. Check its settings or export the current version."
 project_changed = "The project changed while preparing the export. Start export again to use the latest version."
 
@@ -3890,9 +3900,38 @@ show_captions = "Show captions"
 my_styles = "My styles"
 
 [settings.ai_tabs]
+narration = "Speech Synthesis"
 recognition = "Subtitle Recognition"
 content = "Content Generation"
 cover = "Cover Generation"
+
+[settings.speech]
+checking = "Checking for a saved API key…"
+disconnected = "No API key saved"
+recognition_key = "Using the Doubao key from Subtitle Recognition"
+dedicated_key = "Using a dedicated speech synthesis key"
+recognition_permission = "If the recognition key lacks synthesis access, use a dedicated speech key."
+replace_key = "Use a different API key"
+default_model = "Doubao Speech Synthesis 2.0"
+cloned_model = "Doubao Voice Cloning 2.0"
+custom_voice = "Custom voice"
+advanced = "Advanced"
+title = "Doubao Speech Synthesis"
+description = "Generate narration from the CLI using this model and voice. The API key is stored in the macOS Keychain."
+key = "Doubao Speech API Key"
+key_hint = "Paste your Doubao Speech API key"
+model = "Model resource ID"
+voice = "Voice ID"
+voice_list = "Voice catalog"
+preview = "Listen to sample"
+working = "Working…"
+sample = "Hi, this is a sample of your Capwise narration voice."
+preview_done = "Sample played."
+saved = "Saved. Capwise CLI will use this model and voice."
+save_failed = "Could not save the speech settings. Try again."
+key_required = "Enter a Doubao Speech API key."
+invalid_settings = "Check the model resource ID and voice ID."
+play_failed = "Could not play the sample. Check the audio output."
 
 [settings.export_folder]
 save_failed = "Could not save the export folder. Please try again."

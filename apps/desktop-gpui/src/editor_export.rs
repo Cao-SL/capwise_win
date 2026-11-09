@@ -21,8 +21,8 @@ use cap_utils::export_resources::{
 };
 use gpui::{
     Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, RenderImage, StatefulInteractiveElement, Styled, Window, div, img,
-    prelude::FluentBuilder, px, svg,
+    MouseUpEvent, ParentElement, RenderImage, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, img, prelude::FluentBuilder, px, svg,
 };
 
 use crate::editor_window::EditorWindow;
@@ -734,6 +734,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn open_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.clear_redaction_tool();
         self.stop_canvas_text_edit(cx);
         if self.playing {
             self.toggle_play_from_crop(cx);
@@ -3038,69 +3039,33 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = self.theme;
+        let editor = theme.editor;
         let wait = ui.caption_wait.as_ref();
         let active = wait.is_some_and(|wait| wait.active);
-        div()
-            .absolute()
-            .inset_0()
-            .occlude()
+        let message = wait.map(|wait| wait.message.clone()).unwrap_or_default();
+        let secondary = |id: &'static str, label: SharedString| {
+            ui::Button::plain(&theme, id, ui::ButtonVariant::White, ui::ButtonSize::Md).label(label)
+        };
+        let actions = div()
             .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap(px(16.))
-            .p(px(24.))
-            .bg(Hsla::from(theme.editor.window))
+            .flex_row()
+            .flex_wrap()
+            .justify_end()
+            .gap(px(8.))
+            .pt(px(8.))
             .child(
-                div()
-                    .text_size(px(18.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(if active {
-                        tr::editor::export::captions::waiting()
-                    } else {
-                        tr::editor::export::captions::needs_attention()
-                    }),
-            )
-            .child(
-                div()
-                    .max_w(px(440.))
-                    .text_center()
-                    .text_size(px(13.))
-                    .child(wait.map(|wait| wait.message.clone()).unwrap_or_default()),
-            )
-            .child(
-                div()
-                    .max_w(px(440.))
-                    .text_center()
-                    .text_size(px(12.))
-                    .text_color(Hsla::from(theme.editor.text_2))
-                    .child(if active {
-                        tr::editor::export::captions::current_note()
-                    } else {
-                        tr::editor::export::captions::current_note_idle()
-                    }),
-            )
-            .child(
-                ui::Button::plain(
-                    &theme,
-                    "export-current-captions",
-                    ui::ButtonVariant::Gray,
-                    ui::ButtonSize::Md,
+                secondary(
+                    "export-cancel-caption-wait",
+                    tr::editor::export::captions::cancel_wait().into(),
                 )
-                .label(tr::editor::export::captions::current())
-                .on_click(
-                    cx.listener(|this, _, window, cx| this.export_current_captions(window, cx)),
-                ),
+                .on_click(cx.listener(|this, _, _, cx| this.cancel_caption_export_wait(cx))),
             )
-            .when(!active, |view| {
-                view.child(
-                    ui::Button::plain(
-                        &theme,
+            .when(!active, |row| {
+                row.child(
+                    secondary(
                         "export-check-captions",
-                        ui::ButtonVariant::Gray,
-                        ui::ButtonSize::Md,
+                        tr::editor::export::captions::check().into(),
                     )
-                    .label(tr::editor::export::captions::check())
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.close_export(window, cx);
                         this.sidebar.tab = crate::editor_sidebar::SidebarTab::Captions;
@@ -3111,12 +3076,60 @@ impl EditorWindow {
             .child(
                 ui::Button::plain(
                     &theme,
-                    "export-cancel-caption-wait",
-                    ui::ButtonVariant::Gray,
+                    "export-current-captions",
+                    ui::ButtonVariant::Primary,
                     ui::ButtonSize::Md,
                 )
-                .label(tr::editor::export::captions::cancel_wait())
-                .on_click(cx.listener(|this, _, _, cx| this.cancel_caption_export_wait(cx))),
+                .label(tr::editor::export::captions::current())
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.export_current_captions(window, cx)),
+                ),
+            );
+        div()
+            .absolute()
+            .inset_0()
+            .occlude()
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(px(24.))
+            .bg(Hsla::from(editor.window))
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(460.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .p(px(24.))
+                    .rounded(px(14.))
+                    .bg(Hsla::from(editor.card))
+                    .shadow(editor.card_shadow())
+                    .child(
+                        div()
+                            .text_size(px(16.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(if active {
+                                tr::editor::export::captions::waiting()
+                            } else {
+                                tr::editor::export::captions::needs_attention()
+                            }),
+                    )
+                    .when(!message.is_empty(), |card| {
+                        card.child(div().text_size(px(13.)).line_height(px(20.)).child(message))
+                    })
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .line_height(px(18.))
+                            .text_color(Hsla::from(editor.text_2))
+                            .child(if active {
+                                tr::editor::export::captions::current_note()
+                            } else {
+                                tr::editor::export::captions::current_note_idle()
+                            }),
+                    )
+                    .child(actions),
             )
             .into_any_element()
     }

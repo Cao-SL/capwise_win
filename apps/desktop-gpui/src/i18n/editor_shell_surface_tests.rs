@@ -291,10 +291,6 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
             "Finish the recording setup before waiting for captions.",
         ),
         (
-            tr::editor::export::captions::cancelled(),
-            "Caption processing was cancelled. Check captions or export the current version.",
-        ),
-        (
             tr::editor::export::captions::not_started(),
             "Caption processing did not start. Check its settings or export the current version.",
         ),
@@ -1340,6 +1336,25 @@ fn editor_shell_surfaces_match_the_literals_they_replaced() {
         (
             tr::editor::window::image::changed(),
             "This image changed while choosing a replacement. Select it and try again.",
+        ),
+        (tr::editor::window::overlay::title_hint(), "Add a title (T)"),
+        (tr::editor::window::overlay::redact(), "Redact"),
+        (
+            tr::editor::window::overlay::redact_hint(),
+            "Draw a redaction (R)",
+        ),
+        (
+            tr::editor::window::overlay::redact_draw(),
+            "Drag to cover an area. Esc cancels.",
+        ),
+        (
+            tr::editor::window::overlay::redact_range(),
+            "Move the playhead onto the recording to draw a redaction.",
+        ),
+        (tr::editor::window::overlay::pasted_image(), "Pasted image"),
+        (
+            tr::editor::window::overlay::paste_failed(),
+            "Could not paste the image. Try importing it from a file.",
         ),
         (tr::editor::window::image::filter(), "Images"),
         (

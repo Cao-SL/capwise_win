@@ -1107,7 +1107,18 @@ fn agent_installer_dry_run_is_machine_readable() {
     assert_eq!(json["target"], "codex");
     assert_eq!(json["dryRun"], true);
     assert_eq!(json["applied"], false);
-    assert_eq!(json["changes"].as_array().map(Vec::len), Some(2));
+    let changes = json["changes"].as_array().unwrap();
+    for skill in ["cap/SKILL.md", "cap-demo/SKILL.md"] {
+        assert!(changes.iter().any(|change| {
+            change["component"] == "skill"
+                && Path::new(change["path"].as_str().unwrap()).ends_with(skill)
+        }));
+    }
+    assert!(changes.iter().any(|change| {
+        change["component"] == "mcp"
+            && change["action"] == "merge"
+            && Path::new(change["path"].as_str().unwrap()).ends_with("config.toml")
+    }));
 }
 
 #[test]
@@ -1517,11 +1528,20 @@ fn auth_status_verifies_agent_credentials_with_the_server() {
     let server_url = format!("http://{}", listener.local_addr().unwrap());
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 4096];
-        let length = stream.read(&mut request).unwrap();
-        let request = String::from_utf8_lossy(&request[..length]);
-        assert!(request.starts_with("GET /api/v1/auth/status HTTP/1.1"));
-        assert!(request.contains("authorization: Bearer cap_cli_synthetic_agent_status"));
+        let mut request = BufReader::new(&mut stream).lines();
+        assert_eq!(
+            request.next().unwrap().unwrap(),
+            "GET /api/v1/auth/status HTTP/1.1"
+        );
+        assert!(
+            request
+                .map(Result::unwrap)
+                .take_while(|line| !line.is_empty())
+                .any(|line| line.split_once(':').is_some_and(|(name, value)| {
+                    name.eq_ignore_ascii_case("authorization")
+                        && value.trim() == "Bearer cap_cli_synthetic_agent_status"
+                }))
+        );
         let body = r#"{"authenticated":true,"tokenKind":"agent","expiresAt":"2027-01-01T00:00:00.000Z","scopes":["caps:read"],"requestId":"request-test"}"#;
         write!(
             stream,
@@ -1974,6 +1994,8 @@ fn title_card_outro_reanchors_and_keeps_identity_when_intro_is_added() {
         "outro",
         "--title",
         "下一步，自己试一次",
+        "--duration",
+        "2",
         "--expected-revision",
         initial["revision"].as_str().unwrap(),
         "--json",
@@ -1989,6 +2011,8 @@ fn title_card_outro_reanchors_and_keeps_identity_when_intro_is_added() {
         "intro",
         "--title",
         "从这里开始",
+        "--duration",
+        "2",
         "--expected-revision",
         outro["resultRevision"].as_str().unwrap(),
         "--json",
@@ -2155,6 +2179,8 @@ fn title_card_retimes_unsorted_scenes_without_swapping_their_content_or_unknown_
         "intro",
         "--title",
         "封面",
+        "--duration",
+        "2",
         "--expected-revision",
         read["revision"].as_str().unwrap(),
         "--json",
@@ -2640,4 +2666,118 @@ fn captions_translation_modes_reject_stale_translations_without_writing() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(parse_json(&output)["code"], "NO_CAPTIONS");
     assert!(!output_path.exists());
+}
+
+#[test]
+fn overlay_commands_preview_apply_and_preserve_existing_project_data() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("overlay.cap");
+    write_title_card_project(&project);
+    write_test_media(&project.join("content/display.mp4"));
+    let config = project.join("project-config.json");
+    let before = std::fs::read(&config).unwrap();
+    let image = directory.path().join("diagram.png");
+    image::RgbaImage::from_pixel(4, 2, image::Rgba([20, 70, 255, 255]))
+        .save(&image)
+        .unwrap();
+
+    let target = project.to_str().unwrap();
+    let title = [
+        "project",
+        "overlay",
+        "title",
+        target,
+        "--start",
+        "0.15",
+        "--end",
+        "0.45",
+        "--text",
+        "架构图",
+        "--json",
+    ];
+    let picture = [
+        "project",
+        "overlay",
+        "image",
+        target,
+        "--start",
+        "0.20",
+        "--end",
+        "0.55",
+        "--file",
+        image.to_str().unwrap(),
+        "--json",
+    ];
+    let redact = [
+        "project", "overlay", "redact", target, "--start", "0.25", "--end", "0.60", "--x", "0.10",
+        "--y", "0.20", "--width", "0.30", "--height", "0.40", "--effect", "pixelate", "--json",
+    ];
+    let preview = |args: &[&str]| {
+        let output = run(&[args, &["--dry-run"]].concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        parse_json(&output)
+    };
+    let apply = |args: &[&str], preview: &serde_json::Value| {
+        let output = run(&[
+            args,
+            &["--expected-revision", preview["revision"].as_str().unwrap()],
+        ]
+        .concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        let applied = parse_json(&output);
+        assert_eq!(applied["resultRevision"], preview["resultRevision"]);
+        assert_eq!(applied["overlay"], preview["overlay"]);
+        assert_eq!(applied["written"], true);
+        applied
+    };
+    let stale_picture = preview(&picture);
+    let title_plan = preview(&title);
+    assert_eq!(std::fs::read(&config).unwrap(), before);
+    assert!(!project.join("content/images").exists());
+    assert_eq!(apply(&title, &title_plan)["overlay"]["content"], "架构图");
+
+    let stale = run(&[
+        picture.as_slice(),
+        &[
+            "--expected-revision",
+            stale_picture["revision"].as_str().unwrap(),
+        ],
+    ]
+    .concat());
+    assert!(!stale.status.success());
+    assert_eq!(parse_json(&stale)["code"], "REVISION_CONFLICT");
+    assert!(!project.join("content/images").exists());
+
+    let picture_plan = preview(&picture);
+    assert!(!project.join("content/images").exists());
+    let applied = apply(&picture, &picture_plan);
+    let asset = project.join(applied["overlay"]["path"].as_str().unwrap());
+    assert_eq!(std::fs::read(asset).unwrap(), std::fs::read(image).unwrap());
+
+    let redact_plan = preview(&redact);
+    let applied = apply(&redact, &redact_plan);
+    assert_eq!(
+        applied["overlay"]["center"],
+        serde_json::json!({"x": 0.25, "y": 0.4})
+    );
+    assert_eq!(applied["overlay"]["fadeDuration"], 0.0);
+    let updated: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+    assert_eq!(updated["timeline"]["futureTimelineField"], "keep");
+    assert_eq!(
+        updated["timeline"]["textSegments"][0]["futureTextField"]["keep"],
+        true
+    );
+    assert_eq!(
+        updated["timeline"]["audioSegments"][0]["futureMusicField"],
+        true
+    );
+
+    let mut invalid = redact;
+    invalid[15] = "1.0";
+    let before = std::fs::read(&config).unwrap();
+    let rejected = run(&[invalid.as_slice(), &["--dry-run"]].concat());
+    assert!(!rejected.status.success());
+    assert_eq!(parse_json(&rejected)["code"], "INVALID_ARGUMENT");
+    assert_eq!(std::fs::read(&config).unwrap(), before);
 }

@@ -82,6 +82,7 @@ use crate::{
 mod frame;
 mod loading;
 mod markers;
+mod overlay_shortcuts;
 mod scenes;
 mod snap;
 mod style_preset_ui;
@@ -1701,6 +1702,8 @@ pub struct EditorWindow {
     /// What a new shape is: the kind last drawn, added or picked.
     pub(crate) last_shape_kind: cap_project::ShapeKind,
     pub(crate) shape_clipboard: Vec<cap_project::ShapeSegment>,
+    shape_clipboard_token: Option<String>,
+    redaction_tool: overlay_shortcuts::RedactionTool,
 
     preview_quality: crate::store::EditorPreviewQuality,
     /// The automatic preview scale (see [`auto_preview_scale`]).
@@ -2419,6 +2422,8 @@ impl EditorWindow {
             shape_tool_trigger: Rc::new(std::cell::Cell::new(None)),
             last_shape_kind: cap_project::ShapeKind::Arrow,
             shape_clipboard: Vec::new(),
+            shape_clipboard_token: None,
+            redaction_tool: Default::default(),
             // The control is hidden and `preview_scale` follows the canvas,
             // so an older stored choice (say 1/4) is ignored.
             preview_quality: crate::store::EditorPreviewQuality::Half,
@@ -3184,6 +3189,7 @@ impl EditorWindow {
         self.selection = None;
         self.sidebar.image_asset_status = None;
         self.canvas_selection = None;
+        self.redaction_tool = Default::default();
         self.canvas_drag = None;
         self.canvas_drag_rect = None;
         self.canvas_drag_camera_rect = None;
@@ -3833,6 +3839,7 @@ impl EditorWindow {
     /// `handlePlayPauseClick` (`Player.tsx:212-233`), verbatim: at the end,
     /// restart from 0; playing, stop; otherwise seek to the playhead and go.
     pub fn toggle_play(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.clear_redaction_tool();
         if self.preparing_transport_active() {
             if self.preparing_controls_ready() {
                 let seek = self.is_at_end().then_some(0.0);
@@ -4219,6 +4226,16 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.redaction_tool.active() && event.keystroke.key == "escape" && !event.is_held {
+            self.redaction_tool = Default::default();
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+        if self.redaction_tool.drawing() {
+            cx.stop_propagation();
+            return;
+        }
         if self.assistant.open && event.keystroke.key == "escape" && !event.is_held {
             self.close_assistant(window, cx);
             cx.stop_propagation();
@@ -4536,13 +4553,21 @@ impl EditorWindow {
                         .is_some_and(|selection| selection.track == TrackKind::Shape) =>
                 {
                     cx.stop_propagation();
-                    self.copy_shapes();
+                    if self.copy_shapes() {
+                        let token = uuid::Uuid::new_v4().to_string();
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string_with_metadata(
+                            tr::editor::timeline::track::shape().into(),
+                            token.clone(),
+                        ));
+                        self.shape_clipboard_token = Some(token);
+                    }
                     return;
                 }
-                "v" if !keystroke.modifiers.shift && !self.shape_clipboard.is_empty() => {
-                    cx.stop_propagation();
-                    self.paste_shapes(window, cx);
-                    window.refresh();
+                "v" if !keystroke.modifiers.shift && self.overlay_shortcut_available() => {
+                    if self.paste_editor_overlay(window, cx) {
+                        cx.stop_propagation();
+                        window.refresh();
+                    }
                     return;
                 }
                 // `Cmd/Ctrl+A` expands the selection to the whole track.
@@ -4601,6 +4626,14 @@ impl EditorWindow {
             return;
         }
         match keystroke.key.as_str() {
+            "t" if !keystroke.modifiers.function && self.overlay_shortcut_available() => {
+                self.add_title_from_shortcut(window, cx);
+                cx.stop_propagation();
+            }
+            "r" if !keystroke.modifiers.function && self.overlay_shortcut_available() => {
+                self.toggle_redaction_tool(window, cx);
+                cx.stop_propagation();
+            }
             "up" | "down" | "home" | "end" => {
                 if keystroke.modifiers.function
                     || self.crop.is_some()
@@ -7199,8 +7232,8 @@ impl EditorWindow {
             |timeline| {
                 index = match kind {
                     TrackKind::Text => {
-                        let mut segment = crate::style_presets::new_text_segment(start, end, lane);
-                        segment.content = tr::editor::panel::text_segment::default_content().into();
+                        let segment =
+                            crate::style_presets::new_placeholder_text_segment(start, end, lane);
                         edits::insert_text_segment(timeline, segment)
                     }
                     TrackKind::Shape => match new_shape {
@@ -9035,8 +9068,8 @@ impl EditorWindow {
                         None => return false,
                     },
                     TrackKind::Text => {
-                        let mut segment = crate::style_presets::new_text_segment(start, end, lane);
-                        segment.content = tr::editor::panel::text_segment::default_content().into();
+                        let segment =
+                            crate::style_presets::new_placeholder_text_segment(start, end, lane);
                         edits::insert_text_segment(timeline, segment)
                     }
                     TrackKind::Mask => edits::insert_mask_segment(
@@ -9300,6 +9333,56 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.commit_image_import_inner(Some(lane), time, imported, window, cx);
+    }
+
+    fn commit_image_import_inner(
+        &mut self,
+        lane: Option<u32>,
+        time: f64,
+        imported: crate::import::ImportedEditorImage,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.voiceover.is_busy() {
+            return false;
+        }
+        if !edits::ensure_timeline(&mut self.project, &self.clip_display_durations) {
+            self.sidebar.image_import_error =
+                Some(tr::editor::window::image::recording_unavailable().into());
+            cx.notify();
+            return false;
+        }
+        let total = self.total_duration();
+        if total <= 0.0 {
+            self.sidebar.image_import_error =
+                Some(tr::editor::window::image::recording_unavailable().into());
+            cx.notify();
+            return false;
+        }
+        let Some(timeline) = self.project.timeline.as_ref() else {
+            self.sidebar.image_import_error =
+                Some(tr::editor::window::image::recording_unavailable().into());
+            cx.notify();
+            return false;
+        };
+        let placement = match lane {
+            Some(lane) => crate::asset_library::image_placement(timeline, lane, time, total)
+                .map(|(track, start, end)| cap_project::OverlayRange { start, end, track }),
+            None => cap_project::OverlayRange::at_playhead(
+                timeline,
+                cap_project::OverlayTrackKind::Image,
+                time,
+                3.,
+                total,
+            )
+            .ok(),
+        };
+        let Some(range) = placement else {
+            self.sidebar.image_import_error = Some(tr::editor::assets::move_playhead().into());
+            self.show_notice(tr::editor::assets::move_playhead(), window, cx);
+            return false;
+        };
         let record = match crate::asset_library::ensure_record(
             &self.project_path,
             &crate::asset_library::AssetRecord {
@@ -9314,65 +9397,29 @@ impl EditorWindow {
             Err(error) => {
                 self.sidebar.image_import_error = Some(error.clone());
                 self.show_notice(error, window, cx);
-                return;
+                return false;
             }
-        };
-        if !edits::ensure_timeline(&mut self.project, &self.clip_display_durations) {
-            self.sidebar.image_import_error =
-                Some(tr::editor::window::image::recording_unavailable().into());
-            cx.notify();
-            return;
-        }
-        let total = self.total_duration();
-        if total <= 0.0 {
-            self.sidebar.image_import_error =
-                Some(tr::editor::window::image::recording_unavailable().into());
-            cx.notify();
-            return;
-        }
-        let Some(timeline) = self.project.timeline.as_ref() else {
-            self.sidebar.image_import_error =
-                Some(tr::editor::window::image::recording_unavailable().into());
-            cx.notify();
-            return;
-        };
-        let Some((lane, start, end)) =
-            crate::asset_library::image_placement(timeline, lane, time, total)
-        else {
-            self.sidebar.image_import_error = Some(tr::editor::assets::move_playhead().into());
-            self.show_notice(tr::editor::assets::move_playhead(), window, cx);
-            return;
         };
         let output = self
             .frame_layout
             .map_or([1920, 1080], |layout| layout.output_size);
-        let ratio = f64::from(imported.width) / f64::from(imported.height) * f64::from(output[1])
-            / f64::from(output[0]);
-        let size = if ratio >= 1.0 {
-            cap_project::XY::new(0.3, 0.3 / ratio)
-        } else {
-            cap_project::XY::new(0.3 * ratio, 0.3)
-        };
+        let aspect = f64::from(output[0]) / f64::from(output[1].max(1));
         let mut index = 0;
         let (animation_in, emphasis, animation_out) =
             self.take_pending_motion().unwrap_or_default();
         if self.edit(
             |timeline| {
-                index = edits::insert_image_segment(
-                    timeline,
-                    cap_project::ImageSegment {
-                        start,
-                        end,
-                        track: lane,
-                        path: imported.path,
-                        name: imported.name,
-                        size,
-                        animation_in,
-                        emphasis,
-                        animation_out,
-                        ..Default::default()
-                    },
+                let mut segment = range.image(
+                    imported.path,
+                    imported.name,
+                    imported.width,
+                    imported.height,
+                    aspect,
                 );
+                segment.animation_in = animation_in;
+                segment.emphasis = emphasis;
+                segment.animation_out = animation_out;
+                index = edits::insert_image_segment(timeline, segment);
                 true
             },
             window,
@@ -9385,10 +9432,12 @@ impl EditorWindow {
                 .timeline
                 .as_ref()
                 .and_then(|timeline| timeline.image_segments.get(index))
-                .map_or(start, crate::asset_library::image_reveal_time);
+                .map_or(range.start, crate::asset_library::image_reveal_time);
             self.seek_to_time(preview_time, cx);
             self.remember_project_asset(record, cx);
+            return true;
         }
+        false
     }
 
     fn commit_audio_request(
@@ -12221,9 +12270,10 @@ impl EditorWindow {
                     .text(&theme)
                     .left_icon("icons/type.svg")
                     .when(!narrow, |button| button.label(TrackKind::Text.label()))
-                    .tooltip(&theme, TrackKind::Text.picker_description())
+                    .tooltip(&theme, tr::editor::window::overlay::title_hint())
                     .disabled(!self.project_ready())
                     .on_click(cx.listener(|this, _, window, cx| {
+                        this.redaction_tool = Default::default();
                         this.shape_tool = None;
                         this.add_overlay_segment(TrackKind::Text, window, cx);
                     })),
@@ -14507,6 +14557,11 @@ impl Render for EditorWindow {
                 )
                 .cursor(cursor)
             }))
+            .children(
+                self.redaction_tool
+                    .drawing()
+                    .then(|| self.redaction_drag_layer(cx)),
+            )
             .children(self.shape_drag.as_ref().map(|drag| {
                 ui::Slider::drag_layer(
                     "canvas-shape-drag",

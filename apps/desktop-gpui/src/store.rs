@@ -79,8 +79,12 @@ pub struct CameraWindowState {
     pub shape: CameraShape,
     pub mirrored: bool,
     pub background_blur: BlurMode,
-    #[serde(default)]
+    #[serde(default = "default_skin_smoothing")]
     pub skin_smoothing: bool,
+}
+
+fn default_skin_smoothing() -> bool {
+    true
 }
 
 impl Default for CameraWindowState {
@@ -90,7 +94,7 @@ impl Default for CameraWindowState {
             shape: CameraShape::Round,
             mirrored: false,
             background_blur: BlurMode::Off,
-            skin_smoothing: false,
+            skin_smoothing: default_skin_smoothing(),
         }
     }
 }
@@ -2215,6 +2219,29 @@ pub fn preset_names() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_smoothing_defaults_on_and_preserves_explicit_opt_out() {
+        let defaults = CameraWindowState::default();
+        assert!(defaults.skin_smoothing);
+        let mut legacy = serde_json::to_value(defaults).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("skin_smoothing")
+            .unwrap();
+        assert!(
+            serde_json::from_value::<CameraWindowState>(legacy.clone())
+                .unwrap()
+                .skin_smoothing
+        );
+        legacy["skin_smoothing"] = Value::Bool(false);
+        assert!(
+            !serde_json::from_value::<CameraWindowState>(legacy)
+                .unwrap()
+                .skin_smoothing
+        );
+    }
 
     #[test]
     fn window_capture_defaults_preserve_explicit_scope_and_centering_choices() {

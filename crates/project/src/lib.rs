@@ -1,7 +1,7 @@
 mod animated_gradient;
+pub mod caption_breaks;
 mod caption_timing;
 mod caption_translation;
-pub mod caption_breaks;
 pub mod caption_words;
 #[cfg(test)]
 mod config_write_tests;
@@ -11,6 +11,8 @@ pub mod disfluency;
 pub mod filler_review;
 pub mod keyboard;
 mod meta;
+mod overlay_image;
+mod overlays;
 mod shapes;
 mod title_cards;
 
@@ -30,6 +32,8 @@ pub use configuration::*;
 pub use cursor::*;
 pub use keyboard::*;
 pub use meta::*;
+pub use overlay_image::*;
+pub use overlays::*;
 pub use shapes::*;
 pub use title_cards::*;
 

@@ -38,8 +38,6 @@ mod diagnostics;
 mod doodle;
 mod draw_bench;
 mod editor_assets;
-mod global_library;
-mod stickers;
 mod editor_assistant;
 mod editor_audio;
 mod editor_bench;
@@ -70,6 +68,7 @@ mod focus_border;
 mod foreign_window;
 #[cfg(debug_assertions)]
 mod glass_probe;
+mod global_library;
 mod hotkeys;
 mod i18n;
 mod import;
@@ -138,6 +137,7 @@ mod settings_agents;
 mod settings_ai;
 mod settings_cover;
 mod settings_pages;
+mod settings_speech;
 mod settings_stock;
 mod settings_window;
 #[cfg(feature = "cap-cloud")]
@@ -148,6 +148,7 @@ mod sign_in;
 mod single_instance;
 #[cfg(debug_assertions)]
 mod snapshot;
+mod stickers;
 mod stock_media;
 mod store;
 mod style_presets;

@@ -64,6 +64,15 @@ pub(crate) fn write_checked(
     expected: Option<&[u8]>,
     bytes: &[u8],
 ) -> Result<()> {
+    write_checked_with(destination, expected, bytes, || Ok(None))
+}
+
+pub(crate) fn write_checked_with(
+    destination: &Path,
+    expected: Option<&[u8]>,
+    bytes: &[u8],
+    prepare: impl FnOnce() -> Result<Option<PathBuf>>,
+) -> Result<()> {
     let _lock = acquire_write_lock(destination)?;
     let temporary = TemporaryFile::write(destination, bytes)?;
     let current = match fs::read(destination) {
@@ -77,7 +86,14 @@ pub(crate) fn write_checked(
             "The project changed while preparing the edit; read it again before retrying",
         ));
     }
-    crate::atomic::replace(&temporary.path, destination).map_err(io_error)
+    let new_asset = prepare()?;
+    if let Err(cause) = crate::atomic::replace(&temporary.path, destination) {
+        if let Some(path) = new_asset {
+            let _ = fs::remove_file(path);
+        }
+        return Err(io_error(cause));
+    }
+    Ok(())
 }
 
 fn acquire_write_lock(destination: &Path) -> Result<fs::File> {

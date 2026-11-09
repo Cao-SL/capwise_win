@@ -9,7 +9,7 @@ members = [".", "kernels", "i18n-build", "glass"]
 
 [package]
 name = "cap-desktop-gpui"
-version = "0.3.3"
+version = "0.3.4"
 description = "Capwise (灵录) — Beautiful offline screen recordings."
 edition = "2024"
 license = "AGPL-3.0"
@@ -64,7 +64,7 @@ cap-enc-ffmpeg = { path = "../../crates/enc-ffmpeg" }
 # Already in the tree through cap-recording; direct so the camera draw bench
 # can construct `NativeCameraFrame.timestamp` for its synthetic frames.
 cap-timestamp = { path = "../../crates/timestamp" }
-cap-utils = { path = "../../crates/utils" }
+cap-utils = { path = "../../crates/utils", features = ["speech"] }
 cap-project = { path = "../../crates/project" }
 # The cursor style picker draws the same SVG assets the renderer composites.
 # gpui's `svg()` keeps only a glyph's alpha, so the two-tone cursor art has to
@@ -78,6 +78,7 @@ rodio = { version = "0.19.0", default-features = false, features = [
     "mp3",
     "vorbis",
     "symphonia-aac",
+    "wav",
 ] }
 # The editor stack. `cap-rendering` is not a new subtree -- cap-recording
 # already depends on it, so wgpu 25 and its vendored wgpu-hal have been built

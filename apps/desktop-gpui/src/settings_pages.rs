@@ -320,6 +320,7 @@ pub(crate) struct PagesState {
     pub(crate) ai: crate::settings_ai::AiState,
     pub(crate) stock: crate::settings_stock::StockSettings,
     pub(crate) cover: crate::settings_cover::CoverSettings,
+    pub(crate) speech: crate::settings_speech::SpeechSettings,
     pub(crate) agents: crate::settings_agents::AgentsSettings,
 
     // Feedback (feedback.tsx)
@@ -433,6 +434,7 @@ impl PagesState {
             ai: crate::settings_ai::AiState::new(window, cx),
             stock: crate::settings_stock::StockSettings::new(window, cx),
             cover: crate::settings_cover::CoverSettings::new(window, cx),
+            speech: crate::settings_speech::SpeechSettings::new(window, cx),
             agents: crate::settings_agents::AgentsSettings::new(window, cx),
             feedback_input,
             feedback_draft: String::new(),
