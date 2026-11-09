@@ -13,14 +13,21 @@ use crate::theme::Theme;
 /// `kbdSymbolModifier(key, os)`: macOS renders the glyphs, every other OS
 /// renders the word. Non-modifier keys pass through with the `Key` prefix
 /// stripped, which is what `HotkeyText` does with a `KeyboardEvent.code`.
+///
+/// `meta` is the platform modifier: Cmd on macOS, the Windows key on Windows,
+/// Super on Linux. The stored shortcut field of the same name maps to
+/// `Modifiers::META` in `global-hotkey`, so on Windows it is the Windows key,
+/// not Ctrl -- the app's non-macOS defaults use `ctrl`/`alt`/`shift` instead.
 pub fn kbd_symbol(key: &str) -> SharedString {
     let mac = cfg!(target_os = "macos");
     let symbol = match key.to_ascii_lowercase().as_str() {
         "meta" | "cmd" | "command" | "super" => {
             if mac {
                 "⌘"
-            } else {
+            } else if cfg!(target_os = "windows") {
                 "Win"
+            } else {
+                "Super"
             }
         }
         "ctrl" | "control" => {
@@ -138,6 +145,26 @@ mod tests {
         assert_eq!(kbd_symbol("ctrl").as_ref(), "⌃");
         assert_eq!(kbd_symbol("shift").as_ref(), "⇧");
         assert_eq!(kbd_symbol("alt").as_ref(), "⌥");
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn modifiers_render_as_words_on_windows() {
+        assert_eq!(kbd_symbol("meta").as_ref(), "Win");
+        assert_eq!(kbd_symbol("super").as_ref(), "Win");
+        assert_eq!(kbd_symbol("ctrl").as_ref(), "Ctrl");
+        assert_eq!(kbd_symbol("shift").as_ref(), "Shift");
+        assert_eq!(kbd_symbol("alt").as_ref(), "Alt");
+    }
+
+    #[test]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    fn modifiers_render_as_words_on_other_platforms() {
+        assert_eq!(kbd_symbol("meta").as_ref(), "Super");
+        assert_eq!(kbd_symbol("super").as_ref(), "Super");
+        assert_eq!(kbd_symbol("ctrl").as_ref(), "Ctrl");
+        assert_eq!(kbd_symbol("shift").as_ref(), "Shift");
+        assert_eq!(kbd_symbol("alt").as_ref(), "Alt");
     }
 
     #[test]
