@@ -19,6 +19,7 @@ mod capture_exclusion;
 mod hidden_frame;
 mod power_events;
 mod session_end;
+mod taskbar;
 mod url_scheme;
 mod window_chrome;
 
@@ -195,6 +196,22 @@ pub fn system_accent_color() -> Option<u32> {
     }
     let rgb = abgr_to_rgb(accent);
     (rgb != 0).then_some(rgb)
+}
+
+/// ITaskbarList3 progress for a long export. The HWND is captured once at the
+/// start of the export; every failure path is a silent no-op.
+pub fn remember_taskbar_window(window: &Window) {
+    if let Some(native) = native_window(window) {
+        taskbar::remember_window(native.hwnd());
+    }
+}
+
+pub fn set_taskbar_progress(completed: u64, total: u64) {
+    taskbar::set_progress(completed, total);
+}
+
+pub fn clear_taskbar_progress() {
+    taskbar::clear();
 }
 
 pub fn window_is_dark(_window: &Window) -> Option<bool> {
