@@ -3,6 +3,15 @@ name: Capwise platform candidates
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        default: all
+        options:
+          - all
+          - mac-intel
+          - linux-x64
+          - windows-x64
       mac_candidate_run:
         description: Workflow run with an existing Intel Mac app candidate
         required: false
@@ -26,23 +35,14 @@ jobs:
   build:
     if: inputs.linux_candidate_run == '' && inputs.mac_candidate_run == ''
     name: ${{ matrix.platform }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON('{"mac-intel":"macos-15-intel","linux-x64":"ubuntu-24.04","windows-x64":"windows-2022"}')[matrix.platform] }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: mac-intel
-            runner: macos-15-intel
-            target: x86_64-apple-darwin
-          - platform: linux-x64
-            runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - platform: windows-x64
-            runner: windows-2022
-            target: x86_64-pc-windows-msvc
+        platform: ${{ inputs.platform && inputs.platform != 'all' && fromJSON(format('["{0}"]', inputs.platform)) || fromJSON('["mac-intel","linux-x64","windows-x64"]') }}
     env:
-      RUST_TARGET_TRIPLE: ${{ matrix.target }}
+      RUST_TARGET_TRIPLE: ${{ fromJSON('{"mac-intel":"x86_64-apple-darwin","linux-x64":"x86_64-unknown-linux-gnu","windows-x64":"x86_64-pc-windows-msvc"}')[matrix.platform] }}
       CARGO_PROFILE_RELEASE_DEBUG: "0"
       CARGO_PROFILE_RELEASE_STRIP: symbols
     steps:
@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: |
           scripts/prepare-gpui-dependency.sh
-          node scripts/sync-desktop-versions.mjs
+          if [[ "$RUNNER_OS" != "macOS" ]]; then node scripts/sync-desktop-versions.mjs; fi
           node scripts/setup.js
           rustup toolchain install 1.95.0 --profile minimal
 
@@ -92,7 +92,7 @@ jobs:
       - name: Cache release builds
         uses: ./.github/actions/setup-rust-cache
         with:
-          target: ${{ matrix.target }}
+          target: ${{ env.RUST_TARGET_TRIPLE }}
           prefix-key: capwise-platform-release-v1
           save-cache: "true"
           cache-on-failure: "true"
