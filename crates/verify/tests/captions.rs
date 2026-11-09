@@ -940,6 +940,7 @@ fn styled_settings(rng: &mut Rng) -> CaptionSettings {
         uppercase: true,
         show_filler_words: false,
         filler_language: None,
+        ..Default::default()
     }
 }
 
