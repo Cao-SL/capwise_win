@@ -1179,12 +1179,28 @@ impl Theme {
     /// palette there.
     pub const TARGET_HIGHLIGHT: u32 = 0x155dfc;
 
-    /// `--macos-settings-accent: AccentColor` -- the selected sidebar icon and
-    /// the checked toggle. `AccentColor` is the system-wide accent the user
-    /// picked in System Settings; gpui exposes no query for it, so this is
-    /// macOS's default blue. A user on a non-blue accent sees blue here and
-    /// their own colour in the Tauri app (README deviation).
-    pub const SETTINGS_ACCENT: u32 = 0x007aff;
+    /// macOS's default blue, used when the OS accent cannot be read. On
+    /// Windows [`Self::settings_accent`] replaces it with the user's real
+    /// accent from the DWM registry key.
+    const DEFAULT_SETTINGS_ACCENT: u32 = 0x007aff;
+
+    /// `--macos-settings-accent: AccentColor` -- the selected sidebar icon,
+    /// the checked toggle, focus rings and link text. macOS keeps the blue
+    /// gpui has no API to query; Windows reads the system accent once and
+    /// caches it for the process.
+    pub fn settings_accent() -> u32 {
+        #[cfg(target_os = "windows")]
+        {
+            static ACCENT: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+            *ACCENT.get_or_init(|| {
+                crate::platform::system_accent_color().unwrap_or(Self::DEFAULT_SETTINGS_ACCENT)
+            })
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Self::DEFAULT_SETTINGS_ACCENT
+        }
+    }
 
     /// The TSX has a `#DCDCDC` unfocused state, but it hangs off an
     /// `onFocusChanged` the non-activating main panel never delivers -- the

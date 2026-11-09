@@ -1807,7 +1807,7 @@ impl TextInput {
         Self {
             bg: Some(theme.settings_fill()),
             border: Some(theme.settings_border()),
-            focus_border: Some(Theme::with_alpha(gpui::rgb(Theme::SETTINGS_ACCENT), 0.8)),
+            focus_border: Some(Theme::with_alpha(gpui::rgb(Theme::settings_accent()), 0.8)),
             text: theme.settings_text(),
             muted: theme.settings_muted(),
             caret_color: theme.settings_text(),
@@ -1976,7 +1976,7 @@ impl TextInput {
 /// same macOS blue the toggles already deviate to, at the 30 % a focused
 /// `<input>`'s selection paints at.
 fn selection_tint() -> Hsla {
-    Theme::with_alpha(gpui::rgb(Theme::SETTINGS_ACCENT), 0.30)
+    Theme::with_alpha(gpui::rgb(Theme::settings_accent()), 0.30)
 }
 
 // -- Rendering ----------------------------------------------------------------

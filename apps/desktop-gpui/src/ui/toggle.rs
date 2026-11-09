@@ -96,7 +96,7 @@ impl Toggle {
             } else {
                 gpui::hsla(0., 0., 0., 0.13)
             },
-            on_fill: gpui::rgb(Theme::SETTINGS_ACCENT).into(),
+            on_fill: gpui::rgb(Theme::settings_accent()).into(),
             ..Self::plain(theme, id, checked)
         }
     }
@@ -107,7 +107,7 @@ impl Toggle {
         Self {
             size: ToggleSize::Sm,
             off_fill: Theme::with_alpha(theme.gray_12, 0.10),
-            on_fill: gpui::rgb(Theme::SETTINGS_ACCENT).into(),
+            on_fill: gpui::rgb(Theme::settings_accent()).into(),
             ..Self::plain(theme, id, checked)
         }
     }
