@@ -3014,6 +3014,15 @@ export = "导出"
 open_bundle = "打开录制包"
 presets = "预设"
 
+[editor.window.overlay]
+title_hint = "添加标题（T）"
+redact = "脱敏"
+redact_hint = "框选脱敏（R）"
+redact_draw = "拖动框选要遮盖的区域，按 Esc 退出。"
+redact_range = "请将播放头移到录制画面，再框选脱敏。"
+pasted_image = "粘贴的图片"
+paste_failed = "无法粘贴图片，请尝试从文件导入。"
+
 [editor.window.image]
 changed = "选择替换图片时此图片已更改。请选中它后重试。"
 filter = "图片"

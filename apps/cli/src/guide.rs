@@ -412,6 +412,17 @@ fn build() -> Guide {
                     &[],
                 )
             },
+            CommandDoc {
+                notes: Some(
+                    "Use --start and --end in edited output seconds. For redact, --x/--y specify the normalized top-left and --width/--height the normalized size. image copies a local file into the project. Preview each add command with --dry-run --json and pass the returned revision with --expected-revision to write. Close the project in the desktop editor before applying CLI edits.",
+                ),
+                ..cmd(
+                    "project overlay title|image|redact",
+                    "Add a title, image, or redaction without opening the desktop editor.",
+                    OutputMode::SingleJson,
+                    &[],
+                )
+            },
             cmd(
                 "version",
                 "CLI version + execution context (distribution, bundled binaries).",

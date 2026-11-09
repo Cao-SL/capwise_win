@@ -2987,6 +2987,15 @@ export = "Exportieren"
 open_bundle = "Aufnahmepaket öffnen"
 presets = "Vorlagen"
 
+[editor.window.overlay]
+title_hint = "Titel hinzufügen (T)"
+redact = "Unkenntlich machen"
+redact_hint = "Bereich unkenntlich machen (R)"
+redact_draw = "Ziehe über den Bereich. Esc bricht ab."
+redact_range = "Setze den Abspielkopf auf die Aufnahme, um einen Bereich zu verdecken."
+pasted_image = "Eingefügtes Bild"
+paste_failed = "Das Bild konnte nicht eingefügt werden. Importiere es aus einer Datei."
+
 [editor.window.image]
 changed = "Dieses Bild hat sich bei der Auswahl eines Ersatzes geändert. Wählen Sie es aus und versuchen Sie es erneut."
 filter = "Bilder"

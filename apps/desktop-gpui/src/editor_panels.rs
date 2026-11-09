@@ -885,7 +885,11 @@ pub fn apply_text_preset(segment: &mut TextSegment, preset: &TextPreset, install
     segment.fade_duration = style
         .animation_in_duration
         .max(style.animation_out_duration);
-    if matches!(segment.content.trim(), "" | "Text") {
+    let content = segment.content.trim();
+    if content.is_empty()
+        || content == "Text"
+        || content == crate::i18n::tr::editor::panel::text_segment::default_content()
+    {
         segment.content = (preset.sample)().to_string();
     }
     if let Some(center) = preset.center {

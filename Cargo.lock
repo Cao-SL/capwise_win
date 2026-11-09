@@ -1569,6 +1569,7 @@ dependencies = [
  "bincode",
  "cap-cursor-info",
  "either",
+ "image 0.25.8",
  "log",
  "relative-path",
  "serde",

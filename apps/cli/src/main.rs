@@ -19,6 +19,7 @@ mod library;
 mod mcp;
 mod notifications;
 mod organizations;
+mod overlays;
 mod project;
 mod project_edit;
 mod record;
@@ -350,6 +351,8 @@ enum ProjectCommands {
     Captions(captions::CaptionArgs),
     #[command(about = "Read or safely edit reusable intro and outro cards")]
     TitleCard(title_cards::TitleCardArgs),
+    #[command(about = "Add titles, image overlays and redactions to a local project")]
+    Overlay(overlays::OverlayArgs),
 }
 
 #[derive(Args)]
@@ -751,6 +754,7 @@ impl ProjectArgs {
         match self.command {
             ProjectCommands::Captions(args) => args.run(json),
             ProjectCommands::TitleCard(args) => args.run(json).await,
+            ProjectCommands::Overlay(args) => args.run(json),
             // validate emits its own structured report (incl. JSON errors), so it is not wrapped.
             ProjectCommands::Validate(args) => {
                 project::validate(args.project_path, resolve_format(json, args.format))

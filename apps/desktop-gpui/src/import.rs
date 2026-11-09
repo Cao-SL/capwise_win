@@ -38,6 +38,10 @@ const MEDIA_IMPORT_EXTENSIONS: &[&str] = &[
     "bmp", "tif", "tiff",
 ];
 pub(crate) const OVERLAY_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp"];
+
+pub(crate) fn is_supported_overlay_image_path(path: &Path) -> bool {
+    has_supported_extension(path, OVERLAY_IMAGE_EXTENSIONS)
+}
 const MAX_IMAGE_DIMENSION: u32 = 16_384;
 static ACTIVE_IMPORT_WORKERS: AtomicUsize = AtomicUsize::new(0);
 
@@ -2672,72 +2676,23 @@ pub(crate) fn import_editor_image(
     project_path: &Path,
     source: &Path,
 ) -> Result<ImportedEditorImage, String> {
-    use std::{
-        hash::BuildHasher,
-        io::{Read, Write},
-    };
-    const MAX_BYTES: u64 = 64 * 1024 * 1024;
-    if !project_path.is_dir() || !has_supported_extension(source, OVERLAY_IMAGE_EXTENSIONS) {
+    if !project_path.is_dir() || !is_supported_overlay_image_path(source) {
         return Err("Choose a PNG, JPEG, WebP, GIF or BMP image for this project".into());
     }
-    let file = std::fs::File::open(source).map_err(|error| error.to_string())?;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    if !metadata.is_file() || metadata.len() > MAX_BYTES {
-        return Err("Image files must be 64 MiB or smaller".into());
-    }
-    let mut encoded = Vec::new();
-    file.take(MAX_BYTES + 1)
-        .read_to_end(&mut encoded)
-        .map_err(|error| error.to_string())?;
-    if encoded.len() as u64 > MAX_BYTES {
-        return Err("Image files must be 64 MiB or smaller".into());
-    }
-    let (extension, width, height) = cap_gpui_kernels::codec::inspect_overlay_image(&encoded)?;
-    let mut bytes = [0u8; 16];
-    for chunk in bytes.chunks_exact_mut(8) {
-        chunk.copy_from_slice(
-            &std::collections::hash_map::RandomState::new()
-                .hash_one(source)
-                .to_be_bytes(),
-        );
-    }
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-    let id = format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    );
-    let relative = format!("content/images/{id}.{extension}");
-    let destination = project_path.join(&relative);
-    std::fs::create_dir_all(project_path.join("content/images"))
-        .map_err(|error| error.to_string())?;
-    let mut destination_file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&destination)
-        .map_err(|error| error.to_string())?;
-    if let Err(error) = destination_file
-        .write_all(&encoded)
-        .and_then(|()| destination_file.sync_all())
-    {
-        drop(destination_file);
-        let _ = std::fs::remove_file(&destination);
-        return Err(format!("Failed to save image: {error}"));
-    }
+    save_editor_image(project_path, cap_project::OverlayImage::from_file(source)?)
+}
+
+pub(crate) fn save_editor_image(
+    project_path: &Path,
+    image: cap_project::OverlayImage,
+) -> Result<ImportedEditorImage, String> {
+    let id = uuid::Uuid::new_v4();
+    image.write_to_project(project_path, id)?;
     Ok(ImportedEditorImage {
-        path: relative,
-        name: source
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Image")
-            .to_string(),
-        width,
-        height,
+        path: image.relative_path(id),
+        name: image.name,
+        width: image.width,
+        height: image.height,
     })
 }
 

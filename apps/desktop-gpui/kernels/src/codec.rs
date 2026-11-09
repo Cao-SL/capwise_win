@@ -127,48 +127,7 @@ pub fn decode_image_file(path: &Path) -> Result<image::DynamicImage, String> {
         .map_err(|e| format!("Failed to decode image: {e}"))
 }
 
-pub fn inspect_overlay_image(encoded: &[u8]) -> Result<(&'static str, u32, u32), String> {
-    use image::ImageDecoder as _;
-    let mut reader = image::ImageReader::new(std::io::Cursor::new(encoded))
-        .with_guessed_format()
-        .map_err(|error| error.to_string())?;
-    let extension = match reader.format() {
-        Some(image::ImageFormat::Png) => "png",
-        Some(image::ImageFormat::Jpeg) => "jpg",
-        Some(image::ImageFormat::WebP) => "webp",
-        Some(image::ImageFormat::Gif) => "gif",
-        Some(image::ImageFormat::Bmp) => "bmp",
-        _ => return Err("Choose a PNG, JPEG, WebP, GIF or BMP image".into()),
-    };
-    let mut limits = image::Limits::default();
-    limits.max_alloc = Some(128 * 1024 * 1024);
-    limits.max_image_width = Some(32_768);
-    limits.max_image_height = Some(32_768);
-    reader.limits(limits);
-    let mut decoder = reader.into_decoder().map_err(|error| {
-        format!("Cannot decode image (maximum 32,768 pixels per side): {error}")
-    })?;
-    let (source_width, source_height) = decoder.dimensions();
-    if source_width == 0
-        || source_height == 0
-        || u64::from(source_width) * u64::from(source_height) > 16_777_216
-        || decoder.total_bytes() > 128 * 1024 * 1024
-    {
-        return Err("Images must have at most 16,777,216 pixels (32,768 per side) and decode to at most 128 MiB".into());
-    }
-    let orientation = decoder.orientation().map_err(|error| error.to_string())?;
-    let decoded = image::DynamicImage::from_decoder(decoder)
-        .map_err(|error| format!("Cannot decode image: {error}"))?;
-    use image::metadata::Orientation;
-    let (width, height) = match orientation {
-        Orientation::Rotate90
-        | Orientation::Rotate270
-        | Orientation::Rotate90FlipH
-        | Orientation::Rotate270FlipH => (decoded.height(), decoded.width()),
-        _ => (decoded.width(), decoded.height()),
-    };
-    Ok((extension, width, height))
-}
+pub use cap_project::inspect_overlay_image;
 
 pub fn decode_jpeg_to_bgra(bytes: &[u8]) -> Option<image::RgbaImage> {
     let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg).ok()?;

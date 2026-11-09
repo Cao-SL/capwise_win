@@ -2641,3 +2641,117 @@ fn captions_translation_modes_reject_stale_translations_without_writing() {
     assert_eq!(parse_json(&output)["code"], "NO_CAPTIONS");
     assert!(!output_path.exists());
 }
+
+#[test]
+fn overlay_commands_preview_apply_and_preserve_existing_project_data() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = directory.path().join("overlay.cap");
+    write_title_card_project(&project);
+    write_test_media(&project.join("content/display.mp4"));
+    let config = project.join("project-config.json");
+    let before = std::fs::read(&config).unwrap();
+    let image = directory.path().join("diagram.png");
+    image::RgbaImage::from_pixel(4, 2, image::Rgba([20, 70, 255, 255]))
+        .save(&image)
+        .unwrap();
+
+    let target = project.to_str().unwrap();
+    let title = [
+        "project",
+        "overlay",
+        "title",
+        target,
+        "--start",
+        "0.15",
+        "--end",
+        "0.45",
+        "--text",
+        "架构图",
+        "--json",
+    ];
+    let picture = [
+        "project",
+        "overlay",
+        "image",
+        target,
+        "--start",
+        "0.20",
+        "--end",
+        "0.55",
+        "--file",
+        image.to_str().unwrap(),
+        "--json",
+    ];
+    let redact = [
+        "project", "overlay", "redact", target, "--start", "0.25", "--end", "0.60", "--x", "0.10",
+        "--y", "0.20", "--width", "0.30", "--height", "0.40", "--effect", "pixelate", "--json",
+    ];
+    let preview = |args: &[&str]| {
+        let output = run(&[args, &["--dry-run"]].concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        parse_json(&output)
+    };
+    let apply = |args: &[&str], preview: &serde_json::Value| {
+        let output = run(&[
+            args,
+            &["--expected-revision", preview["revision"].as_str().unwrap()],
+        ]
+        .concat());
+        assert!(output.status.success(), "{}", stderr(&output));
+        let applied = parse_json(&output);
+        assert_eq!(applied["resultRevision"], preview["resultRevision"]);
+        assert_eq!(applied["overlay"], preview["overlay"]);
+        assert_eq!(applied["written"], true);
+        applied
+    };
+    let stale_picture = preview(&picture);
+    let title_plan = preview(&title);
+    assert_eq!(std::fs::read(&config).unwrap(), before);
+    assert!(!project.join("content/images").exists());
+    assert_eq!(apply(&title, &title_plan)["overlay"]["content"], "架构图");
+
+    let stale = run(&[
+        picture.as_slice(),
+        &[
+            "--expected-revision",
+            stale_picture["revision"].as_str().unwrap(),
+        ],
+    ]
+    .concat());
+    assert!(!stale.status.success());
+    assert_eq!(parse_json(&stale)["code"], "REVISION_CONFLICT");
+    assert!(!project.join("content/images").exists());
+
+    let picture_plan = preview(&picture);
+    assert!(!project.join("content/images").exists());
+    let applied = apply(&picture, &picture_plan);
+    let asset = project.join(applied["overlay"]["path"].as_str().unwrap());
+    assert_eq!(std::fs::read(asset).unwrap(), std::fs::read(image).unwrap());
+
+    let redact_plan = preview(&redact);
+    let applied = apply(&redact, &redact_plan);
+    assert_eq!(
+        applied["overlay"]["center"],
+        serde_json::json!({"x": 0.25, "y": 0.4})
+    );
+    assert_eq!(applied["overlay"]["fadeDuration"], 0.0);
+    let updated: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+    assert_eq!(updated["timeline"]["futureTimelineField"], "keep");
+    assert_eq!(
+        updated["timeline"]["textSegments"][0]["futureTextField"]["keep"],
+        true
+    );
+    assert_eq!(
+        updated["timeline"]["audioSegments"][0]["futureMusicField"],
+        true
+    );
+
+    let mut invalid = redact;
+    invalid[15] = "1.0";
+    let before = std::fs::read(&config).unwrap();
+    let rejected = run(&[invalid.as_slice(), &["--dry-run"]].concat());
+    assert!(!rejected.status.success());
+    assert_eq!(parse_json(&rejected)["code"], "INVALID_ARGUMENT");
+    assert_eq!(std::fs::read(&config).unwrap(), before);
+}

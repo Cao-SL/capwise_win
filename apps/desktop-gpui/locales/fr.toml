@@ -2987,6 +2987,15 @@ export = "Exporter"
 open_bundle = "Ouvrir le dossier de l'enregistrement"
 presets = "Préréglages"
 
+[editor.window.overlay]
+title_hint = "Ajouter un titre (T)"
+redact = "Masquer"
+redact_hint = "Délimiter une zone à masquer (R)"
+redact_draw = "Faites glisser pour couvrir une zone. Échap annule."
+redact_range = "Placez la tête de lecture sur l’enregistrement pour masquer une zone."
+pasted_image = "Image collée"
+paste_failed = "Impossible de coller l’image. Essayez de l’importer depuis un fichier."
+
 [editor.window.image]
 changed = "Cette image a changé pendant le choix d'un remplacement. Sélectionnez-la et réessayez."
 filter = "Images"

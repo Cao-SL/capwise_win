@@ -1137,6 +1137,23 @@ pub fn new_text_segment(start: f64, end: f64, track: u32) -> cap_project::TextSe
     segment
 }
 
+pub fn new_placeholder_text_segment(start: f64, end: f64, track: u32) -> cap_project::TextSegment {
+    let mut segment = new_text_segment(start, end, track);
+    let content = crate::i18n::tr::editor::panel::text_segment::default_content();
+    segment.size.x = (segment.size.x * text_width_ratio(content)).min(0.9);
+    segment.content = content.into();
+    segment
+}
+
+fn text_width_ratio(content: &str) -> f64 {
+    let ems = |text: &str| -> f64 {
+        text.chars()
+            .map(|character| if character.is_ascii() { 0.6 } else { 1.0 })
+            .sum()
+    };
+    (ems(content) * 1.15 / ems("Text")).max(1.)
+}
+
 pub fn new_mask_segment(start: f64, end: f64, track: u32) -> MaskSegment {
     let mut segment = crate::editor_edits::default_mask_segment(start, end, track);
     if let Some(style) = default_style::<MaskStyle>() {
@@ -1197,6 +1214,13 @@ pub fn seed_default_captions(project: &mut ProjectConfiguration) {
 mod tests {
     use super::*;
     use cap_project::{TextAlign, TextAnimation, TextBackgroundStyle, TextLayout, XY};
+
+    #[test]
+    fn placeholder_text_box_is_wide_enough_for_its_words() {
+        assert_eq!(super::text_width_ratio("Text"), 1.15);
+        assert!(super::text_width_ratio("输入文字") > 1.9);
+        assert!(super::text_width_ratio("Hi") >= 1.);
+    }
 
     struct TempStore {
         path: std::path::PathBuf,

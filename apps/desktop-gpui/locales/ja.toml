@@ -2987,6 +2987,15 @@ export = "書き出し"
 open_bundle = "録画バンドルを開く"
 presets = "プリセット"
 
+[editor.window.overlay]
+title_hint = "タイトルを追加（T）"
+redact = "目隠し"
+redact_hint = "範囲を選んで目隠し（R）"
+redact_draw = "ドラッグして範囲を覆います。Esc でキャンセル。"
+redact_range = "録画部分に再生ヘッドを移動してから範囲を選択してください。"
+pasted_image = "貼り付けた画像"
+paste_failed = "画像を貼り付けられませんでした。ファイルから読み込んでください。"
+
 [editor.window.image]
 changed = "置き換えを選んでいる間にこの画像が変更されました。選択してもう一度お試しください。"
 filter = "画像"

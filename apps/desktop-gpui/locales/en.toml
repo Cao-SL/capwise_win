@@ -3016,6 +3016,15 @@ export = "Export"
 open_bundle = "Open recording bundle"
 presets = "Presets"
 
+[editor.window.overlay]
+title_hint = "Add a title (T)"
+redact = "Redact"
+redact_hint = "Draw a redaction (R)"
+redact_draw = "Drag to cover an area. Esc cancels."
+redact_range = "Move the playhead onto the recording to draw a redaction."
+pasted_image = "Pasted image"
+paste_failed = "Could not paste the image. Try importing it from a file."
+
 [editor.window.image]
 changed = "This image changed while choosing a replacement. Select it and try again."
 filter = { text = "Images", context = "File type filter name in the image file picker." }

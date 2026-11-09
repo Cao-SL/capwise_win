@@ -2987,6 +2987,15 @@ export = "Exportar"
 open_bundle = "Abrir paquete de la grabación"
 presets = "Preajustes"
 
+[editor.window.overlay]
+title_hint = "Añadir un título (T)"
+redact = "Ocultar datos"
+redact_hint = "Dibujar una zona para ocultar (R)"
+redact_draw = "Arrastra para cubrir una zona. Pulsa Esc para cancelar."
+redact_range = "Mueve el cabezal a la grabación para ocultar una zona."
+pasted_image = "Imagen pegada"
+paste_failed = "No se pudo pegar la imagen. Intenta importarla desde un archivo."
+
 [editor.window.image]
 changed = "Esta imagen cambió mientras elegías un reemplazo. Selecciónala e inténtalo de nuevo."
 filter = "Imágenes"

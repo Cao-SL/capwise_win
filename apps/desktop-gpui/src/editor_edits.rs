@@ -25,11 +25,16 @@
 //!   `ProjectConfiguration` and a drag is coalesced by *pausing* the recorder
 //!   for its duration.
 
+pub use cap_project::{
+    default_mask_segment, default_text_segment, insert_image_segment, insert_mask_segment,
+    insert_text_segment, overlay_front_layer,
+};
+
 use cap_project::{
     AudioTrackSegment, Camera3DProperties, Camera3DSegment, CaptionTrackSegment,
-    ClipSpeedAudioMode, CursorClickEvent, GlideDirection, KeyboardTrackSegment, MaskKind,
-    MaskSegment, ProjectConfiguration, SceneMode, SceneSegment, ShapeSegment, TextSegment,
-    TimelineConfiguration, TimelineSegment, XY, ZoomMode, ZoomSegment, mask_effect_contract,
+    ClipSpeedAudioMode, CursorClickEvent, GlideDirection, KeyboardTrackSegment, MaskSegment,
+    ProjectConfiguration, SceneMode, SceneSegment, ShapeSegment, TextSegment,
+    TimelineConfiguration, TimelineSegment, ZoomMode, ZoomSegment,
 };
 
 use crate::editor_timeline::{self, Segment, TrackKind};
@@ -1205,17 +1210,6 @@ pub fn overlay_overlaps(
         })
 }
 
-pub fn overlay_front_layer(timeline: &TimelineConfiguration, start: f64, end: f64) -> u32 {
-    timeline
-        .overlay_spans()
-        .filter(|(_, _, _, segment_start, segment_end)| {
-            *segment_start < end && start < *segment_end
-        })
-        .map(|(_, _, layer, _, _)| layer + 1)
-        .max()
-        .unwrap_or(0)
-}
-
 pub fn overlay_insertion_time(timeline: &TimelineConfiguration, kind: TrackKind, time: f64) -> f64 {
     if !matches!(kind, TrackKind::Image | TrackKind::Shape | TrackKind::Mask)
         || !timeline.text_segments.iter().any(|segment| {
@@ -2381,62 +2375,6 @@ pub fn place_segment_at_time<T: TrackSegmentOps>(
     Some((start, start + length))
 }
 
-pub fn default_text_segment(start: f64, end: f64, track: u32) -> TextSegment {
-    TextSegment {
-        start,
-        end,
-        track,
-        enabled: true,
-        content: "Text".to_string(),
-        center: XY::new(0.5, 0.5),
-        size: XY::new(0.1, 0.055),
-        font_family: "Noto Sans SC".to_string(),
-        font_size: 48.0,
-        font_weight: 700.0,
-        italic: false,
-        color: "#111111".to_string(),
-        background_color: None,
-        background_style: Default::default(),
-        uppercase: false,
-        stroke_width: 0.0,
-        stroke_color: "#000000".to_string(),
-        gradient_color: None,
-        glow: 0.0,
-        fade_duration: 0.15,
-        align: Default::default(),
-        letter_spacing: 0.0,
-        line_height: 1.2,
-        opacity: 1.0,
-        shadow: 0.0,
-        animation_in: Default::default(),
-        animation_out: Default::default(),
-        animation_in_duration: 0.15,
-        animation_out_duration: 0.15,
-        layout: Default::default(),
-        layout_transition: 0.5,
-        title_card: None,
-    }
-}
-
-pub fn default_mask_segment(start: f64, end: f64, track: u32) -> MaskSegment {
-    let contract = mask_effect_contract();
-    MaskSegment {
-        start,
-        end,
-        track,
-        enabled: true,
-        mask_type: MaskKind::Sensitive,
-        center: XY::new(0.5, 0.5),
-        size: XY::new(0.35, 0.35),
-        feather: 0.1,
-        opacity: 1.0,
-        pixelation: contract.blur_encoding_offset + contract.default_amount,
-        darkness: 0.5,
-        fade_duration: 0.0,
-        keyframes: Default::default(),
-    }
-}
-
 pub fn default_audio_segment(
     start: f64,
     end: f64,
@@ -2468,30 +2406,6 @@ fn sort_lane_segments<T: TrackSegmentOps>(segments: &mut [T]) {
             .then(a.start().total_cmp(&b.start()))
             .then(a.end().total_cmp(&b.end()))
     });
-}
-
-pub fn insert_text_segment(timeline: &mut TimelineConfiguration, segment: TextSegment) -> usize {
-    let start = segment.start;
-    let track = segment.track;
-    timeline.text_segments.push(segment);
-    sort_lane_segments(&mut timeline.text_segments);
-    timeline
-        .text_segments
-        .iter()
-        .rposition(|item| item.start == start && item.track == track)
-        .unwrap_or(timeline.text_segments.len().saturating_sub(1))
-}
-
-pub fn insert_mask_segment(timeline: &mut TimelineConfiguration, segment: MaskSegment) -> usize {
-    let start = segment.start;
-    let track = segment.track;
-    timeline.mask_segments.push(segment);
-    sort_lane_segments(&mut timeline.mask_segments);
-    timeline
-        .mask_segments
-        .iter()
-        .rposition(|item| item.start == start && item.track == track)
-        .unwrap_or(timeline.mask_segments.len().saturating_sub(1))
 }
 
 pub fn insert_shape_segment(timeline: &mut TimelineConfiguration, segment: ShapeSegment) -> usize {
@@ -5925,21 +5839,6 @@ pub fn insert_style_segment(
     sort_lane_segments(&mut timeline.style_segments);
     timeline
         .style_segments
-        .iter()
-        .rposition(|item| item.start == start && item.track == track)
-        .unwrap_or(0)
-}
-
-pub fn insert_image_segment(
-    timeline: &mut TimelineConfiguration,
-    segment: cap_project::ImageSegment,
-) -> usize {
-    let start = segment.start;
-    let track = segment.track;
-    timeline.image_segments.push(segment);
-    sort_lane_segments(&mut timeline.image_segments);
-    timeline
-        .image_segments
         .iter()
         .rposition(|item| item.start == start && item.track == track)
         .unwrap_or(0)
