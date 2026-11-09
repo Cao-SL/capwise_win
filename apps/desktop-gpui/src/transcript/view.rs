@@ -594,18 +594,47 @@ fn byte_at(layout: &TextLayout, position: Point<Pixels>) -> usize {
 }
 
 impl EditorWindow {
-    /// Opens the transcript panel with its find-and-replace bar focused.
-    pub(crate) fn open_transcript_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_caption_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.project_ready() {
+            return;
+        }
+        if !self.transcript.open || !self.transcript.caption_only {
+            self.transcript.search = None;
+            self.transcript.selection = None;
+            self.transcript.drag = None;
+            self.transcript.caret = None;
+            self.transcript.caption_editor = Default::default();
+            self.transcript.dirty = true;
+        }
         self.transcript.caption_only = true;
         self.transcript.cleanup.open = false;
+        self.set_selection(None, cx);
         if !self.transcript.open {
             self.toggle_transcript(window, cx);
         }
-        self.transcript_open_search(window, cx);
+        self.prepare_caption_editor();
+        window.focus(&self.transcript.focus, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn open_transcript_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_caption_editor(window, cx);
+        if self.transcript.open {
+            self.transcript_open_search(window, cx);
+        }
+    }
+
+    pub(crate) fn reset_caption_editor(&mut self) {
+        if self.transcript.caption_only {
+            self.transcript.caption_only = false;
+            self.transcript.caption_editor = Default::default();
+            self.transcript.search = None;
+            self.transcript.dirty = true;
+        }
     }
 
     pub(crate) fn open_transcript_cleanup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.transcript.caption_only = false;
+        self.reset_caption_editor();
         if !self.transcript.open {
             self.toggle_transcript(window, cx);
         }
@@ -646,6 +675,7 @@ impl EditorWindow {
         }
         if self.transcript.open {
             self.transcript.open = false;
+            self.reset_caption_editor();
             self.transcript.drag = None;
             self.transcript.resize = None;
             self.focus_root(window, cx);
@@ -656,6 +686,11 @@ impl EditorWindow {
             self.dismiss_sidebar_panels(cx);
             self.transcript.open = true;
             self.transcript.dirty = true;
+            if self.transcript.caption_only {
+                window.focus(&self.transcript.focus, cx);
+                cx.notify();
+                return;
+            }
             let started = Instant::now();
             self.transcript_refresh();
             tracing::info!(
@@ -683,7 +718,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn transcript_refresh(&mut self) -> bool {
-        if !self.transcript.open {
+        if !self.transcript.open || self.transcript.caption_only {
             return false;
         }
         let durations = self.clip_display_durations.clone();
@@ -691,7 +726,7 @@ impl EditorWindow {
     }
 
     pub(crate) fn transcript_sync_active(&mut self, follow: bool, cx: &mut Context<Self>) {
-        if !self.transcript.open {
+        if !self.transcript.open || self.transcript.caption_only {
             return;
         }
         let (Some(doc), Some(edl)) = (&self.transcript.doc, &self.transcript.edl) else {
@@ -938,6 +973,23 @@ impl EditorWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.transcript.caption_only {
+            let key = &event.keystroke.key;
+            if key == "f" && event.keystroke.modifiers.secondary() {
+                self.transcript_open_search(window, cx);
+                cx.stop_propagation();
+            } else if key == "escape" && !ui::text_input_has_focus(window, cx) {
+                if self.dismiss_caption_editor_menu() {
+                    self.invalidate_transcript(cx);
+                } else if self.transcript.search.is_some() {
+                    self.transcript_close_search(window, cx);
+                } else {
+                    self.open_captions_settings(window, cx);
+                }
+                cx.stop_propagation();
+            }
+            return;
+        }
         if ui::text_input_has_focus(window, cx) {
             return;
         }
@@ -1399,7 +1451,8 @@ impl EditorWindow {
             current: 0,
             query: String::new(),
         });
-        if let Some(selection) = self.transcript.selection
+        if !self.transcript.caption_only
+            && let Some(selection) = self.transcript.selection
             && let Some(doc) = self.transcript.doc.clone()
             && selection.range().len() <= 6
         {
@@ -1421,6 +1474,11 @@ impl EditorWindow {
     }
 
     pub(super) fn transcript_search_changed(&mut self, query: String, cx: &mut Context<Self>) {
+        if self.transcript.caption_only {
+            self.caption_search_changed(query);
+            self.invalidate_transcript(cx);
+            return;
+        }
         let Some(doc) = self.transcript.doc.clone() else {
             return;
         };
@@ -1444,6 +1502,11 @@ impl EditorWindow {
     }
 
     fn transcript_step_match(&mut self, step: i32, cx: &mut Context<Self>) {
+        if self.transcript.caption_only {
+            self.caption_step_match(step, cx);
+            self.invalidate_transcript(cx);
+            return;
+        }
         let Some(search) = self.transcript.search.as_mut() else {
             return;
         };
@@ -1467,6 +1530,11 @@ impl EditorWindow {
     /// replacement is also remembered as a transcription term, so the next
     /// transcription spells it right.
     fn transcript_replace(&mut self, all: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.transcript.caption_only {
+            self.caption_replace_matches(all, window, cx);
+            self.invalidate_transcript(cx);
+            return;
+        }
         let (Some(search), Some(doc)) = (&self.transcript.search, self.transcript.doc.clone())
         else {
             return;
@@ -1839,17 +1907,26 @@ impl EditorWindow {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let project_changed = self.transcript.dirty;
-        self.transcript_refresh();
-        if project_changed {
-            self.transcript_load_energy(cx);
+        if self.transcript.caption_only {
+            self.prepare_caption_editor();
+        } else {
+            self.transcript_refresh();
+            if project_changed {
+                self.transcript_load_energy(cx);
+            }
+            self.transcript.layouts.borrow_mut().clear();
         }
-        self.transcript.layouts.borrow_mut().clear();
         let theme = self.theme;
         let palette = Palette::new(&theme);
         let editor = cx.entity().downgrade();
 
-        let body: AnyElement = match (self.transcript.doc.clone(), self.transcript.edl.clone()) {
-            (Some(doc), edl) if !doc.is_empty() => {
+        let body: AnyElement = match (
+            self.transcript.caption_only,
+            self.transcript.doc.clone(),
+            self.transcript.edl.clone(),
+        ) {
+            (true, _, _) => self.render_caption_editor(cx),
+            (false, Some(doc), edl) if !doc.is_empty() => {
                 let search = self.transcript.search.as_ref();
                 let painter = ParagraphPainter {
                     doc,
@@ -1947,14 +2024,33 @@ impl EditorWindow {
                     .text_size(px(12.))
                     .text_color(Hsla::from(theme.editor.text_2))
                     .child(if self.transcript.caption_only {
-                        tr::editor::workbench::search_safe_hint()
+                        tr::editor::workbench::caption_editor_hint()
                     } else {
                         tr::editor::workbench::video_edit_hint()
                     }),
             )
+            .children(
+                self.transcript
+                    .caption_only
+                    .then(|| {
+                        self.sidebar
+                            .caption_translation
+                            .auto_status()
+                            .map(|status| {
+                                div()
+                                    .px(px(12.))
+                                    .pb(px(6.))
+                                    .text_size(px(12.))
+                                    .text_color(Hsla::from(theme.editor.text_2))
+                                    .child(status)
+                            })
+                    })
+                    .flatten(),
+            )
             .children(self.render_transcript_search(cx))
             .children(self.render_transcript_cleanup(cx))
             .child(body)
+            .children(self.render_caption_editor_menu(cx))
             .when(!self.transcript.caption_only, |panel| {
                 panel.child(self.render_transcript_footer())
             })
@@ -1969,11 +2065,15 @@ impl EditorWindow {
             .as_ref()
             .map(|edl| edl.kept_count)
             .or_else(|| self.transcript.doc.as_ref().map(|doc| doc.words.len()));
-        let has_doc = self
-            .transcript
-            .doc
-            .as_ref()
-            .is_some_and(|doc| !doc.is_empty());
+        let caption_only = self.transcript.caption_only;
+        let has_doc = if caption_only {
+            self.caption_editor_count() > 0
+        } else {
+            self.transcript
+                .doc
+                .as_ref()
+                .is_some_and(|doc| !doc.is_empty())
+        };
         div()
             .flex()
             .flex_row()
@@ -1994,12 +2094,28 @@ impl EditorWindow {
                     .child(
                         ui::EditorButton::plain(&theme, "transcript-back-to-captions")
                             .left_icon("icons/chevron-left.svg")
-                            .label(tr::editor::transcript::back_to_captions())
+                            .when(!caption_only, |button| {
+                                button.label(tr::editor::transcript::back_to_captions())
+                            })
+                            .tooltip(&theme, tr::editor::transcript::back_to_captions())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_captions_settings(window, cx);
                             })),
                     )
-                    .children(words.filter(|_| has_doc).map(|count| {
+                    .when(caption_only, |row| {
+                        row.child(
+                            div()
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .truncate()
+                                .child(format!(
+                                    "{} ({})",
+                                    tr::editor::workbench::edit_all_captions(),
+                                    self.caption_editor_count(),
+                                )),
+                        )
+                    })
+                    .children(words.filter(|_| has_doc && !caption_only).map(|count| {
                         div()
                             .text_size(px(12.))
                             .text_color(Hsla::from(theme.editor.text_3))
@@ -2017,6 +2133,9 @@ impl EditorWindow {
                         ui::EditorButton::plain(&theme, "transcript-search")
                             .left_icon("icons/search.svg")
                             .tooltip(&theme, tr::editor::transcript::search())
+                            .when(caption_only, |button| {
+                                button.label(tr::editor::tabs::captions::find_replace())
+                            })
                             .disabled(!has_doc)
                             .pressed(self.transcript.search.is_some())
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -2047,7 +2166,11 @@ impl EditorWindow {
     fn render_transcript_search(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let search = self.transcript.search.as_ref()?;
         let theme = self.theme;
-        let count = search.matches.len();
+        let count = if self.transcript.caption_only {
+            self.caption_search_count()
+        } else {
+            search.matches.len()
+        };
         let label = if search.query.trim().is_empty() {
             SharedString::default()
         } else if count == 0 {

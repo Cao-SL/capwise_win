@@ -9,6 +9,7 @@
 //! and restoring a word grows the clips back over it.
 
 pub(crate) mod automation;
+mod caption_editor;
 pub(crate) mod cuts;
 pub(crate) mod energy;
 pub(crate) mod model;
@@ -165,6 +166,7 @@ pub(crate) fn category_index(kind: DisfluencyKind) -> usize {
 pub(crate) struct TranscriptState {
     pub open: bool,
     pub caption_only: bool,
+    caption_editor: caption_editor::CaptionEditor,
     pub player_share: f32,
     pub doc: Option<Arc<TranscriptDoc>>,
     pub edl: Option<Arc<TranscriptEdl>>,
@@ -202,6 +204,7 @@ impl TranscriptState {
         Self {
             open: false,
             caption_only: false,
+            caption_editor: Default::default(),
             player_share,
             doc: None,
             edl: None,

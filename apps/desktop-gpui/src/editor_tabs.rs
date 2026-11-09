@@ -3504,27 +3504,49 @@ impl EditorWindow {
             Some(column.into_any_element())
         };
 
-        // One toolbar: find and replace reads like a search field, the AI
-        // check sits beside it. Editing is the list itself -- click a line.
-        let quick_actions = has_captions.then(|| {
+        let has_recognized_captions = self
+            .project
+            .captions
+            .as_ref()
+            .is_some_and(|captions| !captions.segments.is_empty());
+        let quick_actions = has_recognized_captions.then(|| {
             div()
                 .flex()
+                .flex_col()
                 .gap(px(8.))
                 .child(
-                    ui::EditorButton::plain(&theme, "caption-find-replace")
-                        .outlined(&theme)
-                        .grow()
+                    ui::EditorButton::plain(&theme, "caption-edit-all")
+                        .tinted(&theme)
                         .start()
-                        .height(px(32.))
-                        .left_icon("icons/search.svg")
+                        .height(px(34.))
+                        .left_icon("icons/pencil.svg")
                         .icon_size(px(14.))
-                        .label(tr::editor::tabs::captions::find_replace())
+                        .label(tr::editor::workbench::edit_all_captions())
                         .disabled(generating)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.open_transcript_search(window, cx)
-                        })),
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_caption_editor(window, cx)),
+                        ),
                 )
-                .child(self.render_caption_review_button(cx))
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .child(
+                            ui::EditorButton::plain(&theme, "caption-find-replace")
+                                .outlined(&theme)
+                                .grow()
+                                .start()
+                                .height(px(32.))
+                                .left_icon("icons/search.svg")
+                                .icon_size(px(14.))
+                                .label(tr::editor::tabs::captions::find_replace())
+                                .disabled(generating)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.open_transcript_search(window, cx)
+                                })),
+                        )
+                        .child(self.render_caption_review_button(cx)),
+                )
                 .into_any_element()
         });
         let regenerate = (has_captions && model_downloaded && has_audio).then(|| {
@@ -3731,6 +3753,7 @@ impl EditorWindow {
                 .flex()
                 .flex_col()
                 .gap(px(12.))
+                .children(quick_actions)
                 .child(
                     div()
                         .text_size(px(12.))

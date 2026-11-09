@@ -966,6 +966,7 @@ impl EditorWindow {
         self.clips.open = open;
         if open {
             self.transcript.open = false;
+            self.reset_caption_editor();
         }
         self.refresh_asset_records(window, cx);
         cx.notify();

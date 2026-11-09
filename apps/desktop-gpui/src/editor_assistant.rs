@@ -1711,6 +1711,7 @@ impl EditorWindow {
         self.assistant.open = true;
         self.sidebar.tab = crate::editor_sidebar::SidebarTab::Assistant;
         self.transcript.open = false;
+        self.reset_caption_editor();
         if let Some(input) = &self.assistant.input {
             window.focus(&input.read(cx).focus_handle(), cx);
         }

@@ -2838,6 +2838,8 @@ pub struct CaptionSettings {
     pub display_mode: crate::CaptionDisplayMode,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub translations: BTreeMap<String, crate::CaptionTranslation>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub auto_update_translations: bool,
     pub font: String,
     pub size: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3040,6 +3042,7 @@ impl Default for CaptionSettings {
             enabled: false,
             display_mode: crate::CaptionDisplayMode::Original,
             translations: BTreeMap::new(),
+            auto_update_translations: false,
             font: "System Sans-Serif".to_string(),
             size: 24,
             translation_style: None,

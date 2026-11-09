@@ -195,6 +195,10 @@ else
   rm -rf "$STAGE/Contents/Frameworks/Spacedrive.framework/Versions/A/Headers" \
     "$STAGE/Contents/Frameworks/Spacedrive.framework/Headers"
 fi
+mkdir -p "$STAGE/Contents/Resources/assets"
+ditto "$HERE/assets/backgrounds" "$STAGE/Contents/Resources/assets/backgrounds"
+"$HERE/scripts/verify-capwise-mac.sh" "$STAGE" --resources-only
+
 xattr -cr "$STAGE"
 
 step "Sign"

@@ -1758,6 +1758,7 @@ pub struct TextInput {
     icon_color: Hsla,
     caret_color: Hsla,
     selection_color: Hsla,
+    highlight: Option<(Range<usize>, Hsla)>,
     flex: bool,
     full_width: bool,
     fixed_width: Option<Pixels>,
@@ -1787,6 +1788,7 @@ impl TextInput {
             icon_color: theme.gray(10),
             caret_color: theme.gray(12),
             selection_color: selection_tint(),
+            highlight: None,
             flex: false,
             full_width: false,
             fixed_width: None,
@@ -1935,6 +1937,16 @@ impl TextInput {
         self
     }
 
+    pub(crate) fn focus_border(mut self, border: Hsla) -> Self {
+        self.focus_border = Some(border);
+        self
+    }
+
+    pub(crate) fn highlight(mut self, range: Option<Range<usize>>, color: Hsla) -> Self {
+        self.highlight = range.map(|range| (range, color));
+        self
+    }
+
     pub fn border(mut self, border: Hsla) -> Self {
         self.border = Some(border);
         self
@@ -2019,6 +2031,7 @@ impl RenderOnce for TextInput {
             placeholder_color: self.muted,
             caret_color: self.caret_color,
             selection_color: self.selection_color,
+            highlight: self.highlight,
             multi_line,
             focused,
         };
@@ -2125,6 +2138,7 @@ struct TextBody {
     placeholder_color: Hsla,
     caret_color: Hsla,
     selection_color: Hsla,
+    highlight: Option<(Range<usize>, Hsla)>,
     multi_line: bool,
     focused: bool,
 }
@@ -2519,7 +2533,13 @@ impl Element for TextBody {
         // The selection wash, one quad per visual row it crosses.
         let selected = state.selected_range.clone();
         let mut selection = Vec::new();
-        if !selected.is_empty() {
+        for (selected, color) in self
+            .highlight
+            .iter()
+            .cloned()
+            .chain(std::iter::once((selected.clone(), self.selection_color)))
+            .filter(|(range, _)| !range.is_empty() && state.content.get(range.clone()).is_some())
+        {
             for (index, row) in layout.rows.iter().enumerate() {
                 let start = selected.start.max(row.range.start);
                 let end = selected.end.min(row.range.end);
@@ -2547,7 +2567,7 @@ impl Element for TextBody {
                         point(left, top),
                         point(right.max(left + px(1.)), top + self.line_height),
                     ),
-                    self.selection_color,
+                    color,
                 ));
             }
         }
@@ -3225,6 +3245,7 @@ mod tests {
             placeholder_color: gpui::black(),
             caret_color: gpui::black(),
             selection_color: gpui::black(),
+            highlight: None,
             multi_line: true,
             focused: false,
         }

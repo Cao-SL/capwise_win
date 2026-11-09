@@ -8,7 +8,7 @@ use std::ops::Range;
 use cap_project::{CaptionSegment, CaptionWord, caption_text_from_words};
 
 /// Byte ranges of `needle` in `haystack`, ignoring ASCII case, without overlaps.
-fn occurrences(haystack: &str, needle: &str) -> Vec<Range<usize>> {
+pub(crate) fn occurrences(haystack: &str, needle: &str) -> Vec<Range<usize>> {
     if needle.is_empty() {
         return Vec::new();
     }

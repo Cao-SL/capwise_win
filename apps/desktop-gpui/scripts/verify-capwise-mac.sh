@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-app="${1:?Usage: verify-capwise-mac.sh <Capwise.app>}"
+app="${1:?Usage: verify-capwise-mac.sh <Capwise.app> [--resources-only]}"
+source_wallpapers="$(cd "$(dirname "$0")/../assets/backgrounds" && pwd)"
+bundled_wallpapers="$app/Contents/Resources/assets/backgrounds"
+if [[ ! -s "$source_wallpapers/macOS/sequoia-dark.jpg" || ! -d "$bundled_wallpapers" ]] ||
+   [[ -L "$bundled_wallpapers" || -n "$(find "$bundled_wallpapers" -type l -print -quit)" ]] ||
+   ! diff -qr "$source_wallpapers" "$bundled_wallpapers"; then
+  echo "Capwise.app is missing or has mismatched built-in wallpapers." >&2
+  exit 1
+fi
+if [[ "${2:-}" == "--resources-only" ]]; then
+  exit 0
+fi
+
 binary="$app/Contents/MacOS/Capwise"
 test "$(lipo -archs "$binary")" = "$(uname -m)"
 codesign --verify --deep --strict "$app"
