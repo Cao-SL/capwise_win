@@ -914,6 +914,10 @@ add_to_project = "添加到当前项目"
 record_new = "录制新片段"
 
 [main.studio_layout]
+side_by_side = "并排"
+round = "圆形"
+square = "方形"
+source = "原始比例"
 heading = "成片布局"
 pip = "画中画"
 screen_left = "左屏右人"

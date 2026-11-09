@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use cap_project::{
-    AspectRatio, ProjectConfiguration, RecordingMeta, SceneMode, SceneSegment, SplitLayout,
-    StudioRecordingMeta,
+    ProjectConfiguration, RecordingMeta, SceneMode, SceneSegment, SplitLayout, StudioRecordingMeta,
 };
 use serde::{Deserialize, Serialize};
 
@@ -21,9 +20,6 @@ pub(crate) enum StudioLayout {
 }
 
 impl StudioLayout {
-    pub(crate) const OPTIONS: [Self; 3] =
-        [Self::PictureInPicture, Self::ScreenLeft, Self::CameraLeft];
-
     pub(crate) fn preferred() -> Self {
         crate::store::store_section(crate::store::RECORDING_SETTINGS)
             .get(STUDIO_LAYOUT_SETTING)
@@ -41,11 +37,19 @@ impl StudioLayout {
         })
     }
 
-    pub(crate) fn save_intent(self, path: &Path) -> std::io::Result<()> {
+    pub(crate) fn reserve_bundle(self, path: &Path) -> std::io::Result<()> {
         if self == Self::PictureInPicture {
             return Ok(());
         }
-        std::fs::write(path.join(STUDIO_LAYOUT_FILE), serde_json::to_vec(&self)?)
+        let intent = serde_json::to_vec(&self)?;
+        std::fs::create_dir(path)?;
+        let file = path.join(STUDIO_LAYOUT_FILE);
+        if let Err(error) = std::fs::write(&file, intent) {
+            let _ = std::fs::remove_file(&file);
+            let _ = std::fs::remove_dir(path);
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub(crate) fn for_project(path: &Path) -> std::io::Result<Self> {
@@ -67,14 +71,13 @@ impl StudioLayout {
         if !timeline.scene_segments.is_empty() || !end.is_finite() || end <= 0.0 {
             return false;
         }
-        project.aspect_ratio = Some(AspectRatio::Wide);
-        project.camera.hide = false;
         timeline.scene_segments.push(SceneSegment {
             start: 0.0,
             end,
             mode: SceneMode::Floating,
             split_layout: Some(SplitLayout {
                 camera_first: self == Self::CameraLeft,
+                force_horizontal: true,
                 ..Default::default()
             }),
             transition_in: 0.0,
@@ -243,7 +246,9 @@ mod tests {
                 StudioLayout::for_project(path).unwrap(),
                 StudioLayout::PictureInPicture
             );
-            layout.save_intent(path).unwrap();
+            let new_bundle = path.join("reserved.cap");
+            layout.reserve_bundle(&new_bundle).unwrap();
+            assert!(layout.reserve_bundle(&new_bundle).is_err());
             let inputs = SetupInputs {
                 workflow: None,
                 voice_enabled: false,
@@ -253,10 +258,12 @@ mod tests {
                 keyboard: false,
                 auto_captions: false,
                 caption_defaults: None,
-                studio_layout: StudioLayout::for_project(path).unwrap(),
+                studio_layout: StudioLayout::for_project(&new_bundle).unwrap(),
             };
             let mut project = ProjectConfiguration::load(path).unwrap();
             project.timeline.as_mut().unwrap().segments[0].timescale = 2.0;
+            project.aspect_ratio = Some(cap_project::AspectRatio::Vertical);
+            project.camera.hide = true;
             let (screen_only, _, _) = prepare_project(path, project.clone(), &inputs).unwrap();
             assert!(screen_only.timeline.unwrap().scene_segments.is_empty());
 
@@ -269,11 +276,17 @@ mod tests {
             prepared.write(path).unwrap();
             let mut loaded = ProjectConfiguration::load(path).unwrap();
             let scene = &loaded.timeline.as_ref().unwrap().scene_segments[0];
-            assert!(matches!(loaded.aspect_ratio, Some(AspectRatio::Wide)));
+            assert!(matches!(
+                loaded.aspect_ratio,
+                Some(cap_project::AspectRatio::Vertical)
+            ));
+            assert!(loaded.camera.hide);
             assert!(matches!(scene.mode, SceneMode::Floating));
             assert_eq!((scene.start, scene.end), (0.0, 5.0));
             assert_eq!((scene.transition_in, scene.transition_out), (0.0, 0.0));
-            assert_eq!(scene.split_layout.unwrap().camera_first, camera_first);
+            let split = scene.split_layout.unwrap();
+            assert_eq!(split.camera_first, camera_first);
+            assert!(split.force_horizontal);
             assert!(!layout.apply(&mut loaded, true));
         }
     }

@@ -4547,8 +4547,22 @@ impl ProjectUniforms {
                 .map(|camera_size| {
                     let out_w = output_size.0 as f32;
                     let out_h = output_size.1 as f32;
-                    let horizontal =
-                        (out_w / out_h.max(f32::EPSILON)) >= SPLIT_STACK_ASPECT_THRESHOLD;
+                    let mut panes = scene_segments
+                        .iter()
+                        .filter(|s| matches!(s.mode, SceneMode::SplitScreen | SceneMode::Floating));
+                    let params = panes
+                        .clone()
+                        .find(|s| timeline_time >= s.start && timeline_time < s.end)
+                        .or_else(|| {
+                            panes.find(|s| {
+                                timeline_time >= s.start - s.transition_in.max(0.0)
+                                    && timeline_time < s.end + s.transition_out.max(0.0)
+                            })
+                        })
+                        .and_then(|s| s.split_layout)
+                        .unwrap_or_default();
+                    let horizontal = params.force_horizontal
+                        || (out_w / out_h.max(f32::EPSILON)) >= SPLIT_STACK_ASPECT_THRESHOLD;
 
                     let (screen_full, camera_full) = if horizontal {
                         let mid = out_w * 0.5;
@@ -4585,20 +4599,6 @@ impl ProjectUniforms {
                     } else {
                         0.0
                     };
-                    let mut panes = scene_segments
-                        .iter()
-                        .filter(|s| matches!(s.mode, SceneMode::SplitScreen | SceneMode::Floating));
-                    let params = panes
-                        .clone()
-                        .find(|s| timeline_time >= s.start && timeline_time < s.end)
-                        .or_else(|| {
-                            panes.find(|s| {
-                                timeline_time >= s.start - s.transition_in.max(0.0)
-                                    && timeline_time < s.end + s.transition_out.max(0.0)
-                            })
-                        })
-                        .and_then(|s| s.split_layout)
-                        .unwrap_or_default();
                     let screen_target = split_pane_order(
                         lerp_bounds(screen_full, screen_card, card_share),
                         [out_w, out_h],

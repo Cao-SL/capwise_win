@@ -913,6 +913,10 @@ add_to_project = "Ajouter à votre projet actuel"
 record_new = "Enregistrer un nouveau clip"
 
 [main.studio_layout]
+side_by_side = "Côte à côte"
+round = "Cercle"
+square = "Carré"
+source = "Format d’origine"
 heading = "Mise en page vidéo"
 pip = "Image dans l’image"
 screen_left = "Écran à gauche"

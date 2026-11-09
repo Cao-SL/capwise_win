@@ -520,7 +520,7 @@ impl TargetSelect {
     pub fn init(cx: &mut App) -> Entity<Self> {
         let select = cx.new(|_| Self {
             mode: None,
-            recording_mode: Mode::Instant,
+            recording_mode: Mode::from_store(),
             cursor_display: None,
             hovered_window: None,
             pinned_window: None,

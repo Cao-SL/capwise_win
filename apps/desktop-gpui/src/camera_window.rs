@@ -63,8 +63,10 @@ use crate::{
     camera_loading,
     feeds::Feeds,
     platform,
+    recording_defaults::StudioLayout,
     store::{self, BlurMode, CameraShape, CameraWindowState},
     theme::Theme,
+    ui,
 };
 
 #[cfg(target_os = "macos")]
@@ -1641,6 +1643,14 @@ struct BlurBridge {
     _pump: gpui::Task<()>,
 }
 
+const CAMERA_LAYOUT_CHOICES: [(StudioLayout, Option<CameraShape>); 5] = [
+    (StudioLayout::PictureInPicture, Some(CameraShape::Round)),
+    (StudioLayout::PictureInPicture, Some(CameraShape::Square)),
+    (StudioLayout::PictureInPicture, Some(CameraShape::Full)),
+    (StudioLayout::ScreenLeft, None),
+    (StudioLayout::CameraLeft, None),
+];
+
 pub struct CameraWindow {
     theme: Theme,
     state: CameraWindowState,
@@ -1648,6 +1658,9 @@ pub struct CameraWindow {
     picker_size: Option<(f32, f32)>,
     size_generation: Arc<AtomicU64>,
     chrome_visible: bool,
+    studio_layout: StudioLayout,
+    layout_menu: Option<ui::MenuState>,
+    layout_focus: gpui::FocusHandle,
     resizing: Option<ResizeDrag>,
     hovered_handle: Option<ResizeCorner>,
     #[cfg(target_os = "macos")]
@@ -1860,6 +1873,17 @@ impl CameraWindow {
         });
         let camera = cx.entity();
         let toolbar = cx.new(|cx| CameraToolbarView::new(&camera, cx));
+        let targets = crate::target_overlay::TargetSelect::global(cx);
+        let mut recording_mode = targets.read(cx).recording_mode;
+        cx.observe(&targets, move |this: &mut Self, targets, cx| {
+            let next = targets.read(cx).recording_mode;
+            if next != recording_mode {
+                recording_mode = next;
+                this.layout_menu = None;
+                cx.notify();
+            }
+        })
+        .detach();
 
         // `currentWindow.onMoved` + the 400ms position sync
         // (`camera.tsx:167-216`): every move lands in the shared store,
@@ -1869,6 +1893,18 @@ impl CameraWindow {
         })
         .detach();
 
+        cx.observe(
+            &crate::session::RecordingSession::global(cx),
+            |this, session, cx| {
+                if session.read(cx).phase != crate::session::Phase::Idle
+                    && this.layout_menu.take().is_some()
+                {
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
         Self {
             theme,
             state,
@@ -1876,6 +1912,9 @@ impl CameraWindow {
             picker_size: None,
             size_generation: Arc::new(AtomicU64::new(0)),
             chrome_visible: false,
+            studio_layout: StudioLayout::preferred(),
+            layout_menu: None,
+            layout_focus: cx.focus_handle(),
             resizing: None,
             hovered_handle: None,
             #[cfg(target_os = "macos")]
@@ -2503,6 +2542,17 @@ impl CameraWindow {
         let theme = self.theme;
         div()
             .id(id)
+            .when(id == "layout", |button| {
+                button
+                    .tab_index(0)
+                    .tab_stop(true)
+                    .role(gpui::Role::Button)
+                    .aria_label(tr::main::studio_layout::heading())
+                    .tooltip_show_delay(ui::TOOLTIP_SHOW_DELAY)
+                    .tooltip(move |_, cx| {
+                        ui::Tooltip::new(&theme, tr::main::studio_layout::heading()).view(cx)
+                    })
+            })
             .p(px(8. * scale))
             .rounded(px(8. * scale))
             .when(pressed, |this| {
@@ -2557,6 +2607,83 @@ impl CameraWindow {
             )
     }
 
+    fn studio_layout_controls(&self, cx: &gpui::App) -> bool {
+        !self.inline
+            && crate::target_overlay::TargetSelect::global(cx)
+                .read(cx)
+                .recording_mode
+                == crate::main_window::Mode::Studio
+            && crate::session::RecordingSession::global(cx)
+                .read(cx)
+                .editor_recording_target()
+                .is_none()
+    }
+
+    fn studio_layout_items(&self) -> Vec<ui::MenuItem> {
+        let pip = tr::main::studio_layout::pip();
+        let side = tr::main::studio_layout::side_by_side();
+        [
+            (pip, tr::main::studio_layout::round()),
+            (pip, tr::main::studio_layout::square()),
+            (pip, tr::main::studio_layout::source()),
+            (side, tr::main::studio_layout::screen_left()),
+            (side, tr::main::studio_layout::camera_left()),
+        ]
+        .into_iter()
+        .zip(CAMERA_LAYOUT_CHOICES)
+        .map(|((group, label), (layout, shape))| {
+            ui::MenuItem::new(
+                format!("{group} · {label}"),
+                self.studio_layout == layout && shape.is_none_or(|shape| self.state.shape == shape),
+            )
+        })
+        .collect()
+    }
+
+    fn choose_studio_layout(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.layout_menu = None;
+        if crate::session::RecordingSession::global(cx).read(cx).phase
+            == crate::session::Phase::Idle
+            && let Some((layout, shape)) = CAMERA_LAYOUT_CHOICES.get(index).copied()
+            && self.studio_layout_controls(cx)
+        {
+            if self.studio_layout != layout && !layout.remember() {
+                tracing::warn!("Could not save the Studio layout");
+                cx.notify();
+                return;
+            }
+            self.studio_layout = layout;
+            if let Some(shape) = shape
+                && self.state.shape != shape
+            {
+                self.mutate_state(window, cx, |state| state.shape = shape);
+            }
+        }
+        cx.notify();
+    }
+
+    fn render_layout_menu(&self, cx: &mut Context<Self>) -> Option<ui::Menu> {
+        let state = self
+            .layout_menu
+            .as_ref()
+            .filter(|_| self.studio_layout_controls(cx))?;
+        Some(
+            ui::Menu::plain(
+                &self.theme,
+                "camera-layout-menu",
+                self.studio_layout_items(),
+                state,
+            )
+            .on_select(cx.listener(|this, index: &usize, window, cx| {
+                this.choose_studio_layout(*index, window, cx)
+            }))
+            .on_dismiss(cx.listener(|this, _, _, cx| {
+                this.layout_menu = None;
+                cx.notify();
+            })),
+        )
+    }
+
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
         let (scale, buttons) = self.toolbar_fit();
@@ -2566,6 +2693,7 @@ impl CameraWindow {
         let skin_smoothing_failed = self.effect_failures.skin_smoothing;
         #[cfg(not(target_os = "macos"))]
         let (mirror_failed, blur_failed) = (false, false);
+        let studio_layout = self.studio_layout_controls(cx);
         let shape_icon = match self.state.shape {
             CameraShape::Round => "icons/circle.svg",
             CameraShape::Square => "icons/square.svg",
@@ -2591,9 +2719,12 @@ impl CameraWindow {
                     .border_1()
                     .border_color(gpui::hsla(0., 0., 1., 0.2))
                     .text_color(theme.gray_10)
-                    .when(!self.chrome_visible && self.resizing.is_none(), |this| {
-                        this.invisible()
-                    })
+                    .when(
+                        !self.chrome_visible
+                            && self.resizing.is_none()
+                            && self.layout_menu.is_none(),
+                        |this| this.invisible(),
+                    )
                     .child(self.toolbar_button(
                         "close",
                         "icons/circle-x.svg",
@@ -2620,23 +2751,54 @@ impl CameraWindow {
                             })
                         },
                     ))
-                    .child(self.toolbar_button(
-                        "shape",
-                        shape_icon,
-                        self.state.shape != CameraShape::Round,
-                        scale,
-                        None,
-                        cx,
-                        |this, window, cx| {
-                            this.mutate_state(window, cx, |state| {
-                                state.shape = match state.shape {
-                                    CameraShape::Round => CameraShape::Square,
-                                    CameraShape::Square => CameraShape::Full,
-                                    CameraShape::Full => CameraShape::Round,
-                                };
-                            })
-                        },
-                    ))
+                    .when(studio_layout, |toolbar| {
+                        toolbar.child(self.toolbar_button(
+                            "layout",
+                            if self.studio_layout == StudioLayout::PictureInPicture {
+                                shape_icon
+                            } else {
+                                "icons/columns-2.svg"
+                            },
+                            self.layout_menu.is_some(),
+                            scale,
+                            None,
+                            cx,
+                            |this, window, cx| {
+                                if this.layout_menu.take().is_none()
+                                    && crate::session::RecordingSession::global(cx).read(cx).phase
+                                        == crate::session::Phase::Idle
+                                {
+                                    let origin =
+                                        gpui::point(px(12.), px(CAMERA_TOOLBAR_HEIGHT - 2.));
+                                    this.layout_menu = Some(ui::MenuState::new(
+                                        origin,
+                                        &this.studio_layout_items(),
+                                    ));
+                                    window.focus(&this.layout_focus, cx);
+                                }
+                                cx.notify();
+                            },
+                        ))
+                    })
+                    .when(!studio_layout, |toolbar| {
+                        toolbar.child(self.toolbar_button(
+                            "shape",
+                            shape_icon,
+                            self.state.shape != CameraShape::Round,
+                            scale,
+                            None,
+                            cx,
+                            |this, window, cx| {
+                                this.mutate_state(window, cx, |state| {
+                                    state.shape = match state.shape {
+                                        CameraShape::Round => CameraShape::Square,
+                                        CameraShape::Square => CameraShape::Full,
+                                        CameraShape::Full => CameraShape::Round,
+                                    };
+                                })
+                            },
+                        ))
+                    })
                     // Preview-only, like both Tauri paths (the WGSL UV flip /
                     // the legacy `scaleX(-1)`); the recorded camera track is
                     // never mirrored by either app.
@@ -2923,6 +3085,23 @@ impl Render for CameraWindow {
 
         div()
             .id("camera-root")
+            .relative()
+            .track_focus(&self.layout_focus)
+            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                let Some(menu) = this.layout_menu.as_mut() else {
+                    return;
+                };
+                match menu.on_key(event.keystroke.key.as_str()) {
+                    ui::MenuKey::Commit(index) => this.choose_studio_layout(index, window, cx),
+                    ui::MenuKey::Dismiss => {
+                        this.layout_menu = None;
+                        cx.notify();
+                    }
+                    ui::MenuKey::Moved => cx.notify(),
+                    ui::MenuKey::Ignored => return,
+                }
+                cx.stop_propagation();
+            }))
             .size_full()
             .flex()
             .flex_col()
@@ -2947,7 +3126,7 @@ impl Render for CameraWindow {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, window, _| {
-                    if this.resizing.is_none() && !this.inline {
+                    if this.resizing.is_none() && !this.inline && this.layout_menu.is_none() {
                         window.start_window_move();
                     }
                 }),
@@ -2999,6 +3178,7 @@ impl Render for CameraWindow {
                     .cached(StyleRefinement::default().w_full().flex_1()),
             )
             .child(self.render_resize_handles(cx))
+            .children(self.render_layout_menu(cx))
     }
 }
 

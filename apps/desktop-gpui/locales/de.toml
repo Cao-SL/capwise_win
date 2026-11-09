@@ -913,6 +913,10 @@ add_to_project = "Zum aktuellen Projekt hinzufügen"
 record_new = "Neuen Clip aufnehmen"
 
 [main.studio_layout]
+side_by_side = "Nebeneinander"
+round = "Kreis"
+square = "Quadrat"
+source = "Originalformat"
 heading = "Videolayout"
 pip = "Bild-in-Bild"
 screen_left = "Bildschirm links"

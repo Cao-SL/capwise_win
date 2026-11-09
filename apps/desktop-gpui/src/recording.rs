@@ -2371,11 +2371,10 @@ async fn start_internal(
     if config.mode == RecordingMode::Studio
         && config.camera.is_some()
         && !matches!(config.target, ScreenCaptureTarget::CameraOnly)
-        && let Err(error) = config.studio_layout.save_intent(&project_dir)
+        && let Err(error) = config.studio_layout.reserve_bundle(&project_dir)
     {
         tracing::warn!(%error, "Could not save the Studio layout");
-        let _ = std::fs::remove_dir(&project_dir);
-        return Err(error).context("saving the Studio layout");
+        return Err(error).context("creating the Studio recording project");
     }
     let project_name = project_dir
         .file_stem()

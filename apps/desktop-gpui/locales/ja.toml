@@ -913,6 +913,10 @@ add_to_project = "現在のプロジェクトに追加"
 record_new = "新しいクリップを録画"
 
 [main.studio_layout]
+side_by_side = "並べて表示"
+round = "円形"
+square = "正方形"
+source = "元の比率"
 heading = "動画レイアウト"
 pip = "ピクチャ・イン・ピクチャ"
 screen_left = "左に画面"

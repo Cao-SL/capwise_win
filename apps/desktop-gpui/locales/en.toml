@@ -916,6 +916,10 @@ add_to_project = "Add to your current project"
 record_new = "Record a new clip"
 
 [main.studio_layout]
+side_by_side = "Side by side"
+round = "Circle"
+square = "Square"
+source = "Original ratio"
 heading = "Video layout"
 pip = "Picture-in-picture"
 screen_left = "Screen left"

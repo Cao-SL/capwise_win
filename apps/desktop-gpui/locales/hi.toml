@@ -913,6 +913,10 @@ add_to_project = "अपने मौजूदा प्रोजेक्ट �
 record_new = "नई क्लिप रिकॉर्ड करें"
 
 [main.studio_layout]
+side_by_side = "साथ-साथ"
+round = "गोल"
+square = "वर्ग"
+source = "मूल अनुपात"
 heading = "वीडियो लेआउट"
 pip = "पिक्चर-इन-पिक्चर"
 screen_left = "बाईं ओर स्क्रीन"
