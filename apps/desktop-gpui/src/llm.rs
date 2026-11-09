@@ -705,6 +705,31 @@ pub async fn discover_models(
 const RETRIES: u32 = 3;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReplyFormat {
+    Text,
+    Json,
+}
+
+pub(crate) fn parse_json_reply<T: serde::de::DeserializeOwned>(raw: &str) -> serde_json::Result<T> {
+    let raw = raw.trim().trim_start_matches('\u{feff}').trim();
+    let text = raw
+        .strip_prefix("```")
+        .and_then(|body| body.strip_suffix("```"))
+        .map(|body| {
+            if body
+                .get(..4)
+                .is_some_and(|label| label.eq_ignore_ascii_case("json"))
+            {
+                body[4..].trim()
+            } else {
+                body.trim()
+            }
+        })
+        .unwrap_or(raw);
+    serde_json::from_str(text)
+}
+
 fn request(
     client: &reqwest::Client,
     provider: &LlmProvider,
@@ -712,6 +737,7 @@ fn request(
     key: &str,
     system: &str,
     user: &str,
+    format: ReplyFormat,
 ) -> reqwest::RequestBuilder {
     let url = endpoint
         .base_url
@@ -719,11 +745,20 @@ fn request(
         .replace("{model-id}", endpoint.model.trim());
     let model = endpoint.model.trim();
     let builder = match provider.protocol {
-        Protocol::OpenAi => client.post(url).json(&json!({
-            "model": model,
-            "messages": [{ "role": "system", "content": system }, { "role": "user", "content": user }],
-            "stream": false,
-        })),
+        Protocol::OpenAi => {
+            let mut payload = json!({
+                "model": model,
+                "messages": [{ "role": "system", "content": system }, { "role": "user", "content": user }],
+                "stream": false,
+            });
+            if format == ReplyFormat::Json
+                && provider.id == "deepseek"
+                && reqwest::Url::parse(&url).is_ok_and(|url| url.host_str() == Some("api.deepseek.com"))
+            {
+                payload["response_format"] = json!({ "type": "json_object" });
+            }
+            client.post(url).json(&payload)
+        }
         Protocol::Ollama => client.post(url).json(&json!({
             "model": model,
             "messages": [{ "role": "system", "content": system }, { "role": "user", "content": user }],
@@ -846,6 +881,7 @@ async fn chat_with(
     key: &str,
     system: &str,
     user: &str,
+    format: ReplyFormat,
 ) -> Result<String, String> {
     let name = (provider.name)();
     let client = reqwest::Client::builder()
@@ -856,7 +892,7 @@ async fn chat_with(
     let mut last = String::new();
     for attempt in 0..=RETRIES {
         let sent = provider_headers(
-            request(&client, provider, endpoint, key, system, user),
+            request(&client, provider, endpoint, key, system, user, format),
             provider.id,
             &session,
         )
@@ -912,15 +948,26 @@ pub async fn chat_in_session(
     system: &str,
     user: &str,
 ) -> Result<String, String> {
-    chat_with_model(session, id, None, system, user).await
+    chat_with_model(session, id, None, system, user, ReplyFormat::Text).await
 }
 
-pub(crate) async fn chat_with_model(
+pub(crate) async fn chat_json(
     session: uuid::Uuid,
     id: &str,
     model: Option<&str>,
     system: &str,
     user: &str,
+) -> Result<String, String> {
+    chat_with_model(session, id, model, system, user, ReplyFormat::Json).await
+}
+
+async fn chat_with_model(
+    session: uuid::Uuid,
+    id: &str,
+    model: Option<&str>,
+    system: &str,
+    user: &str,
+    format: ReplyFormat,
 ) -> Result<String, String> {
     let provider = provider(id).ok_or_else(|| format!("Unknown model provider {id}"))?;
     let mut endpoint = provider.endpoint();
@@ -937,7 +984,7 @@ pub(crate) async fn chat_with_model(
     if provider.group == Group::Account {
         return oauth::chat(id, (provider.name)(), &key, &endpoint.model, system, user).await;
     }
-    chat_with(session, provider, &endpoint, &key, system, user).await
+    chat_with(session, provider, &endpoint, &key, system, user, format).await
 }
 
 /// Checks the address, key and model with a one-word question. Returns the
@@ -972,6 +1019,7 @@ pub fn test(id: &str, key: &str, endpoint: &Endpoint) -> Result<u128, String> {
         key.trim(),
         "Reply with the single word OK.",
         "ping",
+        ReplyFormat::Text,
     ))?;
     Ok(started.elapsed().as_millis())
 }
@@ -1379,7 +1427,8 @@ mod tests {
                     &endpoint,
                     "synthetic-secret",
                     "Reply OK",
-                    "ping"
+                    "ping",
+                    ReplyFormat::Text,
                 )
                 .await
                 .unwrap(),
@@ -1395,6 +1444,51 @@ mod tests {
                 request_header(&request, "user-agent"),
                 Some(concat!("Capwise/", env!("CARGO_PKG_VERSION")))
             );
+        }
+    }
+
+    #[test]
+    fn json_response_format_is_only_requested_from_official_deepseek_for_json_tasks() {
+        let client = reqwest::Client::new();
+        let deepseek = provider("deepseek").unwrap();
+        for (url, format, expected) in [
+            (
+                "https://api.deepseek.com/v1/chat/completions",
+                ReplyFormat::Json,
+                true,
+            ),
+            (
+                "https://api.deepseek.com/v1/chat/completions",
+                ReplyFormat::Text,
+                false,
+            ),
+            (
+                "https://example.com/v1/chat/completions",
+                ReplyFormat::Json,
+                false,
+            ),
+        ] {
+            let endpoint = Endpoint {
+                base_url: url.into(),
+                model: "deepseek-flash".into(),
+            };
+            let built = request(
+                &client,
+                deepseek,
+                &endpoint,
+                "test-key",
+                "Return JSON",
+                "input",
+                format,
+            )
+            .build()
+            .unwrap();
+            let body: Value =
+                serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).unwrap();
+            assert_eq!(body.get("response_format").is_some(), expected);
+            if expected {
+                assert_eq!(body["response_format"]["type"], "json_object");
+            }
         }
     }
 
