@@ -199,8 +199,13 @@ pub fn system_accent_color() -> Option<u32> {
     (rgb != 0).then_some(rgb)
 }
 
-/// Registers the process AppUserModelID and enables the taskbar jump list's
-/// recent/frequent categories. Safe when shell integration is unavailable.
+/// Call before any window exists; see `jump_list::register_app_id`.
+pub fn register_app_user_model_id() {
+    jump_list::register_app_id();
+}
+
+/// Enables the taskbar jump list's recent/frequent categories. Safe when shell
+/// integration is unavailable.
 pub fn install_jump_list() {
     jump_list::install();
 }

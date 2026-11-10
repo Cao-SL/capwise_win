@@ -352,6 +352,8 @@ fn app_runtime() -> tokio::runtime::Runtime {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    platform::register_app_user_model_id();
     perf_marks::start();
     #[cfg(target_os = "linux")]
     if let Some(threads) = cap_utils::linux_runtime::llvmpipe_thread_count() {
