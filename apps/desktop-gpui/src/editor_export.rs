@@ -1415,6 +1415,16 @@ impl EditorWindow {
             match export.await {
                 Ok(Ok(path)) => {
                     tracing::info!(path = %path.display(), "editor export completed");
+                    #[cfg(target_os = "windows")]
+                    if crate::store::notification_sounds_enabled() {
+                        crate::platform::show_toast(
+                            "Capwise",
+                            &path
+                                .file_name()
+                                .map(|name| name.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "Export complete".into()),
+                        );
+                    }
                     if destination == ExportDestination::Clipboard {
                         let _ = this.update(cx, |this, cx| {
                             if let Some(ui) = this.export.as_mut()

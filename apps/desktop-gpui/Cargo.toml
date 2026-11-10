@@ -225,6 +225,10 @@ libc = "0.2"
 clipboard-rs = "0.2.4"
 raw-window-handle = "0.6"
 tray-icon = { version = "0.21.1", default-features = false }
+windows = { version = "0.60.0", features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
+] }
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

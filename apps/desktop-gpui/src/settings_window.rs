@@ -20,6 +20,8 @@ use std::{
     time::Duration,
 };
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gpui::AnyElement;
 use gpui::{
     AppContext as _, Bounds, Context, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement,
     IntoElement, MouseButton, ParentElement, Pixels, Point, Render, RenderImage, ScrollAnchor,
@@ -3329,7 +3331,7 @@ impl SettingsWindow {
         sections.extend([self.render_recording(cx).into_any_element()]);
         if self.settings.show_advanced_settings {
             sections.push(self.render_recording_advanced(cx).into_any_element());
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             sections.push(self.render_app_section(cx).into_any_element());
             sections.extend([
                 self.render_workflow_presets(cx).into_any_element(),
@@ -3717,63 +3719,62 @@ impl SettingsWindow {
         )
     }
 
-    /// The macOS-only App section: `hideDockIcon`, `enableNotifications`.
-    /// Windows has no Dock and no notification permission prompt, so the two
-    /// toggles would only write keys nothing reads.
-    #[cfg(target_os = "macos")]
+    /// `hideDockIcon` is macOS-only; `enableNotifications` also gates the
+    /// Windows toast, so the section exists on both platforms with a different
+    /// set of rows.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     fn render_app_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut rows: Vec<AnyElement> = Vec::new();
+        #[cfg(target_os = "macos")]
+        rows.push(
+            self.setting_row(
+                tr::settings::general::app::dock_icon::label(),
+                Some(tr::settings::general::app::dock_icon::description()),
+                // The row is the *inverse* of the stored key.
+                self.toggle(
+                    "hide-dock-icon",
+                    tr::settings::general::app::dock_icon::label(),
+                    !self.settings.hide_dock_icon,
+                    cx,
+                    |this, cx| {
+                        this.settings.hide_dock_icon = !this.settings.hide_dock_icon;
+                        let value = this.settings.hide_dock_icon;
+                        this.write_bool("hideDockIcon", value, cx);
+                        // `GeneralSettingsStore::set` -> the store
+                        // listener -> `schedule_macos_dock_visibility_sync`.
+                        // Deferred past the debounced write, which is
+                        // what the sync then reads back.
+                        cx.defer(|cx: &mut gpui::App| crate::menus::schedule_dock_sync(cx));
+                    },
+                )
+                .into_any_element(),
+            )
+            .into_any_element(),
+        );
+        rows.push(
+            self.setting_row(
+                tr::settings::general::app::notifications::label(),
+                Some(tr::settings::general::app::notifications::description()),
+                self.toggle(
+                    "enable-notifications",
+                    tr::settings::general::app::notifications::label(),
+                    self.settings.enable_notifications,
+                    cx,
+                    |this, cx| {
+                        this.settings.enable_notifications = !this.settings.enable_notifications;
+                        let value = this.settings.enable_notifications;
+                        this.write_bool("enableNotifications", value, cx);
+                    },
+                )
+                .into_any_element(),
+            )
+            .into_any_element(),
+        );
         self.section(
             tr::settings::general::app::title(),
             Some(tr::settings::general::app::description()),
             None,
-            vec![
-                self.rows(vec![
-                    self.setting_row(
-                        tr::settings::general::app::dock_icon::label(),
-                        Some(tr::settings::general::app::dock_icon::description()),
-                        // The row is the *inverse* of the stored key.
-                        self.toggle(
-                            "hide-dock-icon",
-                            tr::settings::general::app::dock_icon::label(),
-                            !self.settings.hide_dock_icon,
-                            cx,
-                            |this, cx| {
-                                this.settings.hide_dock_icon = !this.settings.hide_dock_icon;
-                                let value = this.settings.hide_dock_icon;
-                                this.write_bool("hideDockIcon", value, cx);
-                                // `GeneralSettingsStore::set` -> the store
-                                // listener -> `schedule_macos_dock_visibility_sync`.
-                                // Deferred past the debounced write, which is
-                                // what the sync then reads back.
-                                cx.defer(|cx: &mut gpui::App| crate::menus::schedule_dock_sync(cx));
-                            },
-                        )
-                        .into_any_element(),
-                    ),
-                    self.setting_row(
-                        tr::settings::general::app::notifications::label(),
-                        Some(tr::settings::general::app::notifications::description()),
-                        self.toggle(
-                            "enable-notifications",
-                            tr::settings::general::app::notifications::label(),
-                            self.settings.enable_notifications,
-                            cx,
-                            |this, cx| {
-                                // The Tauri handler asks for the notification
-                                // permission before enabling; nothing here
-                                // posts notifications yet, so there is nothing
-                                // to ask for.
-                                this.settings.enable_notifications =
-                                    !this.settings.enable_notifications;
-                                let value = this.settings.enable_notifications;
-                                this.write_bool("enableNotifications", value, cx);
-                            },
-                        )
-                        .into_any_element(),
-                    ),
-                ])
-                .into_any_element(),
-            ],
+            vec![self.rows(rows).into_any_element()],
         )
     }
 

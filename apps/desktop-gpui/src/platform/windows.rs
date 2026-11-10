@@ -21,6 +21,7 @@ mod jump_list;
 mod power_events;
 mod session_end;
 mod taskbar;
+mod toast;
 mod url_scheme;
 mod window_app_id;
 mod window_chrome;
@@ -208,6 +209,11 @@ pub fn register_app_user_model_id() {
 /// Tag a window with the same AUMID so its taskbar button shares the jump list.
 pub fn install_window_app_id(native: &NativeWindow) {
     window_app_id::install(native.hwnd());
+}
+
+/// Best-effort Windows toast; silently does nothing when WinRT is unavailable.
+pub fn show_toast(title: &str, body: &str) {
+    toast::show(title, body);
 }
 
 /// Enables the taskbar jump list's recent/frequent categories. Safe when shell
