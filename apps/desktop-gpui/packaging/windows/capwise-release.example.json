@@ -13,7 +13,14 @@
 	},
 	"bundle": {
 		"createUpdaterArtifacts": true,
-		"fileAssociations": [],
+		"fileAssociations": [
+			{
+				"ext": ["cap"],
+				"name": "Capwise Project",
+				"mimeType": "application/x-cap-project",
+				"role": "Editor"
+			}
+		],
 		"windows": {
 			"nsis": {
 				"installMode": "currentUser"
