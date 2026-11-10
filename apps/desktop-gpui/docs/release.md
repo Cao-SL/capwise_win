@@ -1,9 +1,9 @@
 # 发布灵录（Capwise）
 
-灵录通过 GitHub Releases 分发：用户下载 DMG 安装，之后由 App 内置的更新器自动升级。
+灵录通过 GitHub Releases 分发。App 内置更新器按系统、芯片架构和 Linux 安装包格式选择更新。
 
 - 更新清单：`https://github.com/joeseesun/capwise/releases/latest/download/latest.json`（总是指向最新一个**已发布**的 Release，草稿和预发布不算）。
-- 更新包：`Capwise_<版本>_<架构>.app.tar.gz`，用 minisign 签名，签名放在 `latest.json` 里。App 只接受 `packaging/updater.pub` 这把公钥签过的包。
+- 更新包：Mac 使用 `.app.tar.gz`，Windows x64 使用 NSIS `.exe`，Ubuntu 24.04 x64 使用 `.deb`。每个包用 minisign 签名，签名放在 `latest.json` 里。App 只接受 `packaging/updater.pub` 这把公钥签过的包。
 - App 启动 10 秒后检查一次，之后每 6 小时检查一次。正在录制、导出、导入或转写时不会弹窗，等任务结束再提示；"更新下载"设为"从不"时只响应手动检查。可在「关于」页检查更新。只有一个稳定通道，没有 nightly。
 
 `latest.json` 的格式：
@@ -146,7 +146,18 @@ GitHub Actions 的 `Capwise platform candidates` 在原生 Intel Mac、Ubuntu 24
 
 Intel 候选包从工作流下载并解开后，可在持有签名凭据的 Mac 上用 `CAPWISE_PREBUILT_APP=/path/Capwise.app apps/desktop-gpui/scripts/release.sh <版本>` 签名和公证。脚本从主程序确定目标架构，并逐个核对内嵌二进制。将 Apple Silicon 的 `latest.json` 先复制到同一版本的产物目录，可以保留其更新条目。固定文件名 `Capwise.dmg` 由 Apple Silicon 构建生成。
 
-Linux 首先验证 Ubuntu 24.04 x64 的 `.deb`。发布时使用正式 minisign 密钥签署安装包，并把签名与下载地址写进同版本更新清单的 `linux-x86_64-deb` 条目。Windows 工作流产物是测试候选包，正式发布还需要 Windows 代码签名。
+发布前先在原生系统验证候选包。Windows 预览版的 minisign 签名用于 App 内的下载验签。Windows 系统代码签名独立于 minisign，正式发行包还需 Windows 代码签名。Ubuntu 安装更新时会请求系统管理员授权。
+
+将同版本的两个 Mac 更新归档、`Capwise-Windows-x64-Setup.exe` 和 `Capwise-linux-x86_64.deb` 收到同一个目录。每个包旁边须有正式密钥生成的 `.minisig`。用 Apple Silicon 的 `latest.json` 作为基底生成完整清单：
+
+```bash
+node apps/desktop-gpui/scripts/assemble-update-manifest.mjs \
+  <apple-silicon-latest.json> <signed-packages-dir> <output/latest.json>
+```
+
+脚本验证四个包的文件格式和签名，并保留 Apple Silicon 原有更新条目。默认所有包从同一正式版本的 Release 下载。Windows 和 Ubuntu 预览安装器在同版本预发布 Release 时，可将该预发布标签作为第四个参数。Intel Mac 更新需要签名并公证的 `.app.tar.gz`，官网安装使用 `.dmg`。
+
+上传清单前逐一核对发布资产的 SHA-256 与候选包一致，再用上一版在各平台验证更新。四个平台都已接入时，正式发布必须带上这份完整清单。单平台构建生成的草稿应先补齐清单再设为最新版本。
 
 ### GitHub Actions
 
