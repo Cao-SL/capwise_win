@@ -80,3 +80,8 @@ analysis/plans/
 tmp/
 
 __pycache__/
+*.minisig
+*.key
+*.pfx
+dist/msix/
+!apps/desktop-gpui/packaging/updater.pub

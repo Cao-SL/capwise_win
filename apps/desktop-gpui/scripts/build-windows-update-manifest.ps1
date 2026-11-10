@@ -5,10 +5,10 @@
 .DESCRIPTION
     Mirrors the Windows arm of installer.rs::parse_release: the manifest is
     {"version":..., "notes":..., "platforms":{"windows-x86_64":{"url":...,"signature":...}}}.
-    The signature is the base64 content of the .minisig file produced by
-    minisign -S; the app verifies it against packaging/updater.pub while the
-    installer is streaming to disk. Nothing here signs anything -- run minisign
-    first and pass the resulting values in.
+    The signature field is base64 of the whole .minisig text file produced by
+    minisign -S: installer.rs decodes that base64 back to text and hands it to
+    minisign_verify::Signature::decode. This script does that encoding; it does
+    not sign anything. Run minisign first and pass the resulting file in.
 
 .EXAMPLE
     ./build-windows-update-manifest.ps1 `
@@ -43,15 +43,14 @@ if ($parsedUrl.Scheme -ne "https") {
     throw "installer.rs rejects non-HTTPS update URLs: $Url"
 }
 
-$signature = (Get-Content -LiteralPath $SignatureFile -Raw).Trim()
-if ([string]::IsNullOrWhiteSpace($signature)) {
+$minisigText = Get-Content -LiteralPath $SignatureFile -Raw -Encoding UTF8
+if ([string]::IsNullOrWhiteSpace($minisigText)) {
     throw "The minisig file is empty; installer.rs rejects an empty signature."
 }
-try {
-    $null = [Convert]::FromBase64String($signature)
-} catch {
-    throw "The minisig content is not base64: $($_.Exception.Message)"
+if ($minisigText -notmatch '(?m)^untrusted comment:') {
+    throw "The signature file is not a minisign .minisig (missing 'untrusted comment:' line)."
 }
+$signature = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($minisigText))
 
 $hash = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
 $installerName = Split-Path -Leaf $Installer

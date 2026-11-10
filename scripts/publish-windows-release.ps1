@@ -24,7 +24,7 @@
 param(
     [Parameter(Mandatory = $true)][string] $Installer,
     [Parameter(Mandatory = $true)][string] $InstallerUrl,
-    [Parameter(Mandatory = $true)][string] $SignatureFile,
+    [string] $SignatureFile = "",
     [string] $Version = "",
     [string] $OutDir = "",
     [string] $Notes = "",
@@ -32,7 +32,9 @@ param(
     [string] $PfxPassword = "",
     [string] $WingetTemplateDir = "",
     [string] $MinisignPublicKey = "",
-    [string] $UpdateEndpoint = ""
+    [string] $UpdateEndpoint = "",
+    [string] $MinisignSecretKey = "",
+    [string] $PythonPath = ""
 )
 
 Set-StrictMode -Version Latest
@@ -41,7 +43,9 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Desktop = Join-Path $RepoRoot "apps\desktop-gpui"
 $Installer = (Resolve-Path -LiteralPath $Installer).Path
-$SignatureFile = (Resolve-Path -LiteralPath $SignatureFile).Path
+if (-not [string]::IsNullOrWhiteSpace($SignatureFile)) {
+    $SignatureFile = (Resolve-Path -LiteralPath $SignatureFile).Path
+}
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $match = Select-String -LiteralPath (Join-Path $Desktop "Cargo.toml") -Pattern '^version = "([^"]+)"' | Select-Object -First 1
@@ -58,25 +62,34 @@ if (-not (Test-Path -LiteralPath $WingetTemplateDir -PathType Container)) {
     throw "Winget template directory not found: $WingetTemplateDir"
 }
 
-$releaseOut = ""
-if (-not [string]::IsNullOrWhiteSpace($MinisignPublicKey) -or -not [string]::IsNullOrWhiteSpace($UpdateEndpoint)) {
-    if ([string]::IsNullOrWhiteSpace($MinisignPublicKey) -or [string]::IsNullOrWhiteSpace($UpdateEndpoint)) {
-        throw "MinisignPublicKey and UpdateEndpoint must be supplied together."
-    }
+Write-Host "== Release config =="
+$releaseTemplate = Join-Path $Desktop "packaging\windows\capwise-release.example.json"
+if (-not (Test-Path -LiteralPath $releaseTemplate -PathType Leaf)) {
+    throw "Release config template not found: $releaseTemplate"
+}
+$release = Get-Content -LiteralPath $releaseTemplate -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not [string]::IsNullOrWhiteSpace($MinisignPublicKey)) {
+    $release.plugins.updater.pubkey = $MinisignPublicKey
+}
+if (-not [string]::IsNullOrWhiteSpace($UpdateEndpoint)) {
     $endpointUri = [System.Uri]::new($UpdateEndpoint)
     if ($endpointUri.Scheme -ne "https") { throw "UpdateEndpoint must be HTTPS: $UpdateEndpoint" }
-    if ($UpdateEndpoint -match 'example\.com') { throw "UpdateEndpoint is still the example URL." }
-    $releaseTemplate = Join-Path $Desktop "packaging\windows\capwise-release.example.json"
-    if (-not (Test-Path -LiteralPath $releaseTemplate -PathType Leaf)) {
-        throw "Release config template not found: $releaseTemplate"
-    }
-    $releaseText = (Get-Content -LiteralPath $releaseTemplate -Raw -Encoding UTF8) `
-        -replace 'REPLACE_WITH_YOUR_MINISIGN_PUBLIC_KEY', $MinisignPublicKey `
-        -replace 'https://updates\.example\.com/capwise/latest\.json', $UpdateEndpoint
-    $releaseOut = Join-Path $OutDir "capwise-release.json"
-    [System.IO.File]::WriteAllText($releaseOut, $releaseText, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "  wrote capwise-release.json"
+    $release.plugins.updater.endpoints = @($UpdateEndpoint)
 }
+if ($release.plugins.updater.pubkey -notmatch '^RW[A-Za-z0-9+/]+={0,2}$') {
+    throw "The release config has an invalid minisign public key."
+}
+foreach ($endpoint in $release.plugins.updater.endpoints) {
+    if ([System.Uri]::new($endpoint).Scheme -ne "https") { throw "Updater endpoint must be HTTPS: $endpoint" }
+    if ($endpoint -match 'example\.com') { throw "Updater endpoint is still an example URL: $endpoint" }
+}
+$releaseOut = Join-Path $OutDir "capwise-release.json"
+[System.IO.File]::WriteAllText(
+    $releaseOut,
+    ($release | ConvertTo-Json -Depth 12),
+    [System.Text.UTF8Encoding]::new($false)
+)
+Write-Host "  wrote capwise-release.json"
 
 if (-not [string]::IsNullOrWhiteSpace($PfxBase64)) {
     Write-Host "== Authenticode signing =="
@@ -90,6 +103,29 @@ if (-not [string]::IsNullOrWhiteSpace($PfxBase64)) {
 
 $sha256 = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToUpperInvariant()
 Write-Host "Installer SHA256: $sha256"
+
+if ([string]::IsNullOrWhiteSpace($SignatureFile)) {
+    if ([string]::IsNullOrWhiteSpace($MinisignSecretKey)) {
+        throw "Pass -SignatureFile or -MinisignSecretKey so the updater manifest has a signature."
+    }
+    $secret = (Resolve-Path -LiteralPath $MinisignSecretKey).Path
+    if ([string]::IsNullOrWhiteSpace($PythonPath)) {
+        $pyCommand = Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($pyCommand) { $PythonPath = $pyCommand.Source }
+        if ([string]::IsNullOrWhiteSpace($PythonPath)) {
+            $bundled = Join-Path $env:USERPROFILE ".dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe"
+            if (Test-Path $bundled) { $PythonPath = $bundled }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($PythonPath)) { throw "Python with py-minisign is needed to sign the update." }
+    Write-Host "== Signing the update with minisign =="
+    & $PythonPath (Join-Path $PSScriptRoot "minisign-keytool.py") sign --secret $secret --file $Installer
+    $SignatureFile = "$Installer.minisig"
+    $signatureCheck = & $PythonPath (Join-Path $PSScriptRoot "minisign-keytool.py") verify `
+        --public (Join-Path $Desktop "packaging\updater.pub") --file $Installer 2>&1
+    Write-Host "  $signatureCheck"
+}
+$SignatureFile = (Resolve-Path -LiteralPath $SignatureFile).Path
 
 Write-Host "== Update manifest =="
 $manifestArgs = @{
@@ -148,7 +184,9 @@ $checklist = @(
     "",
     "Update endpoint: publish latest.json at the updater URL and keep that",
     "version in sync with the installed build.",
-    $(if ($releaseOut) { "Release config: $releaseOut" } else { "Release config: copy packaging/windows/capwise-release.example.json, fill the minisign pubkey and updater endpoint, then pass --config to tauri bundle." })
+    "Release config: $releaseOut (pass it to tauri bundle with --config).",
+    "The updater verifies latest.json against packaging/updater.pub; keep the",
+    "minisign secret key outside the repository."
 ) -join "`n"
 [System.IO.File]::WriteAllText((Join-Path $OutDir "PUBLISH-CHECKLIST.txt"), $checklist, $utf8NoBom)
 

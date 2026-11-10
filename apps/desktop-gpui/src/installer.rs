@@ -11,9 +11,9 @@ use minisign_verify::{PublicKey, Signature, StreamVerifier};
 use semver::Version;
 use serde::Deserialize;
 
-pub(crate) const RELEASES_PAGE_URL: &str = "https://github.com/joeseesun/capwise/releases";
+pub(crate) const RELEASES_PAGE_URL: &str = "https://github.com/Cao-SL/capwise_win/releases";
 const UPDATE_MANIFEST_URL: &str =
-    "https://github.com/joeseesun/capwise/releases/latest/download/latest.json";
+    "https://github.com/Cao-SL/capwise_win/releases/latest/download/latest.json";
 /// The minisign public key every update must be signed with. The private half
 /// never enters the repository; see docs/release.md. An empty file means this
 /// build was made before the key existed, so it never looks for updates.
@@ -702,7 +702,7 @@ mod tests {
     fn the_update_manifest_is_the_latest_github_release() {
         assert_eq!(
             UPDATE_MANIFEST_URL,
-            "https://github.com/joeseesun/capwise/releases/latest/download/latest.json"
+            "https://github.com/Cao-SL/capwise_win/releases/latest/download/latest.json"
         );
     }
 
@@ -753,6 +753,22 @@ mod tests {
         let intel = parse_release(body, "darwin-x86_64").unwrap().unwrap();
         assert_eq!(intel.signature, "aW50ZWw=");
         assert_eq!(parse_release(body, "windows-x86_64").unwrap(), None);
+    }
+
+    #[test]
+    fn a_minisign_keytool_signature_verifies_against_the_shipped_key() {
+        const FIXTURE_KEY: &str = "untrusted comment: minisign public key\nRWQtrkX5cq/i0PQAAHPEEp2CNrNbRTdqUE+4JrpH+YRK243kXXTDsw7t\n";
+        const FIXTURE_SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIG1pbmlzaWduIHNlY3JldCBrZXkKUldRdHJrWDVjcS9pMEZ0R3BTLy9vK3pXU040ck9Ec1VRazlqSjh1VDYzOEZ3b2lxbCtENFhXUlFwdTI5bUZ5NkJTVGlXNGJOWmxIM0tUKzlVSW5LNC8vVVN5VFJPSUlDOGdRPQp0cnVzdGVkIGNvbW1lbnQ6IGNhcHdpc2Ugd2luZG93cyByZWxlYXNlIGZpeHR1cmUgdjAuMy45Ckh3ZlBvMlYxeGJsTVQ2c0k1eUhYUnIvc2V4TTd4d0lUYy81amRLTkQ4MTJvU3dtN1lYemtFc1poTndCYUZkSmI5TDI4S00vTkZ6S3JPR2ZzOTcyUUJ3PT0K";
+        let directory = scratch("minisign-keytool-signature");
+        let file = directory.join("Capwise-Windows-x64-Setup.exe");
+        std::fs::write(&file, b"capwise windows release fixture v0.3.9").unwrap();
+
+        let signature = decode_signature(FIXTURE_SIGNATURE).unwrap();
+        verify_file(&file, &trusted_key(FIXTURE_KEY).unwrap(), &signature).unwrap();
+        assert!(verify_file(&file, &trusted_key(TEST_KEY).unwrap(), &signature).is_err());
+        std::fs::write(&file, b"tampered").unwrap();
+        assert!(verify_file(&file, &trusted_key(FIXTURE_KEY).unwrap(), &signature).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
