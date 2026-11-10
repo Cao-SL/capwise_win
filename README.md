@@ -9,6 +9,8 @@ A native Mac studio for screen recordings, captions, and AI-assisted editing.
 
 [官网与界面预览](https://capwise.qiaomu.ai/) · [下载 macOS 版](https://github.com/joeseesun/capwise/releases/latest/download/Capwise.dmg) · [报告问题](https://github.com/joeseesun/capwise/issues) · [构建文档](apps/desktop-gpui/README.md) · [许可证](LICENSE)
 
+> **本仓库是灵录的 Windows 版本**（fork 自 [joeseesun/capwise](https://github.com/joeseesun/capwise)）：跟踪上游更新，并在此基础上提供 Windows 原生支持。macOS 用户请直接使用上游官方版本。
+
 ![真实灵录编辑器：原创演示工程、双语字幕、可编辑文字与多轨时间线](docs/assets/workbench.webp)
 
 _真实安装版界面。演示中的 NOVA 是原创虚构素材，不包含私人录屏；标题、字幕和缩放均在灵录中编辑。_
@@ -18,6 +20,41 @@ _真实安装版界面。演示中的 NOVA 是原创虚构素材，不包含私�
 [![最新版本](https://img.shields.io/github/v/release/joeseesun/capwise?label=macOS)](https://github.com/joeseesun/capwise/releases/latest) [![AGPLv3](https://img.shields.io/badge/license-AGPLv3-586B59)](LICENSE)
 
 适合做**产品演示、软件教程、课程录制和知识分享**。当前发布包支持 macOS 13.3+、Apple Silicon，经过 Developer ID 签名与 Apple 公证。
+
+## Windows 版本
+
+灵录 Windows 版在本仓库构建与维护：上游的录制、时间线、字幕与 AI 助手能力，加上 Windows 原生 shell 集成。以下截图来自本仓库 0.3.10 构建，Windows 11 实机运行。
+
+![Windows 版设置页：外观、语言与录制行为](docs/assets/windows-settings.png)
+
+| 录制主窗口 | 欢迎引导 |
+| --- | --- |
+| ![Windows 录制主窗口](docs/assets/windows-main.png) | ![Windows 欢迎引导](docs/assets/windows-welcome.jpg) |
+
+### Windows 原生集成
+
+- **任务栏进度**：导出时任务栏按钮显示实时进度（`ITaskbarList3`）
+- **跳转列表**：右键任务栏图标直达最近 / 常用工程
+- **系统通知**：导出完成后弹 Windows 通知，可在设置里开关
+- **Win11 视觉**：圆角窗口、Mica/Acrylic 背景材质、跟随系统强调色
+- **多 GPU 对齐**：录制、编码、解码自动与渲染 GPU 对齐，混合显卡机型不再选错卡
+- **MSIX 分发**：安装包之外另提供 MSIX，适合企业侧载
+- **密钥本地保存**：AI 密钥保存在本机存储，重启后保留
+
+### 获取与构建
+
+当前通过本仓库源码构建（CI 与 Release 产物陆续完善中）：
+
+```powershell
+git clone https://github.com/Cao-SL/capwise_win.git
+cd capwise_win
+bun install
+bun run cap-setup
+bun run gpui:build x86_64-pc-windows-msvc
+./scripts/assemble-windows-payload.ps1 -OutDir ./dist/Capwise
+```
+
+签名、更新分发、winget 与 MSIX 的完整链路见 `packaging/windows/RELEASE.md`；手工准备原生依赖的流程见 `apps/desktop-gpui/docs/windows-gpu-roadmap.md`。
 
 ## 录完之后，少折腾几步
 
@@ -53,7 +90,7 @@ _真实安装版界面。演示中的 NOVA 是原创虚构素材，不包含私�
 
 基础录制与编辑不需要注册 Cap 云服务账号。AI 功能可选：请在「设置 → AI 模型」中配置自己的服务。
 
-本次提供 **macOS 13.3+、Apple Silicon** 安装包。Intel、Windows 和 Linux 暂未提供本项目验证过的发布包。
+上游当前提供 **macOS 13.3+ / Apple Silicon** 安装包；Intel 与 Linux 暂无发布包。**Windows 版本由本仓库提供**，见上文「Windows 版本」。
 
 ## 先打开一份好看的工程
 
@@ -119,7 +156,7 @@ ACP 使用本机已有的登录状态。不同适配器的安装、登录和模�
 ## 数据与费用
 
 - 项目和媒体保存在本机，基础编辑不依赖 Cap 云服务。
-- macOS 上的 API Key 保存在登录钥匙串；更新应用不会主动清空密钥。
+- macOS 上的 API Key 保存在登录钥匙串；Windows 版保存在本机共享存储文件（不上传）；更新应用不会主动清空密钥。
 - 使用云端字幕识别时，音频会发送给所选识别服务。
 - 字幕校对、翻译和助手请求会发送相关字幕文字与编辑上下文给你选择的模型。助手不会把整个录屏上传给文本模型。
 - 封面生图会发送图片描述给图片服务商。模型服务可能收费，费用与额度由服务商决定。
