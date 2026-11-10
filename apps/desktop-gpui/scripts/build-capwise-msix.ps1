@@ -23,6 +23,8 @@ param(
     [string] $Publisher = "CN=Capwise",
     [string] $PfxBase64 = "",
     [string] $PfxPassword = "",
+    [string] $CertificateThumbprint = "",
+    [string] $CertificateSubject = "",
     [string] $MakeAppxPath = "",
     [string] $SigntoolPath = ""
 )
@@ -149,9 +151,20 @@ if ($unpackedXml.Package.Identity.Version -ne $appxVersion) {
 Write-Host "  round-trip OK, identity $($unpackedXml.Package.Identity.Version)"
 Remove-Item -Recurse -Force $roundTrip
 
-if (-not [string]::IsNullOrWhiteSpace($PfxBase64)) {
+$hasPfx = -not [string]::IsNullOrWhiteSpace($PfxBase64)
+$hasThumbprint = -not [string]::IsNullOrWhiteSpace($CertificateThumbprint)
+$hasSubject = -not [string]::IsNullOrWhiteSpace($CertificateSubject)
+if ($hasPfx -or $hasThumbprint -or $hasSubject) {
     Write-Host "== Authenticode signing =="
-    $signArgs = @{ Paths = @($msix); PfxBase64 = $PfxBase64; PfxPassword = $PfxPassword }
+    $signArgs = @{ Paths = @($msix) }
+    if ($hasPfx) {
+        $signArgs.PfxBase64 = $PfxBase64
+        $signArgs.PfxPassword = $PfxPassword
+    } elseif ($hasThumbprint) {
+        $signArgs.CertificateThumbprint = $CertificateThumbprint
+    } else {
+        $signArgs.CertificateSubject = $CertificateSubject
+    }
     if (-not [string]::IsNullOrWhiteSpace($SigntoolPath)) { $signArgs.SigntoolPath = $SigntoolPath }
     & (Join-Path $RepoRoot "scripts\sign-windows-release.ps1") @signArgs
 }

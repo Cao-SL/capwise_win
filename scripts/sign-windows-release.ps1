@@ -7,6 +7,13 @@
     which a downstream fork cannot use. This signs in place with signtool and an RFC3161
     timestamp, then verifies every file with Get-AuthenticodeSignature.
 
+    Key source, pick one:
+      -PfxBase64                 PFX contents (CI secret); written to a temp file and removed.
+      -CertificateThumbprint     sign with a certificate already in the machine/user store
+                                 (hardware tokens, USB eTokens, cloud-HSM drivers).
+      -CertificateSubject        same, matched by subject (use -CertificateThumbprint when
+                                 several certificates share a subject).
+
     The Windows SDK's signtool is not on PATH on GitHub runners, so the newest
     x64 copy under "C:\Program Files (x86)\Windows Kits\10\bin" is used when
     Get-Command cannot find it. Pass -SigntoolPath to override (also useful for tests).
@@ -14,12 +21,17 @@
 .EXAMPLE
     ./sign-windows-release.ps1 -Paths ./Capwise.exe,./cap-cli.exe `
         -PfxBase64 $env:WINDOWS_SIGNING_PFX -PfxPassword $env:WINDOWS_SIGNING_PFX_PASSWORD
+
+.EXAMPLE
+    ./sign-windows-release.ps1 -Paths ./Capwise.exe -CertificateThumbprint 0123456789ABCDEF
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string[]] $Paths,
-    [Parameter(Mandatory = $true)][string] $PfxBase64,
+    [string] $PfxBase64 = "",
     [string] $PfxPassword = "",
+    [string] $CertificateThumbprint = "",
+    [string] $CertificateSubject = "",
     [string] $TimestampUrl = "http://timestamp.digicert.com",
     [string] $SigntoolPath = "",
     [switch] $AllowSelfSigned
@@ -27,6 +39,17 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$hasPfx = -not [string]::IsNullOrWhiteSpace($PfxBase64)
+$hasThumbprint = -not [string]::IsNullOrWhiteSpace($CertificateThumbprint)
+$hasSubject = -not [string]::IsNullOrWhiteSpace($CertificateSubject)
+$storeModes = @(@($hasThumbprint, $hasSubject) | Where-Object { $_ })
+if ($storeModes.Count -gt 1) {
+    throw "Use either -CertificateThumbprint or -CertificateSubject, not both."
+}
+if (-not $hasPfx -and $storeModes.Count -eq 0) {
+    throw "Provide a key source: -PfxBase64, -CertificateThumbprint or -CertificateSubject."
+}
 
 function Resolve-Signtool {
     if (-not [string]::IsNullOrWhiteSpace($SigntoolPath)) {
@@ -74,18 +97,26 @@ $tempRoot = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { $env:TEMP } el
 $pfxPath = Join-Path $tempRoot "capwise-sign-$([guid]::NewGuid().ToString('N')).pfx"
 
 try {
-    [System.IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($PfxBase64.Trim()))
+    if ($hasPfx) {
+        [System.IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($PfxBase64.Trim()))
+    }
 
     foreach ($path in $resolvedPaths) {
         $arguments = @(
             "sign",
             "/fd", "SHA256",
             "/td", "SHA256",
-            "/tr", $TimestampUrl,
-            "/f", $pfxPath
+            "/tr", $TimestampUrl
         )
-        if (-not [string]::IsNullOrEmpty($PfxPassword)) {
-            $arguments += @("/p", $PfxPassword)
+        if ($hasPfx) {
+            $arguments += @("/f", $pfxPath)
+            if (-not [string]::IsNullOrEmpty($PfxPassword)) {
+                $arguments += @("/p", $PfxPassword)
+            }
+        } elseif ($hasThumbprint) {
+            $arguments += @("/sha1", $CertificateThumbprint)
+        } else {
+            $arguments += @("/n", $CertificateSubject)
         }
         $arguments += $path
 
@@ -108,7 +139,7 @@ try {
     }
 }
 finally {
-    if (Test-Path -LiteralPath $pfxPath) {
+    if ($hasPfx -and (Test-Path -LiteralPath $pfxPath)) {
         Remove-Item -LiteralPath $pfxPath -Force
     }
 }

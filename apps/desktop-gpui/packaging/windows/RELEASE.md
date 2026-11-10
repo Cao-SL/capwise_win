@@ -42,6 +42,48 @@ python scripts/minisign-keytool.py verify --public <path> --file <installer>
 `packaging/updater.pub` 和 `capwise-release.example.json`。
 换密钥时三处要同步改，已发布版本只认旧公钥，新签名会被判为不匹配。
 
+## 代码签名（生产）
+
+`sign-windows-release.ps1` 支持三种密钥源，按证书形态二选一：
+
+| 参数 | 适用形态 | 场景 |
+|---|---|---|
+| `-PfxBase64`（+`-PfxPassword`） | 可导出 PFX | CI secret、云签名导出 |
+| `-CertificateThumbprint` | 证书已在用户/机器存储 | **推荐**：USB eToken / 云 HSM 驱动安装的正式证书，确定性匹配 |
+| `-CertificateSubject` | 按 Subject 匹配 | 由 CA 官方安装器装好的证书 |
+
+正式证书的三条路线（2023 年起 CA/B 论坛要求代码签名私钥必须存硬件，
+经典「拿一个 PFX 文件」的年代已结束）：
+
+1. **个人 / 开源**：Certum 的个人代码签名证书（SimplySign 云 HSM，
+   个人身份即可申请，年费几十欧级别）。装上其驱动后 signtool 直接可用，
+   用 `-CertificateThumbprint` 或 `-CertificateSubject` 签名。
+2. **微软云签名**：Azure Trusted Signing（按月订阅）。不需要硬件，
+   signtool 有原生集成，CI 友好；需要能访问国际版 Azure 并通过身份验证。
+3. **企业 OV / EV**：Sectigo / DigiCert / 国内 CFCA、亚数等代理，
+   需要营业执照，证书装在 USB eToken 上（附 SafeNet 中间件）。
+   插上 token 后用 `-CertificateThumbprint` 或 `-CertificateSubject` 本机签名。
+
+SmartScreen 提示与证书等级无关地取决于下载量信誉，新证书初期都会有
+提示，随安装量累积消失。
+
+拿到证书后：
+
+```powershell
+# 找到证书指纹
+Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.HasPrivateKey }
+
+# 本机重签三个 exe 与 MSIX（证书装好即可，无需 PFX）
+./scripts/sign-windows-release.ps1 -Paths "dist/Capwise-0.3.10/Capwise.exe,dist/Capwise-0.3.10/cap-cli.exe,dist/Capwise-0.3.10/cap-muxer.exe" `
+    -CertificateThumbprint <指纹>
+./apps/desktop-gpui/scripts/build-capwise-msix.ps1 -Payload dist/Capwise-0.3.10 `
+    -Version 0.3.10 -Publisher "CN=你的证书Subject" -CertificateThumbprint <指纹>
+```
+
+**MSIX 的 `Identity.Publisher` 必须与证书 Subject 完全一致**，
+替换后用 `-Publisher` 传入重新打包。签名完成后把 Release 资产替换
+（`gh release upload v0.3.10 --clobber` 或 API）。
+
 ## 更新端点
 
 `installer.rs::UPDATE_MANIFEST_URL` 指向
