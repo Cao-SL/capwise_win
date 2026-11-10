@@ -21,7 +21,8 @@ param(
     [Parameter(Mandatory = $true)][string] $PfxBase64,
     [string] $PfxPassword = "",
     [string] $TimestampUrl = "http://timestamp.digicert.com",
-    [string] $SigntoolPath = ""
+    [string] $SigntoolPath = "",
+    [switch] $AllowSelfSigned
 )
 
 Set-StrictMode -Version Latest
@@ -94,10 +95,16 @@ try {
         }
 
         $signature = Get-AuthenticodeSignature -FilePath $path
-        if ($signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) {
+        $hasSigner = $null -ne $signature.SignerCertificate
+        $trusted = $signature.Status -eq "Valid"
+        if (-not $hasSigner -or (-not $trusted -and -not $AllowSelfSigned)) {
             throw "Authenticode verification failed for '$path': $($signature.Status)."
         }
-        Write-Host "Signed and verified: $path ($($signature.SignerCertificate.Subject))"
+        if (-not $trusted) {
+            Write-Host "Signed (self-signed, not trusted): $path ($($signature.SignerCertificate.Subject))"
+        } else {
+            Write-Host "Signed and verified: $path ($($signature.SignerCertificate.Subject))"
+        }
     }
 }
 finally {

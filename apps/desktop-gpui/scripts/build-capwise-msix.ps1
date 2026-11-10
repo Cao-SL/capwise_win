@@ -47,6 +47,10 @@ if ($parts.Count -ne 3 -or $invalid.Count -gt 0) {
 }
 $appxVersion = "$($parts[0]).$($parts[1]).$($parts[2]).0"
 if ([string]::IsNullOrWhiteSpace($OutDir)) { $OutDir = Join-Path $RepoRoot "dist\msix\$Version" }
+$OutDir = [System.IO.Path]::GetFullPath(
+    $(if ([System.IO.Path]::IsPathRooted($OutDir)) { $OutDir }
+      else { Join-Path (Get-Location).Path $OutDir })
+)
 
 function Resolve-Tool([string] $explicit, [string] $name) {
     if (-not [string]::IsNullOrWhiteSpace($explicit)) {
