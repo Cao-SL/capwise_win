@@ -372,6 +372,46 @@ mod windows_impl {
             self.last_uv_handle = None;
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn supported_formats_map_to_a_typed_dxgi_format() {
+            assert_eq!(
+                wgpu_to_dxgi_format(wgpu::TextureFormat::Rgba8Unorm),
+                DXGI_FORMAT_R8G8B8A8_UNORM
+            );
+            assert_eq!(
+                wgpu_to_dxgi_format(wgpu::TextureFormat::Bgra8Unorm),
+                DXGI_FORMAT_B8G8R8A8_UNORM
+            );
+            assert_eq!(wgpu_to_dxgi_format(wgpu::TextureFormat::R8Unorm), DXGI_FORMAT_R8_UNORM);
+            assert_eq!(wgpu_to_dxgi_format(wgpu::TextureFormat::Rg8Unorm), DXGI_FORMAT_R8G8_UNORM);
+        }
+
+        #[test]
+        fn unsupported_formats_are_rejected_before_opening_a_handle() {
+            assert_eq!(
+                wgpu_to_dxgi_format(wgpu::TextureFormat::Rgba16Float),
+                DXGI_FORMAT_UNKNOWN
+            );
+            assert_eq!(
+                wgpu_to_dxgi_format(wgpu::TextureFormat::Depth32Float),
+                DXGI_FORMAT_UNKNOWN
+            );
+        }
+
+        #[test]
+        fn the_interop_starts_without_cached_planes() {
+            let interop = D3D11WgpuInterop::new();
+            assert!(interop.y_wgpu_texture.is_none());
+            assert!(interop.uv_wgpu_texture.is_none());
+            assert!(interop.last_y_handle.is_none());
+            assert!(interop.last_uv_handle.is_none());
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
