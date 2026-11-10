@@ -12,6 +12,8 @@
 
 #![cfg(target_os = "windows")]
 
+use std::sync::OnceLock;
+
 use tracing::{info, warn};
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIAdapter, IDXGIAdapter1, IDXGIFactory1,
@@ -28,6 +30,21 @@ const VIRTUAL_ADAPTER_MARKERS: &[&str] = &[
     "Microsoft Basic",
     "WARP",
 ];
+
+static PREFERRED_LUID: OnceLock<(u32, i32)> = OnceLock::new();
+
+/// Pin every capture/encode/decode D3D11 device to the adapter backing the
+/// wgpu rendering device. Call once after the rendering adapter is known;
+/// later calls are ignored so the first (real) GPU stays authoritative.
+pub fn set_preferred_capture_luid(low: u32, high: i32) {
+    if PREFERRED_LUID.set((low, high)).is_err() {
+        warn!("preferred capture adapter LUID was already set");
+    }
+}
+
+fn preferred_capture_luid() -> Option<(u32, i32)> {
+    PREFERRED_LUID.get().copied()
+}
 
 #[derive(Clone)]
 pub struct SelectedAdapter {
@@ -52,6 +69,7 @@ pub struct SelectedAdapter {
 pub fn select_capture_adapter(
     preferred_luid: Option<(u32, i32)>,
 ) -> Result<SelectedAdapter, String> {
+    let preferred_luid = preferred_luid.or_else(preferred_capture_luid);
     unsafe {
         let factory: IDXGIFactory1 =
             CreateDXGIFactory1().map_err(|e| format!("CreateDXGIFactory1 failed: {e:?}"))?;
@@ -149,5 +167,20 @@ pub fn select_capture_adapter(
             "Selected DXGI adapter by VRAM"
         );
         Ok(best)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_preferred_luid_is_read_without_consuming_the_slot() {
+        // A reader before the writer must not lock the OnceLock into `None`.
+        assert_eq!(preferred_capture_luid(), None);
+        set_preferred_capture_luid(0x1234_5678, -7);
+        assert_eq!(preferred_capture_luid(), Some((0x1234_5678, -7)));
+        set_preferred_capture_luid(1, 1);
+        assert_eq!(preferred_capture_luid(), Some((0x1234_5678, -7)));
     }
 }

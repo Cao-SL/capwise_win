@@ -37,6 +37,8 @@ mod coord;
 pub mod cpu_yuv;
 mod cursor_interpolation;
 #[cfg(target_os = "windows")]
+pub mod adapter_luid;
+#[cfg(target_os = "windows")]
 pub mod d3d_texture;
 pub mod decoder;
 pub mod frame_chrome;
@@ -2728,10 +2730,25 @@ async fn try_rendering_device(
     }
 }
 
+/// The capture, encoder and decoder each create their own D3D11 device and
+/// would otherwise all pick "the adapter with most VRAM", which can differ
+/// from wgpu's adapter on hybrid-GPU machines. Pin them to wgpu's LUID once.
+#[cfg(target_os = "windows")]
+fn pin_capture_adapter_to_renderer(adapter: &wgpu::Adapter) {
+    if let Some(luid) = adapter_luid::detect_adapter_luid_for_wgpu(adapter) {
+        cap_d3d_adapter::set_preferred_capture_luid(luid.low, luid.high);
+        tracing::debug!(low = luid.low, high = luid.high, "pinned capture adapter LUID");
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn pin_capture_adapter_to_renderer(_: &wgpu::Adapter) {}
+
 #[cfg(not(target_arch = "wasm32"))]
 async fn request_rendering_device(
     adapter: &wgpu::Adapter,
 ) -> Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError> {
+    pin_capture_adapter_to_renderer(adapter);
     let mut required_features = wgpu::Features::empty();
     if adapter.features().contains(wgpu::Features::PIPELINE_CACHE) {
         required_features |= wgpu::Features::PIPELINE_CACHE;
