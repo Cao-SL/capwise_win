@@ -6,9 +6,9 @@
 		"deep-link": null,
 		"updater": {
 			"endpoints": [
-				"https://updates.example.com/capwise/latest.json"
+				"https://github.com/Cao-SL/capwise_win/releases/latest/download/latest.json"
 			],
-			"pubkey": "REPLACE_WITH_YOUR_MINISIGN_PUBLIC_KEY"
+			"pubkey": "RWRo2C/T2vDO6bcXJlgVTqs0nIbSC6Q30MlJe/PYwmPftTZ0eXS36Tf4"
 		}
 	},
 	"bundle": {
