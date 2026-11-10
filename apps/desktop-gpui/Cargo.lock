@@ -1973,6 +1973,7 @@ dependencies = [
  "bytemuck",
  "cap-camera-effects",
  "cap-cursor-info",
+ "cap-d3d-adapter",
  "cap-enc-ffmpeg",
  "cap-flags",
  "cap-project",
