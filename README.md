@@ -56,6 +56,8 @@ bun run gpui:build x86_64-pc-windows-msvc
 
 签名、更新分发、winget 与 MSIX 的完整链路见 `packaging/windows/RELEASE.md`；手工准备原生依赖的流程见 `apps/desktop-gpui/docs/windows-gpu-roadmap.md`。
 
+> 首次运行若遇 SmartScreen 提示，点「更多信息 → 仍要运行」（每台机器一次）。想完全避开：下载 zip 后先执行 `Unblock-File .\Capwise-*.zip` 再解压。
+
 ## 录完之后，少折腾几步
 
 - **操作太细，看不清？** 自动缩放、光标效果与标注，把注意力带到重点。
