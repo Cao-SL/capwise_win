@@ -30,7 +30,9 @@ param(
     [string] $Notes = "",
     [string] $PfxBase64 = "",
     [string] $PfxPassword = "",
-    [string] $WingetTemplateDir = ""
+    [string] $WingetTemplateDir = "",
+    [string] $MinisignPublicKey = "",
+    [string] $UpdateEndpoint = ""
 )
 
 Set-StrictMode -Version Latest
@@ -51,11 +53,30 @@ if ([string]::IsNullOrWhiteSpace($WingetTemplateDir)) { $WingetTemplateDir = Joi
 
 $parsedUrl = [System.Uri]::new($InstallerUrl)
 if ($parsedUrl.Scheme -ne "https") { throw "InstallerUrl must be HTTPS: $InstallerUrl" }
+New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 if (-not (Test-Path -LiteralPath $WingetTemplateDir -PathType Container)) {
     throw "Winget template directory not found: $WingetTemplateDir"
 }
 
-New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+$releaseOut = ""
+if (-not [string]::IsNullOrWhiteSpace($MinisignPublicKey) -or -not [string]::IsNullOrWhiteSpace($UpdateEndpoint)) {
+    if ([string]::IsNullOrWhiteSpace($MinisignPublicKey) -or [string]::IsNullOrWhiteSpace($UpdateEndpoint)) {
+        throw "MinisignPublicKey and UpdateEndpoint must be supplied together."
+    }
+    $endpointUri = [System.Uri]::new($UpdateEndpoint)
+    if ($endpointUri.Scheme -ne "https") { throw "UpdateEndpoint must be HTTPS: $UpdateEndpoint" }
+    if ($UpdateEndpoint -match 'example\.com') { throw "UpdateEndpoint is still the example URL." }
+    $releaseTemplate = Join-Path $Desktop "packaging\windows\capwise-release.example.json"
+    if (-not (Test-Path -LiteralPath $releaseTemplate -PathType Leaf)) {
+        throw "Release config template not found: $releaseTemplate"
+    }
+    $releaseText = (Get-Content -LiteralPath $releaseTemplate -Raw -Encoding UTF8) `
+        -replace 'REPLACE_WITH_YOUR_MINISIGN_PUBLIC_KEY', $MinisignPublicKey `
+        -replace 'https://updates\.example\.com/capwise/latest\.json', $UpdateEndpoint
+    $releaseOut = Join-Path $OutDir "capwise-release.json"
+    [System.IO.File]::WriteAllText($releaseOut, $releaseText, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  wrote capwise-release.json"
+}
 
 if (-not [string]::IsNullOrWhiteSpace($PfxBase64)) {
     Write-Host "== Authenticode signing =="
@@ -97,6 +118,22 @@ foreach ($template in Get-ChildItem -LiteralPath $WingetTemplateDir -Filter '*.y
     Write-Host "  wrote $($template.Name)"
 }
 
+Write-Host "== Placeholder guard =="
+$generated = Get-ChildItem -LiteralPath $OutDir -Recurse -File | Where-Object {
+    $_.Extension -in '.json', '.yaml', '.yml', '.txt'
+}
+$leftovers = @()
+foreach ($file in $generated) {
+    $text = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
+    if ($text -match 'REPLACE_WITH_|updates\.example\.com|example\.com/setup') {
+        $leftovers += $file.FullName
+    }
+}
+if ($leftovers.Count -gt 0) {
+    throw ("Unresolved template placeholders in:`n  " + ($leftovers -join "`n  "))
+}
+Write-Host "  clean: $($generated.Count) generated files"
+
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $checklist = @(
     "Capwise Windows release $Version",
@@ -109,8 +146,9 @@ $checklist = @(
     "Winget: run 'winget validate --manifest $wingetOut' then place the three",
     "YAMLs under manifests/c/CaoSL/Capwise/$Version/ in winget-pkgs.",
     "",
-    "Update endpoint: publish latest.json at the URL in",
-    "packaging/windows/capwise-release.example.json and keep that version in sync."
+    "Update endpoint: publish latest.json at the updater URL and keep that",
+    "version in sync with the installed build.",
+    $(if ($releaseOut) { "Release config: $releaseOut" } else { "Release config: copy packaging/windows/capwise-release.example.json, fill the minisign pubkey and updater endpoint, then pass --config to tauri bundle." })
 ) -join "`n"
 [System.IO.File]::WriteAllText((Join-Path $OutDir "PUBLISH-CHECKLIST.txt"), $checklist, $utf8NoBom)
 
