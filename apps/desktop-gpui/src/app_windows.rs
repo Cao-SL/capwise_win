@@ -4626,7 +4626,7 @@ pub(crate) fn studio_camera_snapshot(
         })
         .or_else(|| {
             let saved = crate::store::load();
-            let state = saved.camera_window?;
+            let state = saved.camera_window.unwrap_or_default();
             let real_camera = saved.camera_avatar == cap_recording::avatar::AvatarKind::Camera;
             Some(crate::recording::StudioCameraSnapshot {
                 blur: if real_camera {

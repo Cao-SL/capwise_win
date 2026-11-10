@@ -1981,23 +1981,23 @@ impl CameraWindow {
         })
         .detach();
 
-        cx.observe_in(
-            &crate::session::RecordingSession::global(cx),
-            window,
-            |this, session, window, cx| {
-                let active = session.read(cx).phase != crate::session::Phase::Idle;
-                if active {
+        let session = crate::session::RecordingSession::global(cx);
+        let mut phase = session.read(cx).phase;
+        cx.observe_in(&session, window, move |this, session, window, cx| {
+            let next = session.read(cx).phase;
+            if next != phase {
+                phase = next;
+                if phase != crate::session::Phase::Idle {
                     this.avatar_menu = None;
+                    this.layout_menu = None;
                 }
-                if active && this.layout_menu.take().is_some() {
-                    cx.notify();
-                }
-                #[cfg(target_os = "macos")]
-                this.sync_studio_preview(window, cx);
-                #[cfg(not(target_os = "macos"))]
-                let _ = window;
-            },
-        )
+                cx.notify();
+            }
+            #[cfg(target_os = "macos")]
+            this.sync_studio_preview(window, cx);
+            #[cfg(not(target_os = "macos"))]
+            let _ = window;
+        })
         .detach();
 
         Self {
@@ -2995,9 +2995,9 @@ impl CameraWindow {
         #[cfg(not(target_os = "macos"))]
         let (mirror_failed, blur_failed) = (false, false);
         let studio_layout = self.studio_layout_controls(cx);
-        let setup = studio_layout
-            && crate::session::RecordingSession::global(cx).read(cx).phase
-                == crate::session::Phase::Idle;
+        let idle = crate::session::RecordingSession::global(cx).read(cx).phase
+            == crate::session::Phase::Idle;
+        let setup = studio_layout && idle;
         let shape_icon = match self.state.shape {
             CameraShape::Round => "icons/circle.svg",
             CameraShape::Square => "icons/square.svg",
@@ -3024,7 +3024,7 @@ impl CameraWindow {
                     .border_color(gpui::hsla(0., 0., 1., 0.2))
                     .text_color(theme.gray_10)
                     .when(
-                        !setup
+                        !idle
                             && !self.chrome_visible
                             && self.resizing.is_none()
                             && self.layout_menu.is_none()
@@ -3115,7 +3115,7 @@ impl CameraWindow {
                     // Preview-only, like both Tauri paths (the WGSL UV flip /
                     // the legacy `scaleX(-1)`); the recorded camera track is
                     // never mirrored by either app.
-                    .when(cfg!(target_os = "macos"), |toolbar| {
+                    .when(cfg!(target_os = "macos") && idle, |toolbar| {
                         toolbar.child(self.toolbar_button(
                             "avatar",
                             "icons/smile.svg",
@@ -3493,6 +3493,7 @@ impl Render for CameraWindow {
                     if this.resizing.is_none()
                         && !this.inline
                         && this.layout_menu.is_none()
+                        && this.avatar_menu.is_none()
                         && this.undocked_bounds.is_none()
                     {
                         window.start_window_move();

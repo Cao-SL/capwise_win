@@ -1,3 +1,7 @@
 {
-	"umamiWebsiteId": "b16b78e3-7c93-49df-8495-078eba543e57"
+	"umamiWebsiteId": "b16b78e3-7c93-49df-8495-078eba543e57",
+	"previewDownloads": {
+		"tag": "v0.3.10-platform-preview.1",
+		"platforms": ["windows-x64", "linux-x64", "mac-intel"]
+	}
 }

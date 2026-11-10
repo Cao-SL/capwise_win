@@ -7,6 +7,7 @@
 #   scripts/release.sh 0.2.0                 full release into dist/0.2.0
 #   scripts/release.sh 0.2.0 --dry-run       no notarization, throwaway update key if none is set
 #   scripts/release.sh 0.2.0 --skip-build    reuse the last release binaries
+#   scripts/release.sh 0.2.0 --dry-run --app-only    build the CI app archive without a DMG
 #
 # Nothing is uploaded. Credentials come from the keychain or the environment:
 #   CAPWISE_SIGN_IDENTITY         Developer ID Application identity (default: first in the keychain)
@@ -32,10 +33,12 @@ UPDATER_KEY="${CAPWISE_UPDATER_KEY:-$HOME/.config/capwise/updater.key}"
 VERSION=""
 DRY_RUN=0
 SKIP_BUILD=0
+APP_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --skip-build) SKIP_BUILD=1 ;;
+    --app-only) APP_ONLY=1 ;;
     -h | --help)
       sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -57,6 +60,7 @@ step() { printf '\n==> %s\n' "$*"; }
 [[ "$(uname -s)" == "Darwin" ]] || die "releases are built on macOS"
 [[ -n "$VERSION" ]] || die "usage: scripts/release.sh <version> [--dry-run] [--skip-build]"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "version must be semver, got $VERSION"
+if ((APP_ONLY && !DRY_RUN)); then die "--app-only requires --dry-run"; fi
 
 PREBUILT_APP="${CAPWISE_PREBUILT_APP:-}"
 MACHINE="$(uname -m)"
@@ -79,6 +83,10 @@ PLATFORM="darwin-$ARCH"
 TAG="v$VERSION"
 DIST="$HERE/dist/$VERSION"
 WORK="$HERE/target/release-work"
+if ((APP_ONLY)); then
+  DIST="$HERE/target/release-candidate/$VERSION"
+  WORK="$HERE/target/release-candidate-work"
+fi
 STAGE="$WORK/$APP_NAME.app"
 DMG="$DIST/${APP_NAME}_${VERSION}_${ARCH}.dmg"
 ARCHIVE_NAME="${APP_NAME}_${VERSION}_${ARCH}.app.tar.gz"
@@ -168,7 +176,7 @@ if [[ -n "$PREBUILT_APP" ]]; then
   ditto "$PREBUILT_APP" "$STAGE"
   while IFS= read -r -d '' candidate; do
     if file -b "$candidate" | grep -q "Mach-O"; then
-      lipo -verify_arch "$MACHINE" "$candidate" || die "wrong architecture: $candidate"
+      lipo "$candidate" -verify_arch "$MACHINE" || die "wrong architecture: $candidate"
     fi
   done < <(find "$STAGE" -type f -print0)
 else
@@ -260,6 +268,7 @@ step "Update archive"
 COPYFILE_DISABLE=1 tar -czf "$ARCHIVE" -C "$WORK" "$APP_NAME.app"
 sign_update "$ARCHIVE"
 echo "$ARCHIVE_NAME signed and verified against $(basename "$PUBLIC_KEY")"
+if ((APP_ONLY)); then exit 0; fi
 
 step "DMG"
 DMG_TOOLS="$HERE/target/release-tools"
@@ -311,7 +320,7 @@ verify_shipped_app() {
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == "$VERSION" ]] ||
     die "wrong version in $app"
   for executable in "$APP_NAME" cap-cli; do
-    lipo -verify_arch "$MACHINE" "$app/Contents/MacOS/$executable" ||
+    lipo "$app/Contents/MacOS/$executable" -verify_arch "$MACHINE" ||
       die "wrong architecture: $app/Contents/MacOS/$executable"
   done
   codesign --verify --deep --strict "$app"

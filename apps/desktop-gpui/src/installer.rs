@@ -381,7 +381,22 @@ async fn stream_to_file(
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn install_app_bundle(archive: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn install_app_bundle(archive: &Path, running: &Path) -> Result<PathBuf, String> {
+    install_app_bundle_in(archive, running, Path::new("/Applications"))
+}
+
+#[cfg(target_os = "macos")]
+fn install_app_bundle_in(
+    archive: &Path,
+    running: &Path,
+    applications: &Path,
+) -> Result<PathBuf, String> {
+    let relocate = read_only_volume(running).map_err(|error| error.to_string())?;
+    let destination = if relocate {
+        applications.join("Capwise.app")
+    } else {
+        running.to_owned()
+    };
     let parent = destination
         .parent()
         .ok_or_else(|| "The app has no parent folder".to_string())?;
@@ -395,21 +410,23 @@ pub(crate) fn install_app_bundle(archive: &Path, destination: &Path) -> Result<(
         Err(error) => return Err(error.to_string()),
     };
 
-    let installed =
-        extract_app_archive(archive, &staging).and_then(|app| {
-            match replace_directory(&app, destination) {
-                Ok(()) => Ok(()),
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::CrossesDevices
-                    ) =>
-                {
-                    replace_directory_with_privileges(&app, destination)
-                }
-                Err(error) => Err(error.to_string()),
+    let installed = extract_app_archive(archive, &staging).and_then(|app| {
+        if relocate && can_reuse_installed_app(&app, &destination)? {
+            return Ok(());
+        }
+        match replace_directory(&app, &destination) {
+            Ok(()) => Ok(()),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::CrossesDevices
+                ) =>
+            {
+                replace_directory_with_privileges(&app, &destination)
             }
-        });
+            Err(error) => Err(error.to_string()),
+        }
+    });
     if let Err(error) = std::fs::remove_dir_all(&staging)
         && error.kind() != std::io::ErrorKind::NotFound
     {
@@ -418,9 +435,87 @@ pub(crate) fn install_app_bundle(archive: &Path, destination: &Path) -> Result<(
     installed?;
 
     let _ = std::process::Command::new("/usr/bin/touch")
-        .arg(destination)
+        .arg(&destination)
         .status();
-    Ok(())
+    Ok(destination)
+}
+
+#[cfg(target_os = "macos")]
+fn read_only_volume(path: &Path) -> std::io::Result<bool> {
+    let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    let mut info = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    if unsafe { libc::statfs(path.as_ptr(), info.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { info.assume_init() }.f_flags & libc::MNT_RDONLY as u32 != 0)
+}
+
+#[cfg(target_os = "macos")]
+fn can_reuse_installed_app(replacement: &Path, installed: &Path) -> Result<bool, String> {
+    let metadata = match std::fs::symlink_metadata(installed) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !metadata.is_dir() {
+        return Err(format!(
+            "Another item already exists at {}",
+            installed.display()
+        ));
+    }
+
+    let requirement = std::process::Command::new("/usr/bin/codesign")
+        .args(["--display", "-r", "-"])
+        .arg(replacement)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !requirement.status.success() {
+        return Err("Could not read the update's macOS signing requirement".to_string());
+    }
+    let requirement = String::from_utf8_lossy(&requirement.stdout);
+    let requirement = requirement
+        .lines()
+        .find_map(|line| line.strip_prefix("designated => "))
+        .ok_or_else(|| "The update has no macOS signing requirement".to_string())?;
+    let architecture = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "x86_64"
+    };
+    let same_app = std::process::Command::new("/usr/bin/codesign")
+        .args(["--verify", "--strict", "-a", architecture, "-R"])
+        .arg(format!("={requirement}"))
+        .arg(installed)
+        .output()
+        .map_err(|error| error.to_string())?
+        .status
+        .success();
+    if !same_app {
+        return Err(format!(
+            "A different app already exists at {}",
+            installed.display()
+        ));
+    }
+
+    Ok(macos_bundle_version(installed)? >= macos_bundle_version(replacement)?)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_bundle_version(bundle: &Path) -> Result<Version, String> {
+    let version = std::process::Command::new("/usr/libexec/PlistBuddy")
+        .args(["-c", "Print :CFBundleShortVersionString"])
+        .arg(bundle.join("Contents/Info.plist"))
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !version.status.success() {
+        return Err(format!(
+            "Could not read the version of {}",
+            bundle.display()
+        ));
+    }
+    Version::parse(String::from_utf8_lossy(&version.stdout).trim())
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(target_os = "macos")]
