@@ -136,17 +136,22 @@ fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// Registers the process AUMID and opens the jump list's recent/frequent
-/// categories. Every failure is a silent no-op: an app without an installed
-/// shortcut or with shell integration disabled simply has no jump list.
-pub fn install() {
+/// Windows rejects a late AppUserModelID assignment once a window has been
+/// associated with the taskbar, so this runs at the very top of `main`.
+pub fn register_app_id() {
     let app_id = wide(APP_USER_MODEL_ID);
     unsafe {
         if SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr()) != 0 {
             tracing::debug!("could not set the explicit AppUserModelID");
-            return;
         }
     }
+}
+
+/// Opens the jump list's recent/frequent categories. Every failure is a silent
+/// no-op: an app without an installed shortcut or with shell integration
+/// disabled simply has no jump list.
+pub fn install() {
+    let app_id = wide(APP_USER_MODEL_ID);
     if let Some(list) = instance() {
         list.publish(&app_id);
     }
