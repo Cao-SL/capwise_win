@@ -733,8 +733,11 @@ fn apply_package(
         .ancestors()
         .find(|path| path.extension().is_some_and(|extension| extension == "app"))
         .ok_or_else(|| "This copy of Capwise isn't running from an app bundle".to_string())?;
-    installer::install_app_bundle(package, bundle)?;
-    Ok(Some(executable))
+    let executable_in_bundle = executable
+        .strip_prefix(bundle)
+        .map_err(|error| error.to_string())?;
+    let installed = installer::install_app_bundle(package, bundle)?;
+    Ok(Some(installed.join(executable_in_bundle)))
 }
 
 #[cfg(windows)]
