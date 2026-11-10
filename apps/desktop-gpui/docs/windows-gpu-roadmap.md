@@ -98,6 +98,21 @@ D3D12 设备是同一个实例，避免两份 command queue。这需要把
 3. 运行时能力检测 + 自动回退到 H.264（老 GPU 没有 AV1 编码器）。
 4. 需要真实 NVIDIA RTX 40 / Intel Arc / AMD RX 7000 验证。
 
+**本机实测（2026-11-10）**：`scripts/probe-windows-gpu.ps1` 报告
+Windows 26H2 build 26300、NVIDIA GeForce RTX 5070 (driver 32.0.16.1692)、
+D3D11/D3D12/DXGI 运行时齐全，ffmpeg 7.1 提供 `av1_nvenc` / `av1_qsv` /
+`av1_amf` / `av1_vaapi` / 三个软件 AV1 编码器。用
+`ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30:duration=2 -c:v av1_nvenc
+-b:v 2M` 实际编码一段，`ffprobe` 报 `codec_name=av1, profile=Main`，
+`ffmpeg -xerror -i ... -f null -` 解码回放零错误。也就是说**编码器侧
+已经具备能力，卡住的只有本仓库的 codec 抽象**，不是驱动或硬件。
+
+运行探测：
+```powershell
+./scripts/probe-windows-gpu.ps1 -OutFile ./gpu-capabilities.json
+```
+脚本只读，不创建 D3D 设备、不改设置，输出可附到 issue 里作为能力基线。
+
 ## 高刷屏播放计时
 
 `max_fps` (`settings_window.rs:283-289`, 24/25/30/60/120) 是**录制质量**设定，
