@@ -729,6 +729,7 @@ fn main() {
             if let Err(error) = platform::install_main_window_frame_policy(&native) {
                 tracing::warn!(%error, "could not install Main window frame policy");
             }
+            platform::install_window_app_id(&native);
             if let Err(error) = platform::install_session_end_handler(&native, end_windows_session)
             {
                 tracing::warn!(%error, "could not install the Windows session end handler");

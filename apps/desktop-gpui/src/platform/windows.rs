@@ -22,6 +22,7 @@ mod power_events;
 mod session_end;
 mod taskbar;
 mod url_scheme;
+mod window_app_id;
 mod window_chrome;
 
 #[derive(Clone, Copy)]
@@ -202,6 +203,11 @@ pub fn system_accent_color() -> Option<u32> {
 /// Call before any window exists; see `jump_list::register_app_id`.
 pub fn register_app_user_model_id() {
     jump_list::register_app_id();
+}
+
+/// Tag a window with the same AUMID so its taskbar button shares the jump list.
+pub fn install_window_app_id(native: &NativeWindow) {
+    window_app_id::install(native.hwnd());
 }
 
 /// Enables the taskbar jump list's recent/frequent categories. Safe when shell
