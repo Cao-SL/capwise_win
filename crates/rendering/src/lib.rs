@@ -31,13 +31,13 @@ use std::sync::{
 use std::{path::PathBuf, time::Instant};
 use tokio::sync::mpsc;
 
+#[cfg(target_os = "windows")]
+pub mod adapter_luid;
 pub mod camera3d;
 pub mod composite_frame;
 mod coord;
 pub mod cpu_yuv;
 mod cursor_interpolation;
-#[cfg(target_os = "windows")]
-pub mod adapter_luid;
 #[cfg(target_os = "windows")]
 pub mod d3d_texture;
 pub mod decoder;
@@ -2737,7 +2737,11 @@ async fn try_rendering_device(
 fn pin_capture_adapter_to_renderer(adapter: &wgpu::Adapter) {
     if let Some(luid) = adapter_luid::detect_adapter_luid_for_wgpu(adapter) {
         cap_d3d_adapter::set_preferred_capture_luid(luid.low, luid.high);
-        tracing::debug!(low = luid.low, high = luid.high, "pinned capture adapter LUID");
+        tracing::debug!(
+            low = luid.low,
+            high = luid.high,
+            "pinned capture adapter LUID"
+        );
     }
 }
 

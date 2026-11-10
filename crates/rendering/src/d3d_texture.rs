@@ -387,8 +387,14 @@ mod windows_impl {
                 wgpu_to_dxgi_format(wgpu::TextureFormat::Bgra8Unorm),
                 DXGI_FORMAT_B8G8R8A8_UNORM
             );
-            assert_eq!(wgpu_to_dxgi_format(wgpu::TextureFormat::R8Unorm), DXGI_FORMAT_R8_UNORM);
-            assert_eq!(wgpu_to_dxgi_format(wgpu::TextureFormat::Rg8Unorm), DXGI_FORMAT_R8G8_UNORM);
+            assert_eq!(
+                wgpu_to_dxgi_format(wgpu::TextureFormat::R8Unorm),
+                DXGI_FORMAT_R8_UNORM
+            );
+            assert_eq!(
+                wgpu_to_dxgi_format(wgpu::TextureFormat::Rg8Unorm),
+                DXGI_FORMAT_R8G8_UNORM
+            );
         }
 
         #[test]
