@@ -40,7 +40,7 @@ python scripts/minisign-keytool.py verify --public <path> --file <installer>
 `*.minisig`。本 fork 的私钥保存在仓库外的
 `J:\Projects\ScreenVideo\capwise-win-update.key`；公钥已写入
 `packaging/updater.pub` 和 `capwise-release.example.json`。
-换密钥时三处要同步改，否则已发布版本会拒绝新签名。
+换密钥时三处要同步改，已发布版本只认旧公钥，新签名会被判为不匹配。
 
 ## 更新端点
 
